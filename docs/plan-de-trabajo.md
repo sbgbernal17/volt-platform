@@ -25,7 +25,7 @@ Sin la primera no se puede fijar región, moneda, impuestos ni facturación. Mar
 
 | # | Decisión | Recomendación del diseño | Estado |
 |---|---|---|---|
-| D1 | País o países de operación (moneda, impuestos, facturación electrónica, regulación de medición y de precios, ley de datos, región de Google Cloud) | Un solo país en el MVP; todo lo específico del país como parámetro de tenant | [ ] |
+| D1 | País o países de operación (moneda, impuestos, facturación electrónica, regulación de medición y de precios, ley de datos, región de Google Cloud) | Un solo país en el MVP; todo lo específico del país como parámetro de tenant | [x] **Colombia** (19-09-2026, ADR 0001). Implicaciones en la sección 3.1 |
 | D2 | Pasarela de pago | Debe soportar pre-autorización con captura parcial y tokenización; Stripe si opera en el país, si no la mejor opción local; detrás de un puerto `PaymentGateway` | [ ] |
 | D3 | Modelo de negocio del MVP | Pospago con tarjeta y pago ad hoc por QR sin registro; wallet y membresías en fase 2; flotas cuando haya cliente | [ ] |
 | D4 | Versión OCPP objetivo | 1.6J en producción, dominio modelado a 2.0.1, gateway 2.0.1 en fase 3 | [ ] |
@@ -35,11 +35,29 @@ Sin la primera no se puede fijar región, moneda, impuestos ni facturación. Mar
 | D8 | Perfil de seguridad objetivo | 2 desde el inicio, 3 en fase 2 | [ ] |
 | D9 | Idiomas, marca y política de retención de datos | Español primero con i18n; mediciones 90 días en caliente y 2 años en BigQuery; auditoría 13 meses o más | [ ] |
 
+### 3.1 Implicaciones de operar en Colombia (D1 decidida)
+
+Parámetros de tenant y consecuencias de diseño que fija la decisión. Lo marcado "(a confirmar)" requiere confirmación con el contador, el asesor legal o la lectura del texto normativo completo.
+
+| Tema | Implicación |
+|---|---|
+| Moneda, zona horaria, idioma | COP; en la práctica los precios y cobros se redondean a pesos enteros (política de redondeo del tenant: unidad = 1 peso, a confirmar si se prefiere múltiplo de 50 o 100). Zona horaria `America/Bogota` (UTC-5, sin horario de verano). Español. |
+| Impuestos | IVA general del 19 %. La carga de vehículos se considera "servicio de carga" y no servicio público domiciliario de energía, por lo que el tratamiento de IVA del servicio, las retenciones (renta, IVA, ICA) y el régimen del operador deben confirmarse con el contador antes de fijar la tarifa (a confirmar). |
+| Facturación electrónica DIAN | Toda venta debe soportarse con factura electrónica de venta o documento equivalente electrónico, emitidos a través de un proveedor tecnológico habilitado o de la solución gratuita de la DIAN. Para Colombia esto no puede esperar a la fase 3: **pasa al MVP** como emisión automática por sesión (o consolidada, según lo que defina el contador) mediante un adaptador `billing` hacia el proveedor tecnológico elegido (a confirmar el documento aplicable y el proveedor). |
+| Regulación sectorial | Resolución MME 40123 de 2024: interoperabilidad de estaciones de acceso público; conexión al sistema de gestión mediante OCPP en su última versión estable (o norma ISO/IEC/Icontec equivalente); precios de carga, estacionamiento y otros costos informados de forma clara, previa, desagregada y visible; acceso y pago sin restricciones, es decir, **pago ad hoc sin membresía obligatorio**. Resolución 40117 de 2024 (RETIE) para las instalaciones. Resolución 40559 de 21-11-2025: lineamientos de interoperabilidad para el reporte, gestión y consulta de la información de las estaciones de acceso público, conectores Tipo 2 y CCS2, habilita OCPI 2.2.1 y añade lineamientos de seguridad de la información y trazabilidad de los datos de consumo. Resolución 40334 de 2026: conexión simplificada a la red; la CREG define el acceso de los operadores y prepara una resolución de movilidad eléctrica para 2027. |
+| Reporte de información al Estado | La Resolución 40559 de 2025 puede exigir reportar información operativa de las estaciones (estado, disponibilidad, consumos) mediante OCPI 2.2.1 a una plataforma designada. Hay que leer el texto completo para fijar qué datos, a quién, con qué frecuencia y desde cuándo (a confirmar). Si aplica, el módulo OCPI de la fase 3 se adelanta a la fase 2 al menos para `Locations`, `Tariffs` y `Sessions`/`CDRs`. |
+| Datos personales | Ley 1581 de 2012 y Decreto 1377 de 2013 (SIC): política de tratamiento de datos, autorización previa del titular en la app, canales para derechos de los titulares, inscripción en el Registro Nacional de Bases de Datos si aplica por tamaño de la empresa. Al alojar en una región de Google Cloud fuera de Colombia hay transferencia internacional: verificar nivel adecuado de protección del país destino según la circular vigente de la SIC o recabar autorización expresa (a confirmar con el asesor legal). |
+| Región de Google Cloud | No existe región en Colombia (Google construye un centro de datos en Yumbo, Valle del Cauca, sin fecha de región). Recomendada `us-east1` como región principal, con `northamerica-south1` (Querétaro) y `southamerica-west1` (Santiago) como alternativas; medir latencia desde Bogotá antes de fijarla. Para OCPP la latencia es irrelevante; importa para la app. |
+| Pasarela de pago | Candidatas con preautorización y captura parcial: PayU (flujo de dos pasos, autorización y captura, disponible bajo solicitud al ejecutivo comercial; captura parcial soportada) y Mercado Pago (reserva con `capture=false` y captura por un monto menor; confirmar disponibilidad en Colombia). Wompi, PlacetoPay y ePayco: confirmar soporte de preautorización. PSE, Nequi y Daviplata no soportan preautorización, pero son los medios más usados: sirven para recargar un wallet prepago, lo que hace recomendable adelantar el wallet a la fase 1 o al inicio de la fase 2. |
+| Conectores y medición | Tipo 2 (AC) y CCS2 (DC) son los conectores estandarizados; alinear el inventario y las compras. Requisitos de trazabilidad de la información de consumo según la Resolución 40559 (a confirmar si exige medidor certificado o valores firmados). |
+
 ## 4. Próximas dos semanas (acciones inmediatas)
 
 1. [ ] Enviar al proveedor, por escrito y con plazo, la lista de requisitos de hardware y traspaso (resumen ejecutivo §8; detalle HW §3). Pedir respuesta por modelo y versión de firmware.
 2. [ ] Conseguir un cargador real para laboratorio (idealmente uno por modelo) y una red propia donde capturar a qué URL habla hoy.
-3. [ ] Tomar D1 (país) y D2 (pasarela); abrir cuenta de pruebas en la pasarela.
+3. [ ] Tomar D2 (pasarela): pedir a PayU la activación del flujo de dos pasos y confirmar con Mercado Pago la reserva de fondos en Colombia; abrir cuenta de pruebas en la elegida.
+3b. [ ] Sesión con el contador: tratamiento de IVA del servicio de carga, retenciones, documento electrónico aplicable (factura electrónica o documento equivalente) y proveedor tecnológico DIAN.
+3c. [ ] Leer el texto completo de las Resoluciones 40123 de 2024 y 40559 de 2025 y fijar las obligaciones concretas de precios visibles, acceso sin membresía y reporte de información (qué, a quién, cuándo).
 4. [ ] Conformar el equipo (D6): backend senior TypeScript que lidera, backend/full-stack, móvil, DevOps/SRE, media persona de QA.
 5. [ ] Crear la organización y los tres proyectos de Google Cloud (dev, staging, prod) con facturación, presupuestos y alertas; definir el dominio (`ocpp.`, `api.`, `admin.`).
 6. [ ] Inicializar el monorepo según ARQ §6.1 (`apps/ocpp-gateway`, `apps/api`, `apps/worker`, `apps/backoffice`, `apps/mobile`, `packages/*`, `infra/terraform`, `docs/adr`) con lint, tests y CI en GitHub Actions.
@@ -72,6 +90,8 @@ Sin la primera no se puede fijar región, moneda, impuestos ni facturación. Mar
 | API `/v1` y app v1: OIDC con Identity Platform, idempotencia, SSE; mapa, precio visible antes de cargar, QR, inicio y parada, progreso en vivo, historial y recibos, métodos de pago, push | Un conductor real completa una carga y recibe el recibo; builds publicados en TestFlight e Internal testing | [ ] |
 | Monitoreo y alarmas: métricas, alarmas de offline, `Faulted`, bucle de arranque, sesión huérfana y pagos, SLOs, dashboards, guardia, cargador sintético | Alarmas en menos de 1 minuto; SLOs con burn-rate configurados | [ ] |
 | Migración y salida a producción: lote piloto de una semana, lotes de 10 a 20 % del parque, rollback probado | 100 % de los ítems críticos de la checklist HW §4.3 por lote; 48 horas sin incidencias; conciliación con la última liquidación del proveedor | [ ] |
+| Facturación electrónica DIAN (Colombia): emisión automática del documento electrónico por sesión o consolidado mediante proveedor tecnológico, con notas crédito para reembolsos | Documento válido ante la DIAN por cada cobro en 100 sesiones de prueba; el contador valida el tipo de documento | [ ] |
+| Cumplimiento de la Resolución 40123 de 2024: precios de carga, ocupación y otros costos visibles y desagregados en la app y en el QR antes de iniciar; pago ad hoc sin registro | Revisión de cumplimiento documentada antes de la salida a producción | [ ] |
 
 Criterio de salida del MVP: todos los cargadores migrables operan y cobran en la plataforma propia, con disponibilidad del gateway igual o superior al 99,9 % durante 30 días y tasa de éxito de inicio remoto igual o superior al 90 %.
 
@@ -88,6 +108,7 @@ Criterio de salida del MVP: todos los cargadores migrables operan y cobran en la
 | Reportes y analítica en BigQuery | Informe mensual automático por sede; dashboard de calidad por modelo | [ ] |
 | Multi-tenant en interfaz, wallet y membresías | Un segundo operador opera sus sedes sin ver datos del primero | [ ] |
 | Tickets, auto-remediación y perfil de seguridad 3 con PKI propia | MTTR de incidentes P2 menor a 4 horas; al menos un modelo en perfil 3 en producción | [ ] |
+| Reporte de información a la plataforma nacional según la Resolución 40559 de 2025 vía OCPI 2.2.1 (`Locations`, `Tariffs`, `Sessions`, `CDRs`), si el texto normativo lo exige (a confirmar) | Reporte aceptado por la plataforma designada dentro del plazo normativo | [ ] |
 
 ## 8. Fase 3: interoperabilidad (20 a 28 semanas)
 
@@ -96,7 +117,7 @@ Criterio de salida del MVP: todos los cargadores migrables operan y cobran en la
 | Gateway OCPP 2.0.1 conviviendo con 1.6J | Un cargador 2.0.1 real completa comisionamiento y sesión; suite Core 2.0.1 en verde | [ ] |
 | Roaming OCPI 2.2.1 o 2.3.0 con un partner o hub | Roaming real con al menos un partner; CDRs conciliados | [ ] |
 | Plug&Charge | Sesión en laboratorio con certificados de contrato gestionados | [ ] |
-| Facturación electrónica del país y exportación contable | Factura electrónica válida por sesión o consolidada | [ ] |
+| Exportación contable y conciliación fiscal (la facturación electrónica DIAN ya se entrega en la fase 1) | Cierre contable mensual automatizado y auditable | [ ] |
 | Optimización energética: balanceo dinámico, tarifas de red, señales externas | Reducción medible del pico de potencia en una sede piloto | [ ] |
 | Certificación OCA del CSMS, si el negocio lo exige | Certificado 1.6 Core o 2.0.1 Core | [ ] |
 
@@ -152,6 +173,8 @@ gantt
 | Pasarela sin pre-autorización con captura parcial | Requisito eliminatorio en la elección (D2) |
 | Costos de Google Cloud por encima de lo estimado | Presupuestos y alertas desde la fase 0; recalcular con la calculadora oficial; revisar Cloud SQL y logs, que dominan el costo |
 | Dependencia de terceros en fase 3 (partners OCPI, hardware 2.0.1, proveedor de facturación electrónica) | Planificar con holgura; iniciar conversaciones en fase 2 |
+| Obligaciones regulatorias colombianas con plazo (OCPP obligatorio, precios visibles y desagregados, acceso sin membresía, reporte de información según la Resolución 40559 de 2025) | Leer los textos completos en la fase 0; matriz de cumplimiento revisada antes de la salida a producción; OCPI adelantado a la fase 2 si el reporte lo exige |
+| Tratamiento tributario y documento electrónico mal definidos (IVA, retenciones, factura vs documento equivalente) | Sesión con el contador en las primeras dos semanas; el motor de tarifas parametriza impuestos y redondeo por tenant |
 
 ## 12. Métricas de éxito del MVP (primeros 90 días en producción)
 
