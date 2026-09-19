@@ -1,0 +1,28 @@
+{
+  "name": "@volt/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Migraciones SQL versionadas del modelo de datos y cliente PostgreSQL",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "migrate:up": "node-pg-migrate up --migrations-dir migrations --migrations-table pgmigrations",
+    "migrate:reset": "tsx scripts/reset.ts"
+  },
+  "dependencies": {
+    "node-pg-migrate": "catalog:",
+    "pg": "catalog:",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/pg": "^8.15.0",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

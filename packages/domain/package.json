@@ -1,0 +1,19 @@
+{
+  "name": "@volt/domain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Modelo de dominio del CSMS: estados de conector, sesión, comando y cargador; dinero y redondeo",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -10,6 +10,11 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0004](0004-operador-unico-y-propietarios-de-sede.md) | Operador único con propietarios de sede de solo lectura en el futuro |
 | [0005](0005-region-idiomas-marca-y-retencion.md) | Región us-east1, app Volt en español e inglés, retención de datos |
 | [0006](0006-equipo-y-metodo-de-desarrollo.md) | Desarrollo por iteraciones con Claude Code; responsabilidades del dueño del proyecto |
+| [0007](0007-gateway-ocpp-en-gke-y-resto-en-cloud-run.md) | Gateway OCPP en GKE Autopilot; API, worker y back-office en Cloud Run |
+| [0008](0008-monolito-modular-con-gateway-separado.md) | Monolito modular hexagonal con el gateway como proceso separado y eventos por outbox |
+| [0009](0009-stack-typescript.md) | Stack TypeScript: Node 22, pnpm, Biome, Vitest, ocpp-rpc, Fastify, postgres.js, esbuild |
+| [0010](0010-postgresql-y-migraciones-sql.md) | PostgreSQL en Cloud SQL con migraciones SQL versionadas |
+| [0011](0011-modelo-de-tarifas-ocpi.md) | Modelo de tarifas OCPI 2.2.1 con snapshot inmutable por sesión |
 
 ```markdown
 # NNNN. Título de la decisión

@@ -1,0 +1,52 @@
+{
+  "country_code": "XX",
+  "party_id": "VLT",
+  "id": "CENTRO-PUBLICO",
+  "version": 3,
+  "currency": "USD",
+  "type": "REGULAR",
+  "tariff_alt_text": [
+    {
+      "language": "es",
+      "text": "0,50 por sesión + energía por franja; ocupación tras 10 min de gracia 6,00/h (L-V 7-22h). Precios sin IVA (19 %). Tope 60,00 sin IVA."
+    }
+  ],
+  "max_price": { "excl_vat": "60.00", "incl_vat": "71.40" },
+  "elements": [
+    { "price_components": [{ "type": "FLAT", "price": "0.50", "vat": "19", "step_size": 1 }] },
+    {
+      "price_components": [{ "type": "ENERGY", "price": "0.20", "vat": "19", "step_size": 1 }],
+      "restrictions": { "start_time": "22:00", "end_time": "07:00" }
+    },
+    {
+      "price_components": [{ "type": "ENERGY", "price": "0.45", "vat": "19", "step_size": 1 }],
+      "restrictions": {
+        "start_time": "18:00",
+        "end_time": "22:00",
+        "day_of_week": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+      }
+    },
+    {
+      "price_components": [{ "type": "ENERGY", "price": "0.35", "vat": "19", "step_size": 1 }],
+      "restrictions": {
+        "start_time": "07:00",
+        "end_time": "18:00",
+        "day_of_week": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+      }
+    },
+    { "price_components": [{ "type": "ENERGY", "price": "0.30", "vat": "19", "step_size": 1 }] },
+    {
+      "price_components": [
+        { "type": "PARKING_TIME", "price": "6.00", "vat": "19", "step_size": 60 }
+      ],
+      "restrictions": {
+        "start_time": "07:00",
+        "end_time": "22:00",
+        "day_of_week": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
+      },
+      "x_volt": { "grace_period_s": 600, "idle_start": "TRANSACTION_END", "max_idle_s": 14400 }
+    }
+  ],
+  "start_date_time": "2026-10-01T05:00:00Z",
+  "last_updated": "2026-09-18T12:00:00Z"
+}

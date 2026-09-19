@@ -1,0 +1,22 @@
+{
+  "name": "@volt/tariff-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Motor de tarifas: modelo OCPI 2.2.1, snapshot por sesión y cálculo determinista de costos",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@volt/domain": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,6 +1,6 @@
 # Plan de trabajo: CSMS Volt Platform
 
-Estado al 19 de septiembre de 2026: **semana 0**. El repositorio contiene el diseño completo (`docs/`) y este plan. No hay código todavía. Este archivo es el plan vivo del proyecto: se actualiza al cerrar cada fase, al tomar cada decisión y cuando cambie el alcance.
+Estado al 19 de septiembre de 2026: **iteración 0 terminada, iteración 1 en curso**. El repositorio contiene el diseño completo (`docs/`), este plan, el monorepo con los paquetes de dominio, esquemas OCPP, eventos, base de datos y tarifas, y las apps `ocpp-gateway`, `api` y `worker` con pruebas. Las tareas del dueño del proyecto están en `docs/tareas-del-dueno.md`. Este archivo es el plan vivo del proyecto: se actualiza al cerrar cada fase, al tomar cada decisión y cuando cambie el alcance.
 
 Convenciones: `[ ]` pendiente, `[x]` hecho, `[~]` en curso. Las referencias "HW §3", "ARQ §4.4", etc. apuntan a las secciones de los capítulos en `docs/` (ver `docs/README.md`).
 
@@ -67,9 +67,9 @@ Del dueño del proyecto:
 
 De Claude Code (iteración 0, sección 5):
 
-8. [ ] Inicializar el monorepo según ARQ §6.1 con lint, tests, CI en GitHub Actions y estructura de paquetes.
-9. [ ] Escribir los ADR técnicos 0007 en adelante (gateway en GKE, monolito modular, stack TypeScript, PostgreSQL, modelo de tarifas OCPI) a partir del capítulo ARQ §8.1.
-10. [ ] Preparar el laboratorio de software: dos simuladores de cargador OCPP 1.6J en contenedores y las suites abiertas de pruebas (tzi-OCTT, open-ocpp-tck) para ejecutar en CI contra el gateway.
+8. [x] Inicializar el monorepo según ARQ §6.1 con lint, tests, CI en GitHub Actions y estructura de paquetes.
+9. [x] Escribir los ADR técnicos 0007 a 0011 (gateway en GKE, monolito modular, stack TypeScript, PostgreSQL, modelo de tarifas OCPI).
+10. [~] Preparar el laboratorio de software: `lab/docker-compose.lab.yml` con dos simuladores (a verificar en la primera ejecución con Docker); las suites tzi-OCTT y open-ocpp-tck se integran en CI al cerrar la iteración 1.
 
 ## 5. Plan de iteraciones de desarrollo (Claude Code)
 
@@ -77,8 +77,8 @@ Cada iteración termina en uno o más pull requests con CI en verde, despliegue 
 
 | # | Iteración | Entrega | Criterio de aceptación | Estado |
 |---|---|---|---|---|
-| 0 | Cimientos | Monorepo TypeScript (`apps/ocpp-gateway`, `apps/api`, `apps/worker`, `apps/backoffice`, `apps/mobile`, `packages/domain`, `packages/tariff-engine`, `packages/ocpp-schemas`, `packages/events`, `packages/db`, `packages/api-client`, `infra/terraform`), lint, tests, CI, Docker, entorno local con PostgreSQL y Redis, esquemas JSON oficiales de OCPP 1.6 | `pnpm test` y `pnpm lint` en verde en CI; contenedores construyen | [ ] |
-| 1 | Gateway OCPP mínimo | WebSocket `wss://…/ocpp/{chargeBoxId}` con subprotocolo `ocpp1.6`, Basic Auth con hash, allowlist, validación de esquema, `BootNotification` (`Pending`/`Accepted`), `Heartbeat`, `StatusNotification`, registro cargador → pod en Redis, ping/pong, logs correlacionados | Dos simuladores distintos se registran y reportan estado; conexión rechazada sin credenciales o con `chargeBoxId` desconocido; suite tzi-OCTT de registro en verde | [ ] |
+| 0 | Cimientos | Monorepo TypeScript (`apps/ocpp-gateway`, `apps/api`, `apps/worker`, `apps/backoffice`, `apps/mobile`, `packages/domain`, `packages/tariff-engine`, `packages/ocpp-schemas`, `packages/events`, `packages/db`, `packages/api-client`, `infra/terraform`), lint, tests, CI, Docker, entorno local con PostgreSQL y Redis, esquemas JSON oficiales de OCPP 1.6 | `pnpm test` y `pnpm lint` en verde en CI; contenedores construyen | [x] 19-09-2026: 61 pruebas en verde en local (dominio, esquemas, eventos, migración inicial contra PostgreSQL 16, tarifas, API, worker, gateway); bundles de producción construidos y arrancados; CI y Dockerfiles pendientes de su primera ejecución en GitHub Actions |
+| 1 | Gateway OCPP mínimo | WebSocket `wss://…/ocpp/{chargeBoxId}` con subprotocolo `ocpp1.6`, Basic Auth con hash, allowlist, validación de esquema, `BootNotification` (`Pending`/`Accepted`), `Heartbeat`, `StatusNotification`, registro cargador → pod en Redis, ping/pong, logs correlacionados | Dos simuladores distintos se registran y reportan estado; conexión rechazada sin credenciales o con `chargeBoxId` desconocido; suite tzi-OCTT de registro en verde | [~] Hecho: handshake con allowlist y Basic Auth (usuario = identidad), rechazo sin subprotocolo, validación contra esquemas oficiales, `BootNotification` según ciclo de vida, `Heartbeat`, `StatusNotification` con detección de transiciones no previstas, `DataTransfer`, `Authorize` (Invalid), cierre de conexión duplicada, eventos de dominio, salud y métricas, cierre escalonado 1012; probado con cliente OCPP-J embebido. Pendiente: registro cargador → pod en Redis, prueba con los dos simuladores del laboratorio y suite tzi-OCTT en CI |
 | 2 | Inventario y comisionamiento | Modelo de datos (DDL de `docs/sql`), API de sedes, estaciones, EVSE y conectores, ciclo de vida del cargador, plantillas de configuración por modelo, `GetConfiguration`/`ChangeConfiguration`, detección de deriva, `TriggerMessage`, `Reset`, `ChangeAvailability`, `UnlockConnector` | Un simulador pasa de inventariado a operativo desde la API; deriva detectada al cambiar una key | [ ] |
 | 3 | Sesiones | `RemoteStartTransaction`/`RemoteStopTransaction` por gRPC interno, `StartTransaction`, `StopTransaction`, `MeterValues`, máquinas de estado de conector y sesión, propiedad de la transacción, idempotencia, transacciones offline, outbox y Pub/Sub, SSE de progreso | Casos CU-02, CU-04 y CU-05 automatizados; corte de red simulado de 10 minutos sin duplicados; caída de pod con reconexión | [ ] |
 | 4 | Motor de tarifas | Modelo OCPI, tarifas por franja horaria con precio por defecto, cotización previa, snapshot inmutable, cálculo incremental y final, idle fee (calculado, aún sin cobro), límite de exposición con `RemoteStopTransaction`, pruebas de propiedad y el ejemplo de TAR §6 como fixture | Ejemplo calculado reproducido al centavo; propiedades en verde; tope de exposición detiene la sesión en simulador | [ ] |

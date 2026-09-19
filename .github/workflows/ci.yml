@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgres://volt:volt@localhost:5432/volt
+  REDIS_URL: redis://localhost:6379
+
+jobs:
+  check:
+    name: Lint, tipos y pruebas
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: volt
+          POSTGRES_PASSWORD: volt
+          POSTGRES_DB: volt
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U volt -d volt"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  docker:
+    name: Construir imágenes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: check
+    strategy:
+      matrix:
+        app: [ocpp-gateway, api, worker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: false
+          tags: volt/${{ matrix.app }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

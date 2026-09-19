@@ -1,0 +1,39 @@
+{
+  "name": "volt-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CSMS Volt Platform: gateway OCPP 1.6J, dominio, API, worker, back-office y app del conductor",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "type": "module",
+  "scripts": {
+    "lint": "biome ci .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "test:watch": "vitest",
+    "build": "pnpm -r --if-present build",
+    "dev:gateway": "pnpm --filter @volt/ocpp-gateway dev",
+    "dev:api": "pnpm --filter @volt/api dev",
+    "dev:worker": "pnpm --filter @volt/worker dev",
+    "db:migrate": "pnpm --filter @volt/db migrate:up",
+    "db:reset": "pnpm --filter @volt/db migrate:reset",
+    "services:up": "docker compose up -d postgres redis",
+    "services:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@types/node": "catalog:",
+    "esbuild": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

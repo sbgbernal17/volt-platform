@@ -1,0 +1,32 @@
+# Simuladores de cargador OCPP 1.6J para probar el gateway local.
+# Uso: docker compose -f lab/docker-compose.lab.yml up --build
+# Las imágenes se construyen desde los repositorios públicos (a confirmar rutas y variables en la primera ejecución).
+services:
+  sim-sap:
+    build:
+      context: https://github.com/SAP/e-mobility-charging-stations-simulator.git
+    environment:
+      # El simulador lee su configuración de src/assets/config.json; se monta una copia local
+      # con supervisionUrls apuntando al gateway de desarrollo.
+      NODE_ENV: production
+    volumes:
+      - ./sim-sap/config.json:/usr/app/dist/assets/config.json:ro
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    ports:
+      - '8080:8080'
+
+  sim-microocpp:
+    build:
+      context: https://github.com/matth-x/MicroOcppSimulator.git
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    ports:
+      - '8000:8000'
+    # La URL del backend, el chargeBoxId y la AuthorizationKey se configuran desde la interfaz
+    # web (http://localhost:8000) en la primera ejecución y quedan en el volumen.
+    volumes:
+      - microocpp-data:/app/mo_store
+
+volumes:
+  microocpp-data:

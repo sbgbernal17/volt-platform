@@ -1,0 +1,9 @@
+{
+  "supervisionUrls": ["ws://host.docker.internal:9220/ocpp"],
+  "supervisionUrlOcppConfiguration": false,
+  "supervisionUrlOcppKey": "CentralSystemURL",
+  "log": { "enabled": true, "level": "info" },
+  "worker": { "processType": "workerSet", "startDelay": 500, "elementsPerWorker": 1 },
+  "uiServer": { "enabled": true, "type": "ws", "options": { "host": "0.0.0.0", "port": 8080 } },
+  "stationTemplateUrls": [{ "file": "evlink.station-template.json", "numberOfStations": 1 }]
+}

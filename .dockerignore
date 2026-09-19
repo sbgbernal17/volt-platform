@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/coverage
+.git
+.env
+.env.*
+!.env.example
+docs
+lab
+infra
+*.md
+!packages/ocpp-schemas/schemas/NOTICE.md

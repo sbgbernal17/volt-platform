@@ -1,0 +1,19 @@
+{
+  "name": "@volt/events",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Catálogo y sobre (envelope) de los eventos de dominio publicados en Pub/Sub",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
