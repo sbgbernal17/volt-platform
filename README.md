@@ -4,7 +4,7 @@ CSMS propio (Charging Station Management System) para operar una red de estacion
 
 ## Estado
 
-Fase de diseño terminada (septiembre de 2026). El repositorio contiene el diseño completo y el plan de trabajo; el código se inicia en la fase 0 del plan.
+Fase de diseño terminada y decisiones tomadas (septiembre de 2026): Colombia, Wompi con tokenización y cobro al final de la carga, parque inicial de 3 estaciones DC de 180 kW con dos mangueras (30 en el primer año), OCPP 1.6J con perfil de seguridad 2, región us-east1, app "Volt" en español e inglés, desarrollo por iteraciones con Claude Code. Las decisiones están en `docs/adr/`. El código se inicia en la iteración 0 del plan de trabajo.
 
 ## Documentación
 

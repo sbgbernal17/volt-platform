@@ -170,14 +170,14 @@ El capítulo 1 (sección 3) contiene la lista completa con el porqué de cada pr
 | # | Decisión | Recomendación |
 |---|---|---|
 | 1 | País o países de operación (moneda, impuestos, facturación electrónica, regulación de medición y de transparencia de precios, ley de datos personales, región de Google Cloud) | **Decidido: Colombia** (ADR 0001). Consecuencias: COP con redondeo a pesos, zona horaria America/Bogota, IVA 19 % con tratamiento del servicio de carga a confirmar con el contador, facturación electrónica DIAN adelantada al MVP, cumplimiento de las Resoluciones MME 40123 de 2024 (OCPP obligatorio, precios visibles y desagregados, acceso y pago sin membresía) y 40559 de 2025 (reporte de información, conectores Tipo 2 y CCS2, OCPI 2.2.1), Ley 1581 de 2012 de datos personales, región de Google Cloud fuera del país (recomendada us-east1). Detalle en la sección 3.1 del plan de trabajo |
-| 2 | Pasarela de pago | Una que soporte pre-autorización con captura parcial y tokenización (requisito eliminatorio); Stripe si opera en tu país, si no la mejor opción local; abstraída detrás de un puerto `PaymentGateway` |
-| 3 | Modelo de negocio | MVP: pospago con tarjeta y pago ad hoc por QR sin registro; fase 2: wallet y membresías; flotas cuando haya cliente |
-| 4 | Versión OCPP objetivo | 1.6J en producción, dominio modelado a 2.0.1, gateway 2.0.1 en fase 3 |
-| 5 | Perfil de seguridad objetivo | 2 desde el inicio, 3 en fase 2 |
-| 6 | Multi-operador | En datos desde el día uno; en interfaz en fase 2 |
-| 7 | Equipo | 4 personas núcleo (backend senior TypeScript, backend/full-stack, móvil, DevOps/SRE) más media persona de QA y laboratorio |
-| 8 | Hardware existente vs nuevo | Piloto en la semana 1; migrar lo migrable, negociar o sustituir el resto; compras nuevas con certificación OCA |
-| 9 | Idiomas, marca, política de retención de datos | Español primero con i18n desde el inicio; mediciones 90 días en caliente y 2 años en BigQuery; auditoría 13 meses o más |
+| 2 | Pasarela de pago | **Decidido: Wompi con tokenización** (ADR 0002). Cobro al final de la carga contra la tarjeta registrada, validación de tarjeta válida antes de iniciar, límite de exposición por sesión en lugar de preautorización, bloqueo por deuda con enlace de pago |
+| 3 | Modelo de negocio | **Decidido: pospago con tarjeta tokenizada y cuenta obligatoria** (ADR 0002); pendiente confirmar con el asesor legal que el registro obligatorio cumple la Resolución 40123; wallet y membresías como opción de fase 2 |
+| 4 | Versión OCPP objetivo | **Decidido: 1.6J**, que es lo que traen los equipos, con dominio modelado a 2.0.1 y gateway 2.0.1 en fase 3 (ADR 0003); pendiente la lectura legal de "última versión estable" en la Resolución 40123 |
+| 5 | Perfil de seguridad objetivo | **Decidido: 2 desde el inicio, 3 en fase 2** (ADR 0003) |
+| 6 | Multi-operador | **Decidido: operador único; los clientes que instalen estaciones serán propietarios de sede con acceso de solo lectura en fase 2** (ADR 0004) |
+| 7 | Equipo | **Decidido: Claude Code desarrolla por iteraciones; el dueño del proyecto decide, acepta y opera** (ADR 0006); el plan de trabajo (sección 5) lista las iteraciones |
+| 8 | Hardware existente vs nuevo | **Decidido: equipos nuevos, 3 estaciones DC de 180 kW con dos mangueras al inicio, 30 en el primer año, 40 kW próximamente; cargador de laboratorio disponible; sin operación previa que migrar** (ADR 0003) |
+| 9 | Idiomas, marca, política de retención de datos | **Decidido: app "Volt", español principal e inglés disponible; se conservan todos los datos operativos y los personales según la política de la Ley 1581; región us-east1** (ADR 0005) |
 
 ### 10. Roadmap, equipo y costos
 
