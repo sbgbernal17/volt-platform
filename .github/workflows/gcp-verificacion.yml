@@ -1,0 +1,130 @@
+# Verificación manual de Google Cloud desde GitHub Actions con Workload Identity Federation
+# (sin claves). Hoy comprueba Identity Platform por ambiente; nunca imprime llaves ni secretos:
+# de la configuración solo se muestran proveedores, MFA, dominios autorizados y el número de usuarios.
+name: Verificación de Google Cloud
+
+on:
+  workflow_dispatch:
+    inputs:
+      environments:
+        description: 'Ambientes a verificar, separados por coma (dev, staging, prod)'
+        default: 'dev,prod'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  preparar:
+    name: Ambientes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - id: matrix
+        env:
+          ENVIRONMENTS: ${{ inputs.environments }}
+        run: |
+          items=""
+          for env in $(echo "$ENVIRONMENTS" | tr ',' ' '); do
+            case "$env" in
+              dev|staging|prod) ;;
+              *) echo "::error::Ambiente desconocido: $env"; exit 1 ;;
+            esac
+            suffix=$(echo "$env" | tr '[:lower:]' '[:upper:]')
+            items="$items{\"env\":\"$env\",\"suffix\":\"$suffix\"},"
+          done
+          echo "matrix=[${items%,}]" >> "$GITHUB_OUTPUT"
+
+  identity-platform:
+    name: Identity Platform (${{ matrix.env }})
+    needs: preparar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.preparar.outputs.matrix) }}
+    env:
+      PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', matrix.suffix)] }}
+    steps:
+      - name: Variables del ambiente
+        env:
+          WIF_PROVIDER: ${{ vars[format('GCP_WIF_PROVIDER_{0}', matrix.suffix)] }}
+          DEPLOYER_SA: ${{ vars[format('GCP_DEPLOYER_SA_{0}', matrix.suffix)] }}
+        run: |
+          missing=0
+          for name in PROJECT_ID WIF_PROVIDER DEPLOYER_SA; do
+            if [ -z "${!name}" ]; then echo "::error::Falta la variable de GitHub para $name (${{ matrix.suffix }})"; missing=1; fi
+          done
+          [ "$missing" -eq 0 ]
+          echo "Proyecto: $PROJECT_ID"
+      - id: auth
+        name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', matrix.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', matrix.suffix)] }}
+          token_format: access_token
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: API identitytoolkit habilitada
+        run: |
+          enabled=$(gcloud services list --enabled --project "$PROJECT_ID" \
+            --filter="config.name=identitytoolkit.googleapis.com" --format="value(config.name)")
+          if [ -z "$enabled" ]; then
+            echo "::error::identitytoolkit.googleapis.com no está habilitada en $PROJECT_ID"
+            exit 1
+          fi
+          echo "identitytoolkit.googleapis.com habilitada"
+      - name: Configuración de Identity Platform
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          status=$(curl -sS -o config.json -w "%{http_code}" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "https://identitytoolkit.googleapis.com/admin/v2/projects/$PROJECT_ID/config")
+          if [ "$status" != "200" ]; then
+            echo "::error::Identity Platform no responde la configuración de $PROJECT_ID (HTTP $status): ¿está habilitado en la consola?"
+            jq -r '.error.message // empty' config.json || true
+            exit 1
+          fi
+          # Solo campos sin secretos (nunca hashConfig ni llaves).
+          jq '{
+            correoYContrasena: (.signIn.email.enabled // false),
+            contrasenaObligatoria: (.signIn.email.passwordRequired // false),
+            telefono: (.signIn.phoneNumber.enabled // false),
+            anonimo: (.signIn.anonymous.enabled // false),
+            mfa: { estado: (.mfa.state // "DISABLED"), proveedores: (.mfa.enabledProviders // []),
+                   totp: ([.mfa.providerConfigs[]? | select(.totpProviderConfig != null) | .state] | first // "NO_CONFIGURADO") },
+            dominiosAutorizados: (.authorizedDomains // []),
+            multiTenant: (.multiTenant.allowTenants // false)
+          }' config.json | tee resumen.json
+          status=$(curl -sS -o idps.json -w "%{http_code}" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "https://identitytoolkit.googleapis.com/admin/v2/projects/$PROJECT_ID/defaultSupportedIdpConfigs")
+          if [ "$status" = "200" ]; then
+            echo "Proveedores externos (solo nombre y estado):"
+            jq -r '(.defaultSupportedIdpConfigs // [])[] | "  \(.name | split("/") | last): \(if .enabled then "habilitado" else "deshabilitado" end)"' idps.json
+          else
+            echo "No se pudieron listar los proveedores externos (HTTP $status)"
+          fi
+          status=$(curl -sS -o users.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+            -d '{"returnUserInfo": false}' \
+            "https://identitytoolkit.googleapis.com/v1/projects/$PROJECT_ID/accounts:query")
+          users=$(jq -r '.recordsCount // "?"' users.json 2>/dev/null || echo "?")
+          echo "Usuarios registrados: $users (HTTP $status)"
+          {
+            echo "## Identity Platform en \`$PROJECT_ID\` (${{ matrix.env }})"
+            echo
+            echo "| Comprobación | Resultado |"
+            echo "|---|---|"
+            echo "| API identitytoolkit | habilitada |"
+            echo "| Correo y contraseña | $(jq -r '.correoYContrasena' resumen.json) |"
+            echo "| MFA | $(jq -r '.mfa.estado' resumen.json), proveedores $(jq -c '.mfa.proveedores' resumen.json), TOTP $(jq -r '.mfa.totp' resumen.json) |"
+            echo "| Dominios autorizados | $(jq -r '.dominiosAutorizados | join(", ")' resumen.json) |"
+            echo "| Usuarios registrados | $users |"
+          } >> "$GITHUB_STEP_SUMMARY"
