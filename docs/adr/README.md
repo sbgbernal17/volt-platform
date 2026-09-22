@@ -16,6 +16,8 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0010](0010-postgresql-y-migraciones-sql.md) | PostgreSQL en Cloud SQL con migraciones SQL versionadas |
 | [0011](0011-modelo-de-tarifas-ocpi.md) | Modelo de tarifas OCPI 2.2.1 con snapshot inmutable por sesión |
 | [0012](0012-tarifa-inicial-e-idle-fee.md) | Tarifa inicial de Volt: energía por franjas, gracia de 15 minutos configurable y 1.500 COP por minuto de ocupación |
+| [0013](0013-api-interna-del-gateway-y-directorio-en-redis.md) | API interna HTTP del gateway con token, directorio de conexiones en Redis y `uniqueId` generado por el gateway |
+| [0014](0014-hash-de-authorizationkey-con-scrypt.md) | Hash de la `AuthorizationKey` con scrypt de `node:crypto` |
 
 ```markdown
 # NNNN. Título de la decisión

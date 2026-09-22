@@ -12,9 +12,13 @@
     "build": "node ../../scripts/bundle.mjs src/main.ts dist/main.mjs"
   },
   "dependencies": {
+    "@volt/csms": "workspace:*",
     "@volt/db": "workspace:*",
     "@volt/events": "workspace:*",
+    "@volt/gateway-client": "workspace:*",
+    "ioredis": "catalog:",
     "pino": "catalog:",
+    "postgres": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

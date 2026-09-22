@@ -36,6 +36,16 @@ Sigue `docs/google-cloud-setup.md` (facturación y presupuesto, tres proyectos, 
 - [ ] Bloque de Cloud Shell ejecutado en los tres proyectos.
 - [ ] Variables `GCP_PROJECT_ID_*`, `GCP_WIF_PROVIDER_*`, `GCP_DEPLOYER_SA_*` cargadas en GitHub.
 
+## Qué probar de la iteración 2 (inventario y comisionamiento)
+
+No hace falta hardware. En tu máquina, con Docker, Node 22 y pnpm:
+
+1. `pnpm install && cp .env.example .env && pnpm services:up && pnpm db:migrate`.
+2. `pnpm lint && pnpm typecheck && DATABASE_URL=postgres://volt:volt@localhost:5432/volt REDIS_URL=redis://localhost:6379 pnpm test`: deben pasar todas las suites, incluida `apps/api/src/commissioning.e2e.test.ts` (un simulador pasa de inventariado a operativo y se detecta deriva).
+3. Sigue el paso a paso de `lab/README.md` ("Simulador embebido"): crea sede, plantilla y cargador, emite la credencial, arranca el simulador con esa clave, comisiona desde la API y aprueba el cargador. Comprueba que con una clave equivocada el simulador no entra y que al cambiar `HeartbeatInterval` en el simulador la sincronización abre una alarma `CONFIG_DRIFT`.
+4. Cuando tengas el cargador de laboratorio real: en vez del simulador, configura en él la URL `ws://<ip-de-tu-pc>:9220/ocpp/<chargeBoxId>` (solo en red local; en Internet será `wss://`), usuario = `chargeBoxId`, contraseña = la clave emitida, y repite los pasos 3 a 6 del laboratorio. Anota qué keys responden `NotSupported` o `Rejected`: eso alimenta la matriz de conformidad por modelo.
+5. Si algo falla, copia el error del terminal (sin la clave) en la sesión.
+
 ## Para la próxima sesión (iteraciones 1 a 3)
 
 - [ ] **Proveedor de cargadores.** Enviar por escrito la lista de requisitos de `docs/00-resumen-ejecutivo.md` §8 para los modelos de 180 kW y 40 kW y entregarme lo que responda: manuales de instalador, procedimiento para cambiar URL, identidad y credenciales, perfiles de seguridad soportados, salida completa de `GetConfiguration`, measurands DC (`SoC`, `Power.Offered`), reparto de potencia entre las dos mangueras, mensajes `DataTransfer` propietarios, proceso de firmware.

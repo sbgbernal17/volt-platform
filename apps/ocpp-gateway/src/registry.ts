@@ -4,14 +4,17 @@ import { z } from 'zod';
 
 /** Datos mínimos que el gateway necesita de un cargador dado de alta. */
 export interface RegisteredChargePoint {
+  /** Identificador interno (uuid en base de datos; la propia identidad en el registro estático). */
+  readonly id: string;
   readonly identity: string;
   readonly tenantId: string;
+  readonly siteId?: string;
   readonly lifecycle: LifecycleState;
 }
 
 /**
- * Puerto de consulta del registro de cargadores. La implementación de producción lee de la
- * base de datos (iteración 2); la estática sirve para laboratorio y pruebas.
+ * Puerto de consulta del registro de cargadores. `DbRegistry` lee de la base de datos; el
+ * registro estático sirve para laboratorio y pruebas.
  */
 export interface ChargePointRegistry {
   /**
@@ -21,6 +24,7 @@ export interface ChargePointRegistry {
   authenticate(
     identity: string,
     password: Buffer | undefined,
+    context?: { remoteAddress?: string },
   ): Promise<RegisteredChargePoint | undefined>;
 }
 
@@ -49,6 +53,7 @@ export class StaticRegistry implements ChargePointRegistry {
       this.entries.set(entry.identity, {
         passwordDigest: digest(entry.password),
         chargePoint: {
+          id: entry.identity,
           identity: entry.identity,
           tenantId: entry.tenantId,
           lifecycle: entry.lifecycle,

@@ -1,0 +1,19 @@
+{
+  "name": "@volt/security",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Primitivas de seguridad: AuthorizationKey de cargadores, hash de secretos con scrypt, comparación en tiempo constante",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
