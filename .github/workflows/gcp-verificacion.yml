@@ -8,8 +8,12 @@ on:
     inputs:
       environments:
         description: 'Ambientes a verificar, separados por coma (dev, staging, prod)'
-        default: 'dev,prod'
+        default: 'dev,staging,prod'
         required: true
+  # También corre al cambiar este archivo (así se verifica sin disparo manual).
+  push:
+    branches: [main, 'claude/**']
+    paths: ['.github/workflows/gcp-verificacion.yml']
 
 permissions:
   contents: read
@@ -25,7 +29,7 @@ jobs:
     steps:
       - id: matrix
         env:
-          ENVIRONMENTS: ${{ inputs.environments }}
+          ENVIRONMENTS: ${{ inputs.environments || 'dev,staging,prod' }}
         run: |
           items=""
           for env in $(echo "$ENVIRONMENTS" | tr ',' ' '); do
