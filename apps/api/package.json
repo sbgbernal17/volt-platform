@@ -17,6 +17,7 @@
     "@volt/domain": "workspace:*",
     "@volt/gateway-client": "workspace:*",
     "@volt/security": "workspace:*",
+    "@volt/tariff-engine": "workspace:*",
     "fastify": "catalog:",
     "ioredis": "catalog:",
     "pino": "catalog:",

@@ -20,6 +20,7 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0014](0014-hash-de-authorizationkey-con-scrypt.md) | Hash de la `AuthorizationKey` con scrypt de `node:crypto` |
 | [0015](0015-region-us-central1.md) | Región principal `us-central1` tras medir la latencia desde Bogotá |
 | [0016](0016-transacciones-en-el-gateway-sse-sobre-outbox.md) | Transacciones resueltas por el gateway con el núcleo compartido, SSE sobre el outbox y Pub/Sub diferido a la iteración 8 |
+| [0017](0017-precios-al-consumidor-snapshot-y-tope-de-exposicion.md) | Precios al consumidor con IVA incluido, semántica OCPI del motor (ocupación por hora), snapshot fail-closed, ocupación y tope de exposición |
 
 ```markdown
 # NNNN. Título de la decisión

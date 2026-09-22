@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listAlarms } from '../alarms.ts';
 import { CommandService, type GatewaySender } from '../commands.ts';
 import { createChargePoint, createSite, getChargePoint } from '../inventory.ts';
+import { ensureBaseTariff } from '../pricing/bootstrap.ts';
 import { VOLT_TENANT_ID } from '../types.ts';
 import { createDriver } from './drivers.ts';
 import { getEvseByCode, listLocations } from './locations.ts';
@@ -94,6 +95,7 @@ describe.skipIf(!baseUrl)('sesiones y transacciones', () => {
         displayName: 'Ana',
       })
     ).id;
+    await ensureBaseTariff(sql, { tenantId: VOLT_TENANT_ID, actor: 'staff:test' });
     sessions = new SessionService(sql, new CommandService(sql, gateway), {
       defaultConnectionTimeoutS: 60,
       startTimeoutMarginS: 10,

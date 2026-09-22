@@ -7,6 +7,7 @@ import {
   CommandService,
   createChargePoint,
   createSite,
+  ensureBaseTariff,
   getChargePoint,
   issueCredential,
   issueIdToken,
@@ -102,6 +103,7 @@ describe.skipIf(!baseUrl)('transacciones en el gateway con PostgreSQL', () => {
     chargePointId = cp.id;
     key = (await issueCredential(sql, { chargePointId, issuedBy: 'staff:test' })).authorizationKey;
     await sql`UPDATE assets.charge_point SET lifecycle_status = 'OPERATIONAL', visible_in_app = true WHERE id = ${chargePointId}`;
+    await ensureBaseTariff(sql, { tenantId: VOLT_TENANT_ID, actor: 'staff:test' });
     const client = new GatewayClient({
       directory: new StaticConnectionDirectory(internalUrl),
       token: TOKEN,

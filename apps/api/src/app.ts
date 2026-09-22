@@ -17,7 +17,7 @@ export interface AppDependencies {
   config: ApiConfig;
 }
 
-export const API_VERSION = '0.3.0';
+export const API_VERSION = '0.4.0';
 
 /**
  * Construye la aplicación Fastify: salud, preparación, versión y, con base de datos y token de

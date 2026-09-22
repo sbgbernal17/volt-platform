@@ -1,4 +1,10 @@
-import { CommandService, CommissioningService, TransactionService } from '@volt/csms';
+import {
+  CommandService,
+  CommissioningService,
+  PricingService,
+  SessionService,
+  TransactionService,
+} from '@volt/csms';
 import { createSql } from '@volt/db';
 import {
   GatewayClient,
@@ -11,6 +17,7 @@ import { loadConfig } from './config.ts';
 import { dailyAt, runConfigDriftCheck } from './jobs/config-drift.ts';
 import { LogEventPublisher, RedisEventPublisher, relayOutbox } from './jobs/outbox-relay.ts';
 import { ensureMonthlyPartitions } from './jobs/partitions.ts';
+import { activateTariffs, enforceSessionLimits, settleSessions } from './jobs/pricing.ts';
 import { closeOrphanTransactions, expireSessionStarts } from './jobs/sessions.ts';
 import { type Job, Scheduler } from './scheduler.ts';
 
@@ -37,7 +44,8 @@ if (sql) {
   const publisher = redis
     ? new RedisEventPublisher(redis, config.WORKER_EVENTS_CHANNEL)
     : new LogEventPublisher(logger);
-  const transactions = new TransactionService(sql, { logger });
+  const pricing = new PricingService(sql, { logger });
+  const transactions = new TransactionService(sql, { logger, pricing });
   jobs.push(
     {
       name: 'outbox-relay',
@@ -61,6 +69,20 @@ if (sql) {
       },
     },
     dailyAt('partitions', 1, () => ensureMonthlyPartitions(sql, { logger })),
+    {
+      name: 'pricing-settlement',
+      intervalMs: config.WORKER_PRICING_POLL_MS,
+      run: async () => {
+        await settleSessions(pricing, logger);
+      },
+    },
+    {
+      name: 'tariff-activation',
+      intervalMs: config.WORKER_TARIFF_POLL_MS,
+      run: async () => {
+        await activateTariffs(sql, logger);
+      },
+    },
   );
   await ensureMonthlyPartitions(sql, { logger });
 }
@@ -70,28 +92,33 @@ const directory = redis
   : config.OCPP_GATEWAY_INTERNAL_URL
     ? new StaticConnectionDirectory(config.OCPP_GATEWAY_INTERNAL_URL)
     : undefined;
-if (sql && directory && config.OCPP_GATEWAY_INTERNAL_TOKEN && config.WORKER_DRIFT_ENABLED) {
+if (sql && directory && config.OCPP_GATEWAY_INTERNAL_TOKEN) {
   const gateway = new GatewayClient({ directory, token: config.OCPP_GATEWAY_INTERNAL_TOKEN });
-  const commissioning = new CommissioningService(
-    sql,
-    new CommandService(sql, gateway, { logger }),
-    {
-      logger,
+  const commands = new CommandService(sql, gateway, { logger });
+  const sessions = new SessionService(sql, commands, { logger });
+  jobs.push({
+    name: 'session-limits',
+    intervalMs: config.WORKER_LIMITS_POLL_MS,
+    run: async () => {
+      await enforceSessionLimits(sql, sessions, logger);
     },
-  );
-  jobs.push(
-    dailyAt('config-drift', config.WORKER_DRIFT_CHECK_HOUR_UTC, () =>
-      runConfigDriftCheck({
-        sql,
-        commissioning,
-        logger,
-        ratePerSecond: config.WORKER_DRIFT_RATE_PER_S,
-      }),
-    ),
-  );
+  });
+  if (config.WORKER_DRIFT_ENABLED) {
+    const commissioning = new CommissioningService(sql, commands, { logger });
+    jobs.push(
+      dailyAt('config-drift', config.WORKER_DRIFT_CHECK_HOUR_UTC, () =>
+        runConfigDriftCheck({
+          sql,
+          commissioning,
+          logger,
+          ratePerSecond: config.WORKER_DRIFT_RATE_PER_S,
+        }),
+      ),
+    );
+  }
 } else {
   logger.warn(
-    'revisión de deriva deshabilitada: faltan DATABASE_URL, OCPP_GATEWAY_INTERNAL_TOKEN o el directorio del gateway',
+    'límites de sesión y revisión de deriva deshabilitados: faltan DATABASE_URL, OCPP_GATEWAY_INTERNAL_TOKEN o el directorio del gateway',
   );
 }
 

@@ -58,6 +58,37 @@ curl -s $API/sessions/$SESSION -H "$H" | jq '{state, energy_wh, stop_reason, eve
 
 Corte de red: en el simulador, `goOffline()`/`goOnline()` encolan y reenvían `StartTransaction`, `MeterValues` y `StopTransaction` con sus sellos originales; el CSMS acepta la transacción, marca `offline_start`/`offline_stop` y no duplica nada aunque el cargador reintente (prueba `apps/ocpp-gateway/src/transactions.db.test.ts`).
 
+## Tarifas y costo de una sesión (iteración 4)
+
+Sin tarifa vigente ninguna sesión de app arranca (fail-closed, `NO_TARIFF`). Un solo comando publica la tarifa base de Volt (ADR 0012 y 0017: precios de ejemplo por franja, 15 minutos de gracia y 1.500 COP por minuto de ocupación, IVA incluido) y la asigna como respaldo `PLATFORM/PUBLIC`:
+
+```bash
+curl -s -X POST $API/tariffs/bootstrap -H "$H" | jq '{tariff: .tariff.code, version: .version.version, created}'
+curl -s http://localhost:8080/v1/evses/SIM-001-1 | jq .tariff          # lo que verá la app: precio por kWh ahora, franjas, ocupación, gracia, tope
+curl -s "$API/tariff-assignments/resolve?evseCode=SIM-001-1&segment=PUBLIC" -H "$H" | jq '{segmentUsed, candidates}'
+```
+
+Durante la carga el costo en curso llega en cada `session.metered` del SSE y en `GET /v1/sessions/{id}` (`cost`). Al terminar, si el vehículo sigue conectado, la ocupación corre hasta que el conector vuelve a `Available`; el worker liquida la sesión (`SETTLED`) y deja las líneas:
+
+```bash
+curl -s http://localhost:8080/v1/sessions/$SESSION/cost -H "$D" | jq '{summary, final: .final.lines}'
+curl -s $API/sessions/$SESSION/cost -H "$H" | jq '.final'
+curl -s -X POST $API/sessions/$SESSION/settle -H "$H" -H 'content-type: application/json' -d '{"force":true}' | jq .status   # liquidar sin esperar al worker
+```
+
+Cambiar precios y parámetros:
+
+```bash
+TARIFF=$(curl -s $API/tariffs -H "$H" | jq -r '.items[0].id')
+curl -s $API/tariffs/$TARIFF -H "$H" | jq '.versions[0].definition' > /tmp/tarifa.json   # edita los precios (texto decimal, IVA incluido)
+curl -s -X POST $API/tariffs/$TARIFF/versions -H "$H" -H 'content-type: application/json' -d "{\"definition\": $(cat /tmp/tarifa.json), \"notes\": \"precios reales\"}" | jq '{version, warnings}'
+curl -s -X POST $API/tariffs/$TARIFF/versions/2/publish -H "$H" -H 'content-type: application/json' -d '{}' | jq .status
+curl -s -X PUT $API/parameters/pricing.exposure_limit_minor -H "$H" -H 'content-type: application/json' -d '{"scopeType":"PLATFORM","value":150000,"reason":"tope nuevo"}' | jq .value
+curl -s -X POST $API/pricing/simulate -H "$H" -H 'content-type: application/json' -d '{"tariffVersionId":"<id de la versión>","scenario":{"startAt":"2026-10-06T10:00:00-05:00","durationMin":60,"energyWh":10000,"idleMin":20}}' | jq '{total, lines: [.lines[] | {dimension, quantity, unit, total}]}'
+```
+
+La prueba `apps/api/src/pricing.e2e.test.ts` recorre el flujo completo con el simulador (`suspendEv`, `unplug`, `stayPluggedAfterStop`): carga que termina, gracia, ocupación por segundo, tope de exposición que detiene la sesión y liquidación.
+
 ## Simuladores de cargador externos
 
 `docker-compose.lab.yml` construye desde el código fuente dos simuladores que interpretan la especificación de forma distinta, lo que hace aflorar errores del servidor (HW §4.2):

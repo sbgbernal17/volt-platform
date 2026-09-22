@@ -25,6 +25,12 @@ const schema = z.object({
   /** Transacciones sin StopTransaction con el cargador desconectado (FUN M04 `orphan_timeout_h`). */
   WORKER_ORPHAN_TIMEOUT_H: z.coerce.number().min(0.01).max(720).default(12),
   WORKER_ORPHAN_POLL_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
+  /** Liquidación de sesiones terminadas (TAR §3.5): sondeo. */
+  WORKER_PRICING_POLL_MS: z.coerce.number().int().min(500).max(600_000).default(5_000),
+  /** Límites que detienen sesiones (tope de exposición, duración máxima): sondeo. */
+  WORKER_LIMITS_POLL_MS: z.coerce.number().int().min(500).max(600_000).default(3_000),
+  /** Activación de versiones de tarifa programadas: sondeo. */
+  WORKER_TARIFF_POLL_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
 });
 
 export type WorkerConfig = z.infer<typeof schema>;

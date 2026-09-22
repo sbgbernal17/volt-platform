@@ -145,6 +145,8 @@ describe.skipIf(!baseUrl)('aceptación iteración 3: sesiones por la API', () =>
     ).json() as { authorizationKey: string };
     // Atajo de la prueba: el comisionamiento completo ya se verifica en commissioning.e2e.test.ts.
     await sql`UPDATE assets.charge_point SET lifecycle_status = 'OPERATIONAL', visible_in_app = true WHERE id = ${chargePointId}`;
+    // Tarifa base y asignación PLATFORM/PUBLIC: sin ellas ninguna sesión de app arranca (fail-closed).
+    expect((await admin('POST', '/admin/v1/tariffs/bootstrap')).statusCode).toBe(200);
     sim = new SimulatedChargePoint({
       identity: 'VOLT-BOG02-CP01',
       password: issued.authorizationKey,

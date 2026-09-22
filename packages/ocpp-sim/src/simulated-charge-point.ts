@@ -41,6 +41,11 @@ export interface SimulatedChargePointOptions {
   plugDelayMs?: number;
   /** Lectura inicial del medidor (Wh). */
   initialMeterWh?: number;
+  /**
+   * Tras StopTransaction por parada remota el vehículo sigue conectado (estado Finishing) hasta
+   * `unplug()`; por defecto pasa a Available de inmediato.
+   */
+  stayPluggedAfterStop?: boolean;
 }
 
 export interface SimulatedTransaction {
@@ -153,6 +158,8 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
   /** Último payload enviado por acción (para simular reintentos). */
   readonly lastSent = new Map<string, Record<string, unknown>>();
   offline = false;
+  /** Conectores cuyo vehículo dejó de tomar energía (SuspendedEV): las lecturas no avanzan. */
+  readonly suspendedConnectors = new Set<number>();
   private client: RPCClient | undefined;
   private password: string | null;
   private endpoint: string;
@@ -402,9 +409,10 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
   async sendMeterValues(connectorId: number, energyDeltaWh = 0): Promise<void> {
     const transaction = this.transactions.get(connectorId);
     if (!transaction) return;
-    const register = (this.meterWh.get(connectorId) ?? 0) + energyDeltaWh;
+    const suspended = this.suspendedConnectors.has(connectorId);
+    const register = (this.meterWh.get(connectorId) ?? 0) + (suspended ? 0 : energyDeltaWh);
     this.meterWh.set(connectorId, register);
-    const powerW = this.options.chargingPowerW ?? 22_000;
+    const powerW = suspended ? 0 : (this.options.chargingPowerW ?? 22_000);
     const payload = {
       connectorId,
       transactionId: transaction.transactionId,
@@ -455,6 +463,7 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
     if (!transaction) throw new Error(`el conector ${connectorId} no tiene transacción`);
     if (transaction.timer) clearInterval(transaction.timer);
     this.transactions.delete(connectorId);
+    this.suspendedConnectors.delete(connectorId);
     const meterStopWh = this.meterWh.get(connectorId) ?? 0;
     const payload = {
       transactionId: transaction.transactionId,
@@ -503,6 +512,32 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
       void this.sendMeterValues(transaction.connectorId, deltaWh).catch(() => undefined);
     }, intervalMs);
     transaction.timer.unref();
+  }
+
+  /** El vehículo se llena: StatusNotification SuspendedEV y lecturas sin avance (caso A de TAR §3.6). */
+  async suspendEv(connectorId: number): Promise<void> {
+    if (!this.transactions.has(connectorId))
+      throw new Error(`el conector ${connectorId} no tiene transacción`);
+    this.suspendedConnectors.add(connectorId);
+    await this.sendStatus(connectorId, 'SuspendedEV');
+  }
+
+  /** El vehículo vuelve a tomar energía. */
+  async resumeCharging(connectorId: number): Promise<void> {
+    this.suspendedConnectors.delete(connectorId);
+    await this.sendStatus(connectorId, 'Charging');
+  }
+
+  /**
+   * El conductor desconecta el cable. Con transacción en curso la termina (EVDisconnected); en
+   * cualquier caso el conector queda Available (fin de la ocupación).
+   */
+  async unplug(connectorId: number): Promise<void> {
+    if (this.transactions.has(connectorId)) {
+      await this.sendStatus(connectorId, 'Finishing');
+      await this.stopTransaction(connectorId, 'EVDisconnected');
+    }
+    await this.sendStatus(connectorId, 'Available');
   }
 
   async boot(): Promise<BootNotificationResponse> {
@@ -712,7 +747,8 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
         try {
           await this.sendStatus(entry.connectorId, 'Finishing');
           await this.stopTransaction(entry.connectorId, 'Remote');
-          await this.sendStatus(entry.connectorId, 'Available');
+          if (!this.options.stayPluggedAfterStop)
+            await this.sendStatus(entry.connectorId, 'Available');
         } catch {
           // idem
         }

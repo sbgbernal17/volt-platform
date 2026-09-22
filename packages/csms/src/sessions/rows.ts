@@ -40,8 +40,16 @@ export interface ChargingSessionRow {
   stop_reason: StopReason | null;
   end_kind: 'NORMAL' | 'TIMEOUT' | 'ESTIMATED' | 'ORPHAN' | 'FAILED' | null;
   failure_code: string | null;
+  settled_at: Date | null;
+  paid_at: Date | null;
+  tariff_snapshot_id: string | null;
+  final_calc_id: string | null;
   currency: string | null;
+  subtotal_minor: bigint | null;
+  discount_minor: bigint | null;
+  tax_minor: bigint | null;
   total_minor: bigint | null;
+  preauth_minor: bigint | null;
   payment_status: string;
   last_sample: SessionSample | null;
   app_seq: bigint;
@@ -49,8 +57,31 @@ export interface ChargingSessionRow {
   stop_requested_by: string | null;
   remote_stop_command_id: string | null;
   anomaly_flags: string[];
+  /** Iteración 4: segmento del snapshot, fin de ocupación, exposición y costo en curso. */
+  tariff_segment: string | null;
+  idle_ended_at: Date | null;
+  exposure_limit_minor: bigint | null;
+  exposure_warned_at: Date | null;
+  exposure_exhausted_at: Date | null;
+  running_cost: RunningCost | null;
+  pricing_error: string | null;
   created_at: Date;
   updated_at: Date;
+}
+
+/** Costo en curso guardado en `charging_session.running_cost` y enviado en `session.metered` (importes como texto). */
+export interface RunningCost {
+  currency: string;
+  tax_included: boolean;
+  total_minor: string;
+  subtotal_minor: string;
+  tax_minor: string;
+  discount_minor: string;
+  energy_wh: number;
+  alerts: string[];
+  flags: string[];
+  computed_at: string;
+  engine_version: string;
 }
 
 /** Última lectura conocida de la sesión (PDF `lastProcessData`; ARQ §1.4). */

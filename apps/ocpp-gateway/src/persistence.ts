@@ -380,6 +380,22 @@ export class DbPersistence implements GatewayPersistence {
       );
       return { known: false };
     }
+    // Transiciones de sesión por estado del conector (DAT §3.2, §5.7) y fin de la ocupación (TAR §3.6).
+    if (info.context) {
+      try {
+        await this.transactions.onConnectorStatus(
+          info.context,
+          connectorId,
+          status,
+          info.previousStatus ?? null,
+        );
+      } catch (error) {
+        this.logger.error(
+          { err: error, chargeBoxId: chargePoint.identity, connectorId, status },
+          'no se pudo aplicar el estado del conector a la sesión',
+        );
+      }
+    }
     return { known: true };
   }
 

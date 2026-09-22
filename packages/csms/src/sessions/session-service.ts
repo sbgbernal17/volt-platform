@@ -2,6 +2,9 @@ import { assertSessionTransition, type SessionState } from '@volt/domain';
 import type { ISql, Sql } from 'postgres';
 import type { CommandService } from '../commands.ts';
 import { ChargePointOfflineError, ConflictError, NotFoundError } from '../errors.ts';
+import { NoTariffError } from '../pricing/assignments.ts';
+import { segmentSchema } from '../pricing/schema.ts';
+import { freezeSessionSnapshot } from '../pricing/snapshot.ts';
 import { type CsmsLogger, silentLogger } from '../types.ts';
 import { type EvseLiveRow, getEvseByCode, getEvseById } from './locations.ts';
 import { appendEvent } from './outbox.ts';
@@ -34,6 +37,10 @@ export interface RequestStartInput {
   /** `driver:<id>` | `staff:<id>` */
   requestedBy: string;
   idempotencyKey?: string | undefined;
+  /** Cotización vista por el conductor (tariffs.price_quote); si sigue vigente, su snapshot se congela tal cual. */
+  quoteId?: string | undefined;
+  /** Segmento tarifario; por defecto PUBLIC (TEST siempre INTERNAL, costo cero). */
+  segment?: string | undefined;
 }
 
 export interface SessionServiceOptions {
@@ -133,6 +140,10 @@ export class SessionService {
     if (!payment.ok) {
       return this.fail(session, evse.charge_box_id, payment.code, payment.message);
     }
+    // Snapshot de tarifa congelado al autorizar (TAR §2.5): sin tarifa vigente la sesión no arranca.
+    const segment =
+      input.channel === 'TEST' ? 'INTERNAL' : segmentSchema.parse(input.segment ?? 'PUBLIC');
+    let noTariff: NoTariffError | undefined;
     await this.sql.begin(async (tx) => {
       await tx`
         UPDATE sessions.charging_session SET state = 'AUTHORIZED', state_changed_at = ${now}, authorized_at = ${now},
@@ -140,7 +151,28 @@ export class SessionService {
                app_seq = app_seq + 1, updated_at = now()
         WHERE id = ${session.id}`;
       await this.emit(tx, session, 'session.authorized', evse.charge_box_id, now, {});
+      try {
+        const snapshot = await freezeSessionSnapshot(tx, {
+          session: { ...session, state: 'AUTHORIZED', preauth_minor: payment.preauthMinor ?? null },
+          segment,
+          quoteId: input.quoteId,
+          at: now,
+        });
+        this.logger.info(
+          {
+            sessionId: session.id,
+            segment: snapshot.segment,
+            tariff: snapshot.snapshot.tariff_code,
+            version: snapshot.snapshot.tariff_version,
+          },
+          'snapshot de tarifa congelado',
+        );
+      } catch (error) {
+        if (error instanceof NoTariffError) noTariff = error;
+        else throw error;
+      }
     });
+    if (noTariff) return this.fail(session, evse.charge_box_id, 'NO_TARIFF', noTariff.message);
 
     const result = await this.commands.send({
       chargePointId: evse.charge_point_id,

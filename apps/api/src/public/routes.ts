@@ -4,18 +4,21 @@ import {
   getSessionView,
   listLocations,
   listSessionViews,
+  NoTariffError,
+  PricingService,
+  quoteEvse,
   type SessionService,
   VOLT_TENANT_ID,
 } from '@volt/csms';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { ISql } from 'postgres';
+import type { Sql } from 'postgres';
 import { z } from 'zod';
 import { type DriverVerifier, driverAuthHook } from './auth.ts';
 import { isSessionFinished, toPublicSession } from './sessions-view.ts';
 import { streamSessionEvents } from './sse.ts';
 
 export interface PublicRoutesOptions {
-  sql: ISql;
+  sql: Sql;
   verifier?: DriverVerifier | undefined;
   sessions?: SessionService | undefined;
   ssePollMs: number;
@@ -23,7 +26,10 @@ export interface PublicRoutesOptions {
 }
 
 const params = z.object({ id: z.string().uuid() });
-const startBody = z.object({ evseId: z.string().min(1).max(48) });
+const startBody = z.object({
+  evseId: z.string().min(1).max(48),
+  quoteId: z.string().uuid().optional(),
+});
 
 function idempotencyKey(request: FastifyRequest): string | undefined {
   const header = request.headers['idempotency-key'];
@@ -41,6 +47,7 @@ export async function publicRoutes(
 ): Promise<void> {
   const { sql } = options;
   const tenantId = VOLT_TENANT_ID;
+  const pricing = new PricingService(sql, { logger: app.log });
   const requireSessions = (): SessionService => {
     if (!options.sessions)
       throw new CsmsError(
@@ -81,6 +88,15 @@ export async function publicRoutes(
   app.get('/evses/:evseId', async (request) => {
     const { evseId } = z.object({ evseId: z.string().min(1).max(48) }).parse(request.params);
     const evse = await getEvseByCode(sql, tenantId, evseId);
+    // Cotización pública (segmento PUBLIC): precio por kWh ahora, franjas, ocupación y gracia (TAR §1.3).
+    let tariff: Awaited<ReturnType<typeof quoteEvse>> | null = null;
+    let tariffError: string | null = null;
+    try {
+      tariff = await quoteEvse(sql, { tenantId, evseId: evse.evse_uuid, segment: 'PUBLIC' });
+    } catch (error) {
+      if (error instanceof NoTariffError) tariffError = 'NO_TARIFF';
+      else throw error;
+    }
     return {
       evseId: evse.evse_code,
       chargeBoxId: evse.charge_box_id,
@@ -90,7 +106,8 @@ export async function publicRoutes(
       maxPowerKw: evse.max_power_w === null ? null : evse.max_power_w / 1000,
       status: evse.status,
       visibleInApp: evse.visible_in_app,
-      tariff: null,
+      tariff,
+      tariffError,
     };
   });
 
@@ -107,6 +124,7 @@ export async function publicRoutes(
         channel: 'APP',
         requestedBy: `driver:${driver.driverId}`,
         idempotencyKey: idempotencyKey(request),
+        quoteId: body.quoteId,
       });
       const view = await getSessionView(sql, session.id);
       if (view.state === 'FAILED') {
@@ -160,6 +178,21 @@ export async function publicRoutes(
       const view = await ownSession(request);
       await requireSessions().cancel(view.id, `driver:${driver.driverId}`);
       return toPublicSession(await getSessionView(sql, view.id));
+    });
+
+    privateApp.get('/sessions/:id/cost', async (request) => {
+      const view = await ownSession(request);
+      const cost = await pricing.getSessionCost(sql, view.id);
+      return {
+        sessionId: view.id,
+        sessionNo: view.session_no,
+        state: view.state,
+        summary: toPublicSession(view).cost,
+        segment: cost.segment,
+        tariff: cost.snapshot,
+        running: cost.running,
+        final: cost.final,
+      };
     });
 
     privateApp.get('/sessions/:id/events', async (request, reply) => {

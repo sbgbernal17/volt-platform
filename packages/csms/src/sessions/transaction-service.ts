@@ -8,6 +8,7 @@ import {
 import type { ISql, Sql } from 'postgres';
 import { raiseAlarm } from '../alarms.ts';
 import { transitionLifecycle } from '../lifecycle.ts';
+import { PricingService } from '../pricing/pricing-service.ts';
 import { type CsmsLogger, silentLogger, toJson } from '../types.ts';
 import { appendEvent } from './outbox.ts';
 import {
@@ -85,9 +86,24 @@ export interface StopTransactionResult {
   orphan: boolean;
 }
 
+/** Gancho de precios invocado tras cada lectura, en la misma transacción de base de datos. */
+export interface SessionPricingHook {
+  onSample(
+    db: ISql,
+    input: {
+      session: ChargingSessionRow;
+      transaction: OcppTransactionRow;
+      chargeBoxId: string;
+      at: Date;
+    },
+  ): Promise<unknown>;
+}
+
 export interface TransactionServiceOptions {
   logger?: CsmsLogger;
   clock?: () => Date;
+  /** Servicio de precios (por defecto el real; las pruebas pueden sustituirlo). */
+  pricing?: SessionPricingHook;
   /** Salto máximo verosímil del registro de energía entre lecturas (FUN M04 `max_energy_jump_kwh`). */
   maxEnergyJumpWh?: number;
   /** Ventana en la que un StartTransaction tardío reabre una sesión EXPIRED (DAT §5.7). */
@@ -98,6 +114,8 @@ export interface TransactionServiceOptions {
 
 const SINGLE_USE_TOKEN_TYPES = new Set(['APP', 'QR', 'OPERATOR', 'TEST']);
 const ENERGY_REGISTER = 'Energy.Active.Import.Register';
+/** Estados de conector que indican que el vehículo dejó libre el conector (fin de la ocupación, TAR §3.6). */
+const IDLE_END_STATUSES = new Set(['Available', 'Preparing', 'Unavailable', 'Faulted', 'Reserved']);
 
 interface ConnectorRef {
   connector_id: string;
@@ -117,6 +135,7 @@ export class TransactionService {
   private readonly maxEnergyJumpWh: number;
   private readonly lateStartWindowS: number;
   private readonly offlineToleranceS: number;
+  private readonly pricing: SessionPricingHook;
 
   constructor(
     private readonly sql: Sql,
@@ -127,6 +146,8 @@ export class TransactionService {
     this.maxEnergyJumpWh = options.maxEnergyJumpWh ?? 50_000;
     this.lateStartWindowS = options.lateStartWindowS ?? 600;
     this.offlineToleranceS = options.offlineToleranceS ?? 5;
+    this.pricing =
+      options.pricing ?? new PricingService(sql, { logger: this.logger, clock: this.now });
   }
 
   /** Authorize.req: solo tokens emitidos por la plataforma (SEG S4). */
@@ -186,6 +207,7 @@ export class TransactionService {
         };
       }
       const connector = await this.resolveConnector(tx, cp, params.connectorId);
+      await this.endIdle(tx, cp, params.connectorId, startedAtCp, 'new_transaction');
       const evaluation = await evaluateIdTag(tx, {
         tenantId: cp.tenantId,
         chargePointId: cp.id,
@@ -474,6 +496,8 @@ export class TransactionService {
     const cp = ctx.chargePoint;
     if (connectorId === 0) return null;
     return this.sql.begin(async (tx) => {
+      if (IDLE_END_STATUSES.has(status))
+        await this.endIdle(tx, cp, connectorId, ctx.receivedAt, 'status');
       const rows = await tx<ChargingSessionRow[]>`
         SELECT s.* FROM sessions.charging_session s
         JOIN assets.connector c ON c.id = s.connector_id
@@ -790,6 +814,15 @@ export class TransactionService {
         energy_wh = ${sample.energyWh === null ? null : String(sample.energyWh)}::bigint,
         app_seq = app_seq + 1, updated_at = now()
       WHERE id = ${session.id}`;
+    const sampledAt = new Date(sample.at);
+    const costAt =
+      Number.isNaN(sampledAt.getTime()) || sampledAt < receivedAt ? receivedAt : sampledAt;
+    const cost = await this.pricing.onSample(db, {
+      session: { ...session, last_sample: sample },
+      transaction,
+      chargeBoxId: cp.identity,
+      at: costAt,
+    });
     await appendEvent(db, {
       name: 'session.metered',
       tenantId: cp.tenantId,
@@ -803,8 +836,44 @@ export class TransactionService {
         ocppTransactionId: transaction.ocpp_transaction_id,
         sample,
         anomalies: flags,
+        cost: cost ?? null,
       },
     });
+  }
+
+  /**
+   * Fin de la ocupación de las sesiones ENDED del conector (TAR §3.6 caso B): el vehículo se fue
+   * (Available/Preparing...) o empieza otra transacción. Idempotente: solo afecta a idle_ended_at nulo.
+   */
+  private async endIdle(
+    db: ISql,
+    cp: InboundChargePoint,
+    connectorId: number,
+    at: Date,
+    reason: 'status' | 'new_transaction',
+  ): Promise<void> {
+    const rows = await db<{ id: string; tenant_id: string }[]>`
+      UPDATE sessions.charging_session s SET idle_ended_at = ${at}, app_seq = s.app_seq + 1, updated_at = now()
+      FROM assets.connector c
+      WHERE c.id = s.connector_id AND s.charge_point_id = ${cp.id} AND c.ocpp_connector_id = ${connectorId}
+        AND s.state = 'ENDED' AND s.idle_ended_at IS NULL
+      RETURNING s.id, s.tenant_id`;
+    for (const row of rows) {
+      await appendEvent(db, {
+        name: 'session.idle_ended',
+        tenantId: row.tenant_id,
+        aggregate: { type: 'session', id: row.id },
+        orderingKey: cp.identity,
+        occurredAt: at,
+        payload: {
+          sessionId: row.id,
+          chargeBoxId: cp.identity,
+          connectorId,
+          idleEndedAt: at.toISOString(),
+          reason,
+        },
+      });
+    }
   }
 
   private async endSession(
@@ -841,6 +910,8 @@ export class TransactionService {
         state = 'ENDED', state_changed_at = ${input.occurredAt}, ended_at = ${input.endedAt},
         energy_wh = ${String(input.energyWh)}::bigint, charging_time_s = ${input.chargingTimeS}, idle_time_s = ${idleTimeS},
         stop_reason = ${input.stopReason}::sessions.stop_reason, end_kind = ${input.endKind},
+        idle_ended_at = CASE WHEN ${input.stopReason === 'EVDisconnected' || input.endKind === 'ESTIMATED'}
+                             THEN COALESCE(idle_ended_at, ${input.endedAt}) ELSE idle_ended_at END,
         app_seq = app_seq + 1, updated_at = now()
       WHERE id = ${sessionId}`;
     if (session.id_token_id) {

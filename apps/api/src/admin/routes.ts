@@ -40,6 +40,7 @@ import type { Sql } from 'postgres';
 import { z } from 'zod';
 import { isSessionFinished, toPublicSession } from '../public/sessions-view.ts';
 import { streamSessionEvents } from '../public/sse.ts';
+import { pricingRoutes } from './pricing-routes.ts';
 
 export interface AdminRoutesOptions {
   sql: Sql;
@@ -63,6 +64,8 @@ const sessionStartBody = z.object({
   evseUuid: z.string().uuid().optional(),
   channel: z.enum(['OPERATOR', 'TEST']).default('OPERATOR'),
   driverId: z.string().uuid().optional(),
+  segment: z.string().max(64).optional(),
+  quoteId: z.string().uuid().optional(),
 });
 
 const uuid = z.string().uuid();
@@ -136,13 +139,13 @@ const overrideBody = z.object({ value: z.string().max(500) });
 const templateAssignBody = z.object({ templateId: uuid });
 const resolveBody = z.object({ resolution: z.string().min(1).max(500) });
 
-function actorOf(request: FastifyRequest): string {
+export function actorOf(request: FastifyRequest): string {
   const header = request.headers['x-actor'];
   const value = Array.isArray(header) ? header[0] : header;
   return value && /^[A-Za-z0-9:_.@-]{1,80}$/.test(value) ? value : 'staff:admin-token';
 }
 
-function serialize<T>(value: T): T {
+export function serialize<T>(value: T): T {
   return JSON.parse(
     JSON.stringify(value, (_key, item: unknown) =>
       typeof item === 'bigint' ? Number(item) : item,
@@ -186,6 +189,11 @@ export async function adminRoutes(
     }
     return { commands, commissioning };
   };
+
+  await app.register(pricingRoutes, {
+    sql,
+    ...(options.sessions ? { sessions: options.sessions } : {}),
+  });
 
   // ---- Sedes ----
   app.get('/sites', async () => ({ items: serialize(await listSites(sql, tenantId)) }));
@@ -366,6 +374,8 @@ export async function adminRoutes(
       driverId: body.driverId ?? null,
       channel: body.channel,
       requestedBy: actorOf(request),
+      segment: body.segment,
+      quoteId: body.quoteId,
     });
     const view = await getSessionView(sql, session.id);
     reply.code(view.state === 'FAILED' ? 409 : 202);
