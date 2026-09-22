@@ -11,6 +11,26 @@ Lista de lo que solo tú puedes conseguir o decidir, ordenada por la iteración 
 - [x] 2026-09-22: llaves de prueba de Wompi cargadas como secretos del repositorio en GitHub; documentación en <https://docs.wompi.co/docs/colombia/inicio-rapido/>.
 - [x] 2026-09-22: guía `docs/google-cloud-setup.md` ejecutada (facturación, proyectos, APIs, bucket de Terraform, Workload Identity Federation); variables `GCP_*` cargadas en GitHub; medición de latencia: `us-central1` la más rápida, adoptada como región principal (ADR 0015).
 
+## Pendiente ahora: lo que más me ayuda que entregues (iteraciones 4 y 5)
+
+Ordenado por urgencia. Ninguno bloquea el desarrollo: mientras llegan, uso valores de ejemplo marcados como tales.
+
+| # | Qué necesito | Para qué | Cómo entregarlo |
+|---|---|---|---|
+| 1 | **Precios por kWh por franja horaria**, en pesos con IVA incluido, y las horas de cada franja (por ejemplo valle 22:00-06:00, punta 17:00-22:00, resto del día), indicando si los fines de semana cambian | Publicar la primera tarifa real de Volt (iteración 4). Hoy el sistema trae valores de ejemplo: 1.600, 2.200 y 1.900 COP/kWh | Una tabla en el chat o un archivo `docs/negocio/tarifa-inicial.md`. Si quieres una sola tarifa sin franjas, dímelo |
+| 2 | **Tope de exposición por sesión** (cuánto puede acumular una carga antes de que la plataforma la detenga) y a qué porcentaje avisar al conductor | Reemplaza la preautorización (ADR 0002). Propongo 200.000 COP y aviso al 80 % | Dos cifras en el chat |
+| 3 | **Tiempo máximo de sesión** (propongo 4 horas) y si al superarlo se detiene la carga o solo se avisa | Parámetro de sede y de tenant | En el chat |
+| 4 | **Confirmación del contador**: (a) IVA del 19 % sobre el servicio de carga, (b) que los precios al público se muestren con IVA incluido y el recibo desglose el impuesto, (c) retenciones que apliquen a los cobros por Wompi | Configurar impuestos y recibos (iteraciones 4 y 5) y no rehacer la facturación electrónica después | Nota o correo del contador; guárdalo en `docs/legal/` sin datos sensibles |
+| 5 | **Preguntas escritas a Wompi**: tokenización con 3D Secure, cobros posteriores sin presencia del cliente (recurrentes o "con tarjeta guardada"), plazos y reglas de anulación y reembolso, si Nequi se puede tokenizar, comisiones | Iteración 5 (pagos). Sus respuestas definen el flujo de cobro al final de la carga | Sus respuestas en `docs/proveedor/wompi.md` |
+| 6 | **Dominio** para `ocpp.`, `api.` y `admin.` (comprar uno o asignar uno existente) | Certificados y balanceador de la iteración 8 | Nombre del dominio y dónde está registrado |
+| 7 | **Textos para el conductor**: nombre comercial de la tarifa, cómo quieres explicar la ocupación (los 15 minutos de gracia y los 1.500 COP por minuto) y el aviso antes de detener por tope | Los muestra la app antes de iniciar (Resolución 40123: precios visibles) | Dos o tres frases en el chat; yo las convierto en textos de la app en español e inglés |
+
+## Proveedor de cargadores y equipos (cuando los tengas)
+
+- [ ] **Requisitos por escrito al proveedor** (`docs/00-resumen-ejecutivo.md` §8) para los modelos de 180 kW y 40 kW; y entregarme lo que responda: manuales de instalador, cómo cambiar URL, identidad y credenciales, perfiles de seguridad, salida completa de `GetConfiguration`, measurands DC (`SoC`, `Power.Offered`), reparto de potencia entre mangueras, mensajes `DataTransfer` propietarios, firmware. Preguntas específicas de tarifas en `docs/04-tarifas-y-precios-dinamicos.md` §8 (unidad del medidor, `Finishing`/`SuspendedEV`, cola offline).
+- [ ] **Tipo de conector** de los equipos (CCS2 esperado) y si el modelo de 180 kW carga dos vehículos a la vez y con qué reparto.
+- [ ] **Cargador de laboratorio (cuando exista).** Hoy no hay ninguno ni forma de montar un simulador en tu lado, así que no hace falta nada: las pruebas se hacen con el simulador embebido en CI y, desde la iteración 8, con un cargador sintético en staging. Cuando llegue el primer equipo, anota fabricante, modelo, número de serie, versión de firmware y cómo se accede a su configuración, y avísame para conectarlo a staging con la credencial que emita la API.
+
 ## Wompi: cómo subir las llaves
 
 Las llaves del ambiente de pruebas (sandbox) se usan en las pruebas automáticas de la iteración 5. Las de producción solo se usan en la iteración 8 y van a Secret Manager de Google Cloud, nunca a GitHub.
@@ -54,13 +74,6 @@ No hace falta hardware. En tu máquina, con Docker, Node 22 y pnpm:
 1. `pnpm lint && pnpm typecheck && DATABASE_URL=postgres://volt:volt@localhost:5432/volt REDIS_URL=redis://localhost:6379 pnpm test`: pasan las pruebas de sesiones (`apps/api/src/sessions.e2e.test.ts` y `apps/ocpp-gateway/src/transactions.db.test.ts`).
 2. Con el simulador operativo, sigue "Sesión de carga de punta a punta" en `lab/README.md`: crea un conductor, inicia la carga desde la API pública con la identidad de desarrollo, mira el progreso por SSE y detén la carga. Comprueba en `/admin/v1/sessions` que la sesión queda `ENDED` con energía y motivo `Remote`.
 3. Lo que aún no verás: el costo de la sesión (iteración 4) y el cobro (iteración 5).
-
-## Para la próxima sesión (iteraciones 1 a 3)
-
-- [ ] **Proveedor de cargadores.** Enviar por escrito la lista de requisitos de `docs/00-resumen-ejecutivo.md` §8 para los modelos de 180 kW y 40 kW y entregarme lo que responda: manuales de instalador, procedimiento para cambiar URL, identidad y credenciales, perfiles de seguridad soportados, salida completa de `GetConfiguration`, measurands DC (`SoC`, `Power.Offered`), reparto de potencia entre las dos mangueras, mensajes `DataTransfer` propietarios, proceso de firmware.
-- [ ] **Cargador de laboratorio (cuando exista).** Hoy no hay ninguno disponible ni forma de montar un simulador en tu lado, así que no es necesario hacer nada: las pruebas se hacen con el simulador embebido en CI y, desde la iteración 8, con un cargador sintético en staging. Cuando llegue el primer equipo, anota fabricante, modelo, número de serie, versión de firmware y cómo se accede a su configuración, y avísame para conectarlo a staging con la credencial que emita la API.
-- [ ] **Tipo de conector** de los equipos (CCS2 esperado) y si el modelo de 180 kW carga dos vehículos a la vez y con qué reparto.
-- [ ] **Precios por kWh por franja horaria** que quieres publicar al inicio (el archivo `packages/tariff-engine/fixtures/volt-colombia-tarifa-base.json` trae valores de ejemplo).
 
 ## Para las iteraciones 5 a 7 (pagos y app)
 
