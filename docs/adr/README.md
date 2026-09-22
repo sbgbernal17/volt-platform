@@ -15,6 +15,7 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0009](0009-stack-typescript.md) | Stack TypeScript: Node 22, pnpm, Biome, Vitest, ocpp-rpc, Fastify, postgres.js, esbuild |
 | [0010](0010-postgresql-y-migraciones-sql.md) | PostgreSQL en Cloud SQL con migraciones SQL versionadas |
 | [0011](0011-modelo-de-tarifas-ocpi.md) | Modelo de tarifas OCPI 2.2.1 con snapshot inmutable por sesión |
+| [0012](0012-tarifa-inicial-e-idle-fee.md) | Tarifa inicial de Volt: energía por franjas, gracia de 15 minutos configurable y 1.500 COP por minuto de ocupación |
 
 ```markdown
 # NNNN. Título de la decisión

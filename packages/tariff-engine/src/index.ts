@@ -48,8 +48,14 @@ export interface TariffRestrictions {
 
 /** Extensiones propias que OCPI no cubre (TAR §1.2). */
 export interface VoltElementExtensions {
+  /** Segundos de gracia desde el fin de la carga antes de cobrar ocupación (ADR 0012: 900). */
   grace_period_s?: number;
-  idle_start?: 'TRANSACTION_END' | 'SUSPENDED_EV';
+  /**
+   * Qué marca el fin de la carga: StopTransaction, SuspendedEV con potencia cercana a cero, o
+   * lo primero que ocurra (valor por defecto de Volt).
+   */
+  idle_start?: 'TRANSACTION_END' | 'SUSPENDED_EV' | 'EARLIEST';
+  /** Tope de segundos de ocupación cobrables; después se genera una alarma operativa. */
   max_idle_s?: number;
 }
 

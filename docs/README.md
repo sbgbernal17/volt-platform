@@ -5,7 +5,8 @@ Orden de lectura recomendado: primero el plan de trabajo y el resumen ejecutivo;
 | Archivo | Código | Contenido | Para quién |
 |---|---|---|---|
 | [`plan-de-trabajo.md`](plan-de-trabajo.md) | — | Plan vivo: decisiones, acciones inmediatas, iteraciones, fases, puesta en marcha de cargadores, equipo, riesgos, métricas | Todos |
-| [`tareas-del-dueno.md`](tareas-del-dueno.md) | — | Lo que solo el dueño del proyecto puede conseguir o decidir, por iteración, y cómo entregarlo | Dueño del proyecto |
+| [`tareas-del-dueno.md`](tareas-del-dueno.md) | — | Lo que solo el dueño del proyecto puede conseguir o decidir, por iteración, y cómo entregarlo (incluye cómo subir las llaves de Wompi) | Dueño del proyecto |
+| [`google-cloud-setup.md`](google-cloud-setup.md) | — | Qué crear en Google Cloud (facturación, proyectos, APIs, estado de Terraform) y cómo dar acceso a GitHub Actions sin claves, con los comandos para Cloud Shell | Dueño del proyecto |
 | [`00-resumen-ejecutivo.md`](00-resumen-ejecutivo.md) | — | Respuestas directas, arquitectura en una página, puntos clave, seguridad, tarifas, hechos verificados, requisitos al proveedor, decisiones, roadmap, estado de verificación | Dueño del proyecto, líder técnico |
 | [`01-cargadores-y-migracion.md`](01-cargadores-y-migracion.md) | HW | Qué revela el documento del proveedor, requisitos de hardware, cómo reconfigurar la URL del Central System, plan de traspaso por lotes con rollback, tabla de equivalencias proveedor → OCPP | Líder técnico, QA y laboratorio |
 | [`02-arquitectura-y-google-cloud.md`](02-arquitectura-y-google-cloud.md) | ARQ | Descomposición del sistema, app vs CSMS, contrato app-backend, diagramas, GKE vs Cloud Run, enrutamiento de comandos, escalado, stack, monorepo, DDL inicial, costos | Backend, DevOps |
