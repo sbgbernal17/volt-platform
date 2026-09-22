@@ -1,4 +1,5 @@
 import {
+  BillingService,
   CommandService,
   CommissioningService,
   PricingService,
@@ -11,9 +12,11 @@ import {
   RedisConnectionDirectory,
   StaticConnectionDirectory,
 } from '@volt/gateway-client';
+import { WompiGateway } from '@volt/payments';
 import { Redis } from 'ioredis';
 import { pino } from 'pino';
 import { loadConfig } from './config.ts';
+import { runBillingCycle, runReconciliation } from './jobs/billing.ts';
 import { dailyAt, runConfigDriftCheck } from './jobs/config-drift.ts';
 import { LogEventPublisher, RedisEventPublisher, relayOutbox } from './jobs/outbox-relay.ts';
 import { ensureMonthlyPartitions } from './jobs/partitions.ts';
@@ -85,6 +88,35 @@ if (sql) {
     },
   );
   await ensureMonthlyPartitions(sql, { logger });
+  // Cobros: solo con la pasarela real; el emulador (`fake`) vive en el proceso de la API y se ejecuta
+  // desde POST /admin/v1/billing/jobs/run (laboratorio y pruebas).
+  if (config.PAYMENTS_PROVIDER === 'wompi') {
+    const gateway = new WompiGateway({
+      environment: config.WOMPI_ENVIRONMENT,
+      publicKey: config.WOMPI_PUBLIC_KEY as string,
+      privateKey: config.WOMPI_PRIVATE_KEY as string,
+      integritySecret: config.WOMPI_INTEGRITY_SECRET as string,
+      eventsSecret: config.WOMPI_EVENTS_SECRET as string,
+    });
+    const billing = new BillingService(sql, gateway, { logger });
+    jobs.push(
+      {
+        name: 'billing',
+        intervalMs: config.WORKER_BILLING_POLL_MS,
+        run: async () => {
+          await runBillingCycle(billing, logger);
+        },
+      },
+      dailyAt('billing-reconciliation', config.WORKER_RECONCILIATION_HOUR_UTC, () =>
+        runReconciliation(billing, logger),
+      ),
+    );
+  } else {
+    logger.warn(
+      { provider: config.PAYMENTS_PROVIDER },
+      'cobros deshabilitados en el worker (PAYMENTS_PROVIDER distinto de wompi)',
+    );
+  }
 }
 
 const directory = redis

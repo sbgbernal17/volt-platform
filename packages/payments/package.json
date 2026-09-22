@@ -1,0 +1,22 @@
+{
+  "name": "@volt/payments",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Puerto PaymentGateway, adaptador de Wompi (sandbox y producción), firma de integridad, checksum de eventos y emulador para pruebas",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@volt/security": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

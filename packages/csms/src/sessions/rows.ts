@@ -65,6 +65,10 @@ export interface ChargingSessionRow {
   exposure_exhausted_at: Date | null;
   running_cost: RunningCost | null;
   pricing_error: string | null;
+  /** Iteración 5: cobro y recibo. */
+  payment_attempts: number;
+  last_payment_id: string | null;
+  receipt_id: string | null;
   created_at: Date;
   updated_at: Date;
 }

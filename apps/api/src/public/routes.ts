@@ -1,4 +1,6 @@
 import {
+  type BillingAuthorizer,
+  type BillingService,
   CsmsError,
   getEvseByCode,
   getSessionView,
@@ -14,6 +16,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
 import { type DriverVerifier, driverAuthHook } from './auth.ts';
+import { billingPrivateRoutes, billingWebhookRoutes } from './billing-routes.ts';
 import { isSessionFinished, toPublicSession } from './sessions-view.ts';
 import { streamSessionEvents } from './sse.ts';
 
@@ -23,6 +26,9 @@ export interface PublicRoutesOptions {
   sessions?: SessionService | undefined;
   ssePollMs: number;
   sseHeartbeatMs: number;
+  billing?: BillingService | undefined;
+  authorizer?: BillingAuthorizer | undefined;
+  paymentsRedirectUrl?: string | undefined;
 }
 
 const params = z.object({ id: z.string().uuid() });
@@ -111,8 +117,17 @@ export async function publicRoutes(
     };
   });
 
+  await billingWebhookRoutes(app, { billing: options.billing });
+
   await app.register(async (privateApp) => {
     privateApp.addHook('preHandler', driverAuthHook(options.verifier));
+    await billingPrivateRoutes(privateApp, {
+      sql,
+      billing: options.billing,
+      authorizer: options.authorizer,
+      tenantId,
+      redirectUrl: options.paymentsRedirectUrl,
+    });
 
     privateApp.post('/sessions', async (request, reply) => {
       const driver = request.driver as NonNullable<FastifyRequest['driver']>;

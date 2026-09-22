@@ -91,6 +91,9 @@ export function toPublicSession(row: SessionView, base = '/v1') {
         ? null
         : formatScaled(BigInt(row.exposure_limit_minor), currencyExponent(row.currency ?? 'COP')),
     cost: toPublicCost(row),
+    paymentStatus: row.payment_status,
+    paidAt: row.paid_at?.toISOString() ?? null,
+    receipt: row.receipt_id ? `${base}/sessions/${row.id}/receipt` : null,
     links:
       isTerminalSessionState(row.state) || row.state === 'ENDED' || row.state === 'SETTLED'
         ? { events: `${base}/sessions/${row.id}/events`, cost: `${base}/sessions/${row.id}/cost` }

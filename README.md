@@ -4,7 +4,7 @@ CSMS propio (Charging Station Management System) para operar una red de estacion
 
 ## Estado
 
-Diseño terminado y decisiones tomadas (septiembre de 2026): Colombia, Wompi con tokenización y cobro al final de la carga, parque inicial de 3 estaciones DC de 180 kW con dos mangueras (30 en el primer año), OCPP 1.6J con perfil de seguridad 2, región us-east1, app "Volt" en español e inglés, desarrollo por iteraciones con Claude Code. Las decisiones están en `docs/adr/`. Iteraciones 0 a 4 terminadas: gateway OCPP 1.6J con registro y persistencia en PostgreSQL, inventario y comisionamiento desde la API de administración, comandos remotos, detección de deriva, sesiones de carga completas (inicio desde la app, progreso en vivo por SSE, parada, transacciones offline y reconexión) y motor de tarifas (modelo OCPI con franjas horarias, snapshot por sesión, costo en vivo, ocupación con gracia, tope de exposición que detiene la carga, liquidación con líneas de costo) probados con un cargador simulado (ver `docs/plan-de-trabajo.md` §5).
+Diseño terminado y decisiones tomadas (septiembre de 2026): Colombia, Wompi con tokenización y cobro al final de la carga, parque inicial de 3 estaciones DC de 180 kW con dos mangueras (30 en el primer año), OCPP 1.6J con perfil de seguridad 2, región us-east1, app "Volt" en español e inglés, desarrollo por iteraciones con Claude Code. Las decisiones están en `docs/adr/`. Iteraciones 0 a 5 terminadas: gateway OCPP 1.6J con registro y persistencia en PostgreSQL, inventario y comisionamiento desde la API de administración, comandos remotos, detección de deriva, sesiones de carga completas (inicio desde la app, progreso en vivo por SSE, parada, transacciones offline y reconexión) motor de tarifas (modelo OCPI con franjas horarias, snapshot por sesión, costo en vivo, ocupación con gracia, tope de exposición que detiene la carga, liquidación con líneas de costo) y cobro con Wompi (tarjeta tokenizada, cobro al liquidar, webhooks, reintentos, deuda con enlace de pago, devoluciones, conciliación y recibos) probados con un cargador simulado y un emulador de pasarela (ver `docs/plan-de-trabajo.md` §5).
 
 ## Documentación
 
@@ -38,8 +38,8 @@ Con `DATABASE_URL` el gateway autentica contra el inventario (`assets.charge_poi
 | Directorio | Contenido |
 |---|---|
 | `apps/ocpp-gateway` | Servidor OCPP-J 1.6 (WebSocket persistente, allowlist, validación de esquemas, persistencia, API interna de comandos, directorio en Redis) |
-| `apps/api` | API Fastify: `/v1` para la app (sedes, EVSE con tarifa, sesiones con costo, SSE), `/admin/v1` para el back-office (inventario, comisionamiento, comandos, sesiones, alarmas, tarifas y versiones, asignaciones, parámetros, simulador de precios, costo y liquidación) |
-| `apps/worker` | Trabajos en segundo plano: relay del outbox, expiración de arranques, cierre de transacciones huérfanas, particiones mensuales, revisión diaria de deriva, liquidación de sesiones, límites de sesión (tope de exposición, duración máxima) y activación de tarifas programadas |
+| `apps/api` | API Fastify: `/v1` para la app (sedes, EVSE con tarifa, sesiones con costo, SSE, medios de pago, deudas, recibos, webhook de Wompi), `/admin/v1` para el back-office (inventario, comisionamiento, comandos, sesiones, alarmas, tarifas, asignaciones, parámetros, simulador de precios, costo y liquidación, pagos, deudas, bloqueos, conciliación) |
+| `apps/worker` | Trabajos en segundo plano: relay del outbox, expiración de arranques, cierre de transacciones huérfanas, particiones mensuales, revisión diaria de deriva, liquidación de sesiones, límites de sesión (tope de exposición, duración máxima), activación de tarifas programadas, cobros con reintentos y conciliación diaria |
 | `apps/backoffice`, `apps/mobile` | Back-office web y app Volt (iteraciones 6 y 7) |
 | `packages/domain` | Máquinas de estado y dinero en enteros |
 | `packages/ocpp-schemas` | Esquemas JSON oficiales de OCPP 1.6 y validadores |
@@ -48,6 +48,7 @@ Con `DATABASE_URL` el gateway autentica contra el inventario (`assets.charge_poi
 | `packages/tariff-engine` | Motor de tarifas puro y determinista (modelo OCPI 2.2.1 con extensiones `x_volt`, franjas horarias, ocupación con gracia, ajustes, topes, alertas de exposición, hashes) |
 | `packages/csms` | Núcleo sobre la base de datos: inventario, ciclo de vida, credenciales, comandos, comisionamiento, alarmas, sesiones y precios (tarifas versionadas, asignaciones, snapshot, liquidación) |
 | `packages/security` | `AuthorizationKey` aleatoria y hash scrypt (ADR 0014) |
+| `packages/payments` | Puerto `PaymentGateway`, adaptador de Wompi (sandbox y producción), firma de integridad, checksum de eventos y emulador para pruebas (ADR 0020) |
 | `packages/gateway-client` | Directorio cargador → pod (Redis) y cliente de la API interna del gateway (ADR 0013) |
 | `packages/ocpp-sim` | Cargador OCPP 1.6J simulado para pruebas y laboratorio |
 | `infra/terraform`, `lab/` | Infraestructura de Google Cloud y laboratorio de simuladores |

@@ -52,6 +52,12 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+        env:
+          # Prueba opcional contra el sandbox de Wompi (apps/api/src/wompi.sandbox.test.ts): solo corre si existen.
+          WOMPI_PUBLIC_KEY_TEST: ${{ secrets.WOMPI_PUBLIC_KEY_TEST }}
+          WOMPI_PRIVATE_KEY_TEST: ${{ secrets.WOMPI_PRIVATE_KEY_TEST }}
+          WOMPI_INTEGRITY_SECRET_TEST: ${{ secrets.WOMPI_INTEGRITY_SECRET_TEST }}
+          WOMPI_EVENTS_SECRET_TEST: ${{ secrets.WOMPI_EVENTS_SECRET_TEST }}
       # Solo comprueba que existen (nunca imprime valores): avisa si falta alguno de los
       # secretos de Wompi o de las variables de Google Cloud que usan las iteraciones 5 y 8.
       - name: Comprobar secretos y variables configurados

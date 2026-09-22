@@ -1,10 +1,18 @@
-import { CommandService, CommissioningService, CsmsError, SessionService } from '@volt/csms';
+import {
+  BillingAuthorizer,
+  BillingService,
+  CommandService,
+  CommissioningService,
+  CsmsError,
+  SessionService,
+} from '@volt/csms';
 import { createSql } from '@volt/db';
 import {
   GatewayClient,
   RedisConnectionDirectory,
   StaticConnectionDirectory,
 } from '@volt/gateway-client';
+import { FakeGateway, type PaymentGateway, WompiGateway } from '@volt/payments';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Redis } from 'ioredis';
 import { ZodError } from 'zod';
@@ -15,6 +23,8 @@ import { publicRoutes } from './public/routes.ts';
 
 export interface AppDependencies {
   config: ApiConfig;
+  /** Pasarela inyectada (pruebas: el emulador compartido con los trabajos del worker). */
+  gateway?: PaymentGateway | undefined;
 }
 
 export const API_VERSION = '0.4.0';
@@ -24,7 +34,25 @@ export const API_VERSION = '0.4.0';
  * administración, las rutas de inventario y comisionamiento en /admin/v1. Las rutas públicas
  * (/v1 para la app Volt) llegan con las sesiones (iteración 3).
  */
-export function buildApp({ config }: AppDependencies): FastifyInstance {
+export function buildPaymentGateway(
+  config: ApiConfig,
+  injected?: PaymentGateway,
+): PaymentGateway | undefined {
+  if (injected) return injected;
+  if (config.PAYMENTS_PROVIDER === 'wompi') {
+    return new WompiGateway({
+      environment: config.WOMPI_ENVIRONMENT,
+      publicKey: config.WOMPI_PUBLIC_KEY as string,
+      privateKey: config.WOMPI_PRIVATE_KEY as string,
+      integritySecret: config.WOMPI_INTEGRITY_SECRET as string,
+      eventsSecret: config.WOMPI_EVENTS_SECRET as string,
+    });
+  }
+  if (config.PAYMENTS_PROVIDER === 'fake') return new FakeGateway();
+  return undefined;
+}
+
+export function buildApp({ config, gateway: injectedGateway }: AppDependencies): FastifyInstance {
   const app = Fastify({
     logger: {
       level: config.LOG_LEVEL,
@@ -117,7 +145,25 @@ export function buildApp({ config }: AppDependencies): FastifyInstance {
           rebootWaitMs: config.COMMISSIONING_REBOOT_WAIT_MS,
         })
       : undefined;
-    const sessions = commands ? new SessionService(sql, commands, { logger: app.log }) : undefined;
+    const payments = buildPaymentGateway(config, injectedGateway);
+    const billing = payments ? new BillingService(sql, payments, { logger: app.log }) : undefined;
+    const authorizer = payments ? new BillingAuthorizer(sql) : undefined;
+    if (payments) {
+      app.log.info(
+        { provider: payments.provider, environment: payments.environment },
+        'pasarela de pago configurada',
+      );
+    } else {
+      app.log.warn(
+        'PAYMENTS_PROVIDER=none: las sesiones se autorizan sin medio de pago (solo desarrollo)',
+      );
+    }
+    const sessions = commands
+      ? new SessionService(sql, commands, {
+          logger: app.log,
+          ...(authorizer ? { paymentAuthorizer: authorizer } : {}),
+        })
+      : undefined;
     const verifier = config.API_DEV_DRIVER_AUTH ? new DevDriverVerifier(sql) : undefined;
     if (verifier) app.log.warn('API_DEV_DRIVER_AUTH activo: identidad de conductor de desarrollo');
     void app.register(publicRoutes, {
@@ -127,6 +173,9 @@ export function buildApp({ config }: AppDependencies): FastifyInstance {
       sessions,
       ssePollMs: config.API_SSE_POLL_MS,
       sseHeartbeatMs: config.API_SSE_HEARTBEAT_MS,
+      billing,
+      authorizer,
+      paymentsRedirectUrl: config.PAYMENTS_REDIRECT_URL,
     });
     if (config.API_ADMIN_TOKEN) {
       void app.register(adminRoutes, {
@@ -136,6 +185,7 @@ export function buildApp({ config }: AppDependencies): FastifyInstance {
         ...(commands ? { commands } : {}),
         ...(commissioning ? { commissioning } : {}),
         ...(sessions ? { sessions } : {}),
+        ...(billing ? { billing } : {}),
         ssePollMs: config.API_SSE_POLL_MS,
         sseHeartbeatMs: config.API_SSE_HEARTBEAT_MS,
       });

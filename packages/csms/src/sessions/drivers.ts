@@ -13,6 +13,10 @@ export interface DriverRow {
   segment: string;
   status: 'ACTIVE' | 'BLOCKED' | 'DELETED';
   default_payment_method_id: string | null;
+  /** Iteración 5: bloqueo por deuda o manual (ADR 0002). */
+  billing_status: 'OK' | 'BLOCKED_DEBT' | 'BLOCKED_MANUAL';
+  blocked_reason: string | null;
+  blocked_at: Date | null;
   created_at: Date;
 }
 

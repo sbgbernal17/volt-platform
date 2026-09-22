@@ -16,6 +16,7 @@
     "@volt/db": "workspace:*",
     "@volt/events": "workspace:*",
     "@volt/gateway-client": "workspace:*",
+    "@volt/payments": "workspace:*",
     "ioredis": "catalog:",
     "pino": "catalog:",
     "postgres": "catalog:",

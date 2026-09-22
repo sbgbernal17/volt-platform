@@ -41,3 +41,4 @@ Opción, ventajas, desventajas.
 ## Consecuencias
 Qué cambia, qué riesgos se asumen, qué se debe revisar después.
 ```
+| [0020](0020-cobro-con-wompi-reintentos-deuda-y-conciliacion.md) | Cobro con Wompi al liquidar: fuente de pago tokenizada, reintentos, deuda con enlace de pago, webhooks idempotentes, devoluciones, conciliación y recibos |

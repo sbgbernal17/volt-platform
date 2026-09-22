@@ -1,5 +1,6 @@
 import {
   assignTemplate,
+  type BillingService,
   CONNECTOR_STANDARDS,
   type CommandService,
   type CommissioningService,
@@ -40,6 +41,7 @@ import type { Sql } from 'postgres';
 import { z } from 'zod';
 import { isSessionFinished, toPublicSession } from '../public/sessions-view.ts';
 import { streamSessionEvents } from '../public/sse.ts';
+import { billingAdminRoutes } from './billing-routes.ts';
 import { pricingRoutes } from './pricing-routes.ts';
 
 export interface AdminRoutesOptions {
@@ -48,6 +50,7 @@ export interface AdminRoutesOptions {
   commands?: CommandService;
   commissioning?: CommissioningService;
   sessions?: SessionService;
+  billing?: BillingService;
   ssePollMs?: number;
   sseHeartbeatMs?: number;
 }
@@ -190,6 +193,7 @@ export async function adminRoutes(
     return { commands, commissioning };
   };
 
+  await app.register(billingAdminRoutes, { sql, billing: options.billing, tenantId });
   await app.register(pricingRoutes, {
     sql,
     ...(options.sessions ? { sessions: options.sessions } : {}),

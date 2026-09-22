@@ -86,6 +86,14 @@ No hace falta hardware. En tu máquina, con Docker, Node 22 y pnpm:
 3. Cambia un precio: crea una versión nueva de la tarifa con tus cifras (`POST /admin/v1/tariffs/{id}/versions`) y publícala; las sesiones que ya empezaron conservan la tarifa que vieron (snapshot) y las nuevas toman la versión nueva. Cambia el tope de exposición (`PUT /admin/v1/parameters/pricing.exposure_limit_minor`) a una cifra pequeña y comprueba que la plataforma detiene la carga.
 4. Lo que aún no verás: el cobro real (iteración 5, Wompi) y los recibos (iteración 5). Los precios de la tarifa base son valores de ejemplo hasta que entregues la tabla del punto 1 de "Pendiente ahora".
 
+## Qué probar de la iteración 5 (cobros con Wompi)
+
+1. `pnpm lint && pnpm typecheck && DATABASE_URL=postgres://volt:volt@localhost:5432/volt REDIS_URL=redis://localhost:6379 pnpm test`: pasan las pruebas del paquete de pagos (`packages/payments`), las de cobro sobre la base de datos (`packages/csms/src/billing/billing.test.ts`) y la aceptación por la API con el emulador (`apps/api/src/payments.e2e.test.ts`: sin tarjeta no se carga, alta de tarjeta, cobro aprobado con recibo, cobro rechazado con deuda y bloqueo, enlace de pago y webhook que desbloquea, devolución y conciliación).
+2. En GitHub, la acción de CI ejecuta además `apps/api/src/wompi.sandbox.test.ts` contra el sandbox real con las llaves de prueba que ya subiste: tokeniza la tarjeta 4242, crea la fuente de pago, cobra 1.000 COP y anula. Si ese caso falla, es la señal de que algún detalle del API de Wompi difiere de lo documentado (firma, formato de respuesta) y lo ajusto con el mensaje de error; no afecta a las demás pruebas.
+3. En el panel de Wompi (sandbox): registra la URL de eventos cuando exista el dominio (`https://api-staging.supercargadores.co/v1/webhooks/wompi`); mientras tanto, en local puedes probar con un túnel (`ngrok http 8080`) siguiendo "Pagos con Wompi" en `lab/README.md`.
+4. Pide al equipo de fraude de Wompi la **activación de 3DS en fuentes de pago** para el comercio (sandbox y, más adelante, producción); sin ella los cobros posteriores no viajan bajo 3RI (solo Mastercard) y la responsabilidad por contracargo cambia (sección 6 de `docs/proveedor/wompi.md`).
+5. Lo que aún no verás: pantallas de pagos en el back-office (iteración 6), el widget de Wompi y el reto 3DS en la app (iteración 7) y la factura electrónica DIAN (puerto preparado, sin adaptador).
+
 ## Para las iteraciones 5 a 7 (pagos y app)
 
 - [ ] **Contador.** Tratamiento de IVA del servicio de carga, retenciones, documento electrónico por cobro (factura electrónica de venta o documento equivalente), numeración y resolución de facturación. Elegir el proveedor tecnológico de facturación electrónica con API y cargar sus credenciales de prueba como secretos de GitHub (te diré los nombres).

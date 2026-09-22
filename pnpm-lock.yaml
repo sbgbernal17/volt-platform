@@ -98,6 +98,9 @@ importers:
       '@volt/gateway-client':
         specifier: workspace:*
         version: link:../../packages/gateway-client
+      '@volt/payments':
+        specifier: workspace:*
+        version: link:../../packages/payments
       '@volt/security':
         specifier: workspace:*
         version: link:../../packages/security
@@ -214,6 +217,9 @@ importers:
       '@volt/gateway-client':
         specifier: workspace:*
         version: link:../../packages/gateway-client
+      '@volt/payments':
+        specifier: workspace:*
+        version: link:../../packages/payments
       ioredis:
         specifier: 'catalog:'
         version: 6.0.0
@@ -257,6 +263,9 @@ importers:
       '@volt/ocpp-schemas':
         specifier: workspace:*
         version: link:../ocpp-schemas
+      '@volt/payments':
+        specifier: workspace:*
+        version: link:../payments
       '@volt/security':
         specifier: workspace:*
         version: link:../security
@@ -388,6 +397,22 @@ importers:
       tsx:
         specifier: 'catalog:'
         version: 4.23.13
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.1(@types/node@22.20.4)(vite@8.3.0(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
+
+  packages/payments:
+    dependencies:
+      '@volt/security':
+        specifier: workspace:*
+        version: link:../security
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.20.4
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

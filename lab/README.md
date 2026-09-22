@@ -89,6 +89,29 @@ curl -s -X POST $API/pricing/simulate -H "$H" -H 'content-type: application/json
 
 La prueba `apps/api/src/pricing.e2e.test.ts` recorre el flujo completo con el simulador (`suspendEv`, `unplug`, `stayPluggedAfterStop`): carga que termina, gracia, ocupación por segundo, tope de exposición que detiene la sesión y liquidación.
 
+## Pagos con Wompi (iteración 5)
+
+Sin medio de pago registrado ninguna sesión de app arranca (`NO_PAYMENT_METHOD`). En local, con `PAYMENTS_PROVIDER=fake` en `.env`, la API lleva un emulador de pasarela en memoria: los cobros, deudas y webhooks se ejercitan sin red desde `POST $API/billing/jobs/run` (el worker solo cobra con `wompi`). Con las llaves del sandbox (`PAYMENTS_PROVIDER=wompi`, `WOMPI_*`), el flujo es el real: la app tokeniza la tarjeta con el widget de Wompi y Volt crea la fuente de pago.
+
+```bash
+curl -s http://localhost:8080/v1/billing -H "$D" | jq '{canCharge, reason, status, debts}'
+curl -s http://localhost:8080/v1/payment-methods/acceptance -H "$D" | jq .          # tokens de aceptación para el alta
+# con el sandbox: TOKEN = el que devuelve el widget (tarjeta 4242 4242 4242 4242 aprobada, 4111 1111 1111 1111 rechazada)
+curl -s -X POST http://localhost:8080/v1/payment-methods -H "$D" -H 'content-type: application/json' \
+  -d '{"type":"CARD","token":"tok_test_...","acceptanceToken":"...","personalDataAuthToken":"..."}' | jq .
+curl -s http://localhost:8080/v1/sessions/$SESSION -H "$D" | jq '{state, paymentStatus, cost, receipt}'
+curl -s -X POST $API/billing/jobs/run -H "$H" -H 'content-type: application/json' -d '{"job":"all"}' | jq .   # cobrar ahora
+curl -s http://localhost:8080/v1/sessions/$SESSION/receipt -H "$D" | jq '{number, totals, payment}'
+curl -s "http://localhost:8080/v1/sessions/$SESSION/receipt?format=html" -H "$D" > recibo.html
+curl -s "$API/payments?sessionId=$SESSION" -H "$H" | jq '.items[] | {kind, status, reference, psp_status}'
+curl -s -X POST $API/payments/<id>/reverse -H "$H" -H 'content-type: application/json' -d '{"reason":"prueba"}' | jq '{kind, status}'
+curl -s "$API/debts?status=OPEN" -H "$H" | jq .                                       # cobros rechazados
+curl -s -X POST http://localhost:8080/v1/debts/<id>/pay-link -H "$D" | jq .          # enlace de checkout para saldar
+curl -s -X POST $API/billing/reconcile -H "$H" -H 'content-type: application/json' -d '{}' | jq '{day, counts, discrepancies}'
+```
+
+El webhook de Wompi se registra en su panel apuntando a `https://api.supercargadores.co/v1/webhooks/wompi` (en local, un túnel como `ngrok`); cada evento se verifica con el secreto de eventos y se guarda en `billing.webhook_inbox` (`GET $API/billing/webhooks`). La prueba `apps/api/src/payments.e2e.test.ts` recorre el flujo completo con el emulador y `apps/api/src/wompi.sandbox.test.ts` contrasta el adaptador con el sandbox real cuando existen las llaves de prueba.
+
 ## Simuladores de cargador externos
 
 `docker-compose.lab.yml` construye desde el código fuente dos simuladores que interpretan la especificación de forma distinta, lo que hace aflorar errores del servidor (HW §4.2):

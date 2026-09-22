@@ -31,6 +31,15 @@ const schema = z.object({
   WORKER_LIMITS_POLL_MS: z.coerce.number().int().min(500).max(600_000).default(3_000),
   /** Activación de versiones de tarifa programadas: sondeo. */
   WORKER_TARIFF_POLL_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
+  /** Cobros (iteración 5): pasarela, sondeo de cobros y reintentos, hora UTC de la conciliación diaria. */
+  PAYMENTS_PROVIDER: z.enum(['wompi', 'fake', 'none']).default('none'),
+  WOMPI_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
+  WOMPI_PUBLIC_KEY: z.string().min(8).optional(),
+  WOMPI_PRIVATE_KEY: z.string().min(8).optional(),
+  WOMPI_INTEGRITY_SECRET: z.string().min(8).optional(),
+  WOMPI_EVENTS_SECRET: z.string().min(8).optional(),
+  WORKER_BILLING_POLL_MS: z.coerce.number().int().min(1000).max(600_000).default(10_000),
+  WORKER_RECONCILIATION_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(8),
 });
 
 export type WorkerConfig = z.infer<typeof schema>;
@@ -41,6 +50,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
     throw new Error(
       `Configuración inválida: ${result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
     );
+  }
+  if (result.data.NODE_ENV === 'production' && result.data.PAYMENTS_PROVIDER !== 'wompi') {
+    throw new Error('Configuración inválida: en producción PAYMENTS_PROVIDER debe ser wompi');
+  }
+  if (result.data.PAYMENTS_PROVIDER === 'wompi') {
+    for (const key of [
+      'WOMPI_PUBLIC_KEY',
+      'WOMPI_PRIVATE_KEY',
+      'WOMPI_INTEGRITY_SECRET',
+      'WOMPI_EVENTS_SECRET',
+    ] as const) {
+      if (!result.data[key])
+        throw new Error(`Configuración inválida: falta ${key} para PAYMENTS_PROVIDER=wompi`);
+    }
   }
   return result.data;
 }
