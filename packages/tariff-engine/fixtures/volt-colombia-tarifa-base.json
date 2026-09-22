@@ -1,5 +1,5 @@
 {
-  "descripcion": "Tarifa base del tenant Volt según ADR 0012 y ADR 0017. Los precios por kWh son VALORES DE EJEMPLO que el dueño del proyecto reemplaza en el back-office; la gracia de 15 minutos y los 1.500 COP por minuto de ocupación son los valores por defecto acordados y también son configurables. PARKING_TIME se expresa por hora (semántica OCPI): 1.500 COP/min = 90000 COP/h.",
+  "descripcion": "Tarifa base del tenant Volt según ADR 0012, 0017 y 0018 (precios definidos por el dueño el 22-09-2026): 1.350 COP/kWh de 05:00 a 20:00 y 1.200 COP/kWh de 20:00 a 05:00, servicio excluido de IVA, 15 minutos de gracia y luego 1.500 COP por minuto de ocupación sin tope de tiempo. PARKING_TIME se expresa por hora (semántica OCPI): 1.500 COP/min = 90000 COP/h. Todo se cambia publicando una versión nueva.",
   "tariff": {
     "country_code": "CO",
     "party_id": "VLT",
@@ -10,11 +10,11 @@
     "tariff_alt_text": [
       {
         "language": "es",
-        "text": "Energía por kWh según franja horaria. Tras terminar la carga: 15 minutos de gracia y luego 1.500 COP por minuto de ocupación. Precios con IVA incluido según configuración del tenant."
+        "text": "Energía: 1.350 COP por kWh de 05:00 a 20:00 y 1.200 COP por kWh de 20:00 a 05:00. Tras terminar la carga: 15 minutos de gracia y luego 1.500 COP por minuto de ocupación mientras el vehículo siga conectado. Servicio excluido de IVA."
       },
       {
         "language": "en",
-        "text": "Energy per kWh by time of day. After charging ends: 15 minutes grace, then COP 1,500 per minute of occupancy."
+        "text": "Energy: COP 1,350 per kWh from 05:00 to 20:00 and COP 1,200 per kWh from 20:00 to 05:00. After charging ends: 15 minutes grace, then COP 1,500 per minute of occupancy while the vehicle stays plugged in. VAT-exempt service."
       }
     ],
     "elements": [
@@ -22,36 +22,33 @@
         "price_components": [
           {
             "type": "ENERGY",
-            "price": "1600",
-            "vat": "19",
+            "price": "1350",
             "step_size": 1
           }
         ],
         "restrictions": {
-          "start_time": "22:00",
-          "end_time": "06:00"
+          "start_time": "05:00",
+          "end_time": "20:00"
         }
       },
       {
         "price_components": [
           {
             "type": "ENERGY",
-            "price": "2200",
-            "vat": "19",
+            "price": "1200",
             "step_size": 1
           }
         ],
         "restrictions": {
-          "start_time": "17:00",
-          "end_time": "22:00"
+          "start_time": "20:00",
+          "end_time": "05:00"
         }
       },
       {
         "price_components": [
           {
             "type": "ENERGY",
-            "price": "1900",
-            "vat": "19",
+            "price": "1350",
             "step_size": 1
           }
         ]
@@ -61,14 +58,12 @@
           {
             "type": "PARKING_TIME",
             "price": "90000",
-            "vat": "19",
             "step_size": 60
           }
         ],
         "x_volt": {
           "grace_period_s": 900,
-          "idle_start": "EARLIEST",
-          "max_idle_s": 14400
+          "idle_start": "EARLIEST"
         }
       }
     ],
@@ -82,12 +77,16 @@
     "timezone": "America/Bogota"
   },
   "defaults": {
+    "energy_price_day_cop_per_kwh": 1350,
+    "energy_day_from": "05:00",
+    "energy_day_to": "20:00",
+    "energy_price_night_cop_per_kwh": 1200,
     "idle_fee_price_per_minute_cop": 1500,
+    "idle_fee_price_per_hour_cop": 90000,
     "idle_fee_grace_period_s": 900,
-    "idle_fee_max_idle_s": 14400,
     "idle_start": "EARLIEST",
+    "vat_percent": 0,
     "suspended_ev_power_threshold_w": 500,
-    "suspended_ev_min_duration_s": 120,
-    "idle_fee_price_per_hour_cop": 90000
+    "suspended_ev_min_duration_s": 120
   }
 }

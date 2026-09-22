@@ -21,6 +21,8 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0015](0015-region-us-central1.md) | Región principal `us-central1` tras medir la latencia desde Bogotá |
 | [0016](0016-transacciones-en-el-gateway-sse-sobre-outbox.md) | Transacciones resueltas por el gateway con el núcleo compartido, SSE sobre el outbox y Pub/Sub diferido a la iteración 8 |
 | [0017](0017-precios-al-consumidor-snapshot-y-tope-de-exposicion.md) | Precios al consumidor con IVA incluido, semántica OCPI del motor (ocupación por hora), snapshot fail-closed, ocupación y tope de exposición |
+| [0018](0018-precios-iniciales-servicio-excluido-de-iva-y-ocupacion-sin-tope.md) | Precios iniciales de Volt (1.350 y 1.200 COP/kWh), servicio excluido de IVA, ocupación sin tope de tiempo y carga máxima de 4 horas |
+| [0019](0019-dominio-supercargadores-co-y-nombres-de-host.md) | Dominio `supercargadores.co` (zona en Netlify DNS) y nombres de host `ocpp.`, `api.`, `admin.` y `app.` |
 
 ```markdown
 # NNNN. Título de la decisión

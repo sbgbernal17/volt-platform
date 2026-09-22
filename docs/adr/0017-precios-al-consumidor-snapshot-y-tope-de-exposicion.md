@@ -1,6 +1,6 @@
 # 0017. Precios al consumidor con IVA incluido, semántica OCPI del motor, tope de exposición y ocupación
 
-Fecha: 2026-09-22. Estado: aceptada.
+Fecha: 2026-09-22. Estado: aceptada. Actualización del mismo día: el dueño informó que el servicio de carga está excluido de IVA y fijó los precios reales (ADR 0018); la tarifa base ya no lleva componente de impuesto y la ocupación no tiene tope de tiempo. El mecanismo de precios con impuesto incluido de este ADR se conserva para cuando haga falta.
 
 ## Contexto
 

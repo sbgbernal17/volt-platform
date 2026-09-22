@@ -21,3 +21,7 @@ El dueño del proyecto informó: se inicia con 3 estaciones de carga rápida DC 
 - Los importes por sesión son altos (una carga completa a 180 kW puede superar con creces el costo de una sesión AC), lo que refuerza el límite de exposición por sesión del ADR 0002.
 - El smart charging inicial es por sede (límite de potencia contratada) y por gabinete (reparto entre mangueras); se documenta por modelo en la matriz de conformidad.
 - Los requisitos al proveedor (resumen ejecutivo §8) se envían por modelo: 180 kW y 40 kW, con especial atención a measurands DC, `SoC`, reparto de potencia, `SetChargingProfile`, mecanismos de cambio de URL y perfiles de seguridad.
+
+## Actualización 2026-09-22: conectores del parque inicial
+
+El dueño precisó que cada estación trae una combinación distinta de conectores: la estación 1 tiene **CCS1 y CCS2**, la 2 **dos CCS2** y la 3 **CCS2 y GB/T**. El inventario ya lo modela por conector (`assets.connector.standard`: `IEC_62196_T1_COMBO` para CCS1, `IEC_62196_T2_COMBO` para CCS2 y `GBT_DC` para GB/T), la app muestra el tipo de cada EVSE y las tarifas pueden diferenciarse por tipo de conector con asignaciones de alcance `CONNECTOR_TYPE` (ADR 0017). Al comisionar cada estación se registra la combinación real de sus mangueras; el simulador del laboratorio puede reproducir cualquier combinación.

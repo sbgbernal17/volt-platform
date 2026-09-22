@@ -482,16 +482,16 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
       taxIncluded: true,
       tariffCode: 'VOLT-BASE',
       tariffVersion: 3,
-      energy: { pricePerKwhNow: '1900' },
+      energy: { pricePerKwhNow: '1350' },
       idleFee: {
         pricePerMinute: '1500',
         gracePeriodMin: 15,
-        maxIdleMin: 240,
+        maxIdleMin: null,
         startsAt: 'EARLIEST',
       },
       exposureLimit: '200000',
     });
-    expect(preview.energy.elements.map((e) => e.pricePerKwh)).toEqual(['1600', '2200', '1900']);
+    expect(preview.energy.elements.map((e) => e.pricePerKwh)).toEqual(['1350', '1200', '1350']);
     expect(preview.text).toContain('15 minutos de gracia');
     clock = at(0);
     const session = await sessions.requestStart({
@@ -545,7 +545,7 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
     expect(current.running_cost).toMatchObject({
       currency: 'COP',
       tax_included: true,
-      total_minor: '19000',
+      total_minor: '13500',
       energy_wh: 10000,
       alerts: [],
     });
@@ -555,7 +555,7 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
     const meteredPayload = metered?.payload.payload as
       | { cost: { total_minor: string } }
       | undefined;
-    expect(meteredPayload?.cost.total_minor).toBe('19000');
+    expect(meteredPayload?.cost.total_minor).toBe('13500');
 
     // El vehículo se llena a los 40 minutos (SuspendedEV) y el conductor detiene a los 65.
     clock = at(40);
@@ -608,7 +608,7 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
       currency: 'COP',
       capped: false,
     });
-    expect(BigInt(settled.calc.total_minor)).toBe(57_500n);
+    expect(BigInt(settled.calc.total_minor)).toBe(46_500n);
     expect(
       settled.lines.map((l) => [
         l.dimension,
@@ -618,7 +618,7 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
         BigInt(l.amount_minor) + BigInt(l.tax_minor),
       ]),
     ).toEqual([
-      ['ENERGY', 'e2', 20, 'kWh', 38_000n],
+      ['ENERGY', 'e0', 20, 'kWh', 27_000n],
       ['PARKING_TIME', 'e3', 13, 'min', 19_500n],
     ]);
     expect(settled.calc.summary).toMatchObject({
@@ -634,8 +634,8 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
       currency: 'COP',
       final_calc_id: settled.calc.id,
     });
-    expect(BigInt(current.total_minor ?? 0)).toBe(57_500n);
-    expect(BigInt(current.tax_minor ?? 0)).toBe(6_067n + 3_113n);
+    expect(BigInt(current.total_minor ?? 0)).toBe(46_500n);
+    expect(BigInt(current.tax_minor ?? 0)).toBe(0n);
     const names = (await listAggregateEvents(sql, 'session', session.id)).map((e) => e.type);
     expect(names.slice(-4)).toEqual([
       'session.ended',
@@ -649,7 +649,7 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
     expect(recalc.calc.id).toBe(settled.calc.id);
     const view = await pricing.getSessionCost(sql, session.id);
     expect(view.final?.lines).toHaveLength(2);
-    expect(view.final?.total).toBe('57500');
+    expect(view.final?.total).toBe('46500');
     expect(view.snapshot?.tariff_code).toBe('VOLT-BASE');
     expect(view.calcs).toHaveLength(1);
     // Liquidar de nuevo es idempotente.
@@ -694,11 +694,11 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
     let current = await sample(105, 5000);
     expect(current.running_cost?.alerts).toEqual([]);
     expect(current.exposure_warned_at).toBeNull();
-    current = await sample(110, 13000); // 24.700 >= 80 % de 30.000; proyección a 10 kW: +3.167 < 30.000
+    current = await sample(110, 18000); // 24.300 >= 80 % de 30.000; proyección a 10 kW: +2.250 < 30.000
     expect(current.running_cost?.alerts).toContain('PREAUTH_WARN');
     expect(current.exposure_warned_at).not.toBeNull();
     expect(current.exposure_exhausted_at).toBeNull();
-    current = await sample(115, 16000); // 30.400 >= 30.000
+    current = await sample(115, 23000); // 31.050 >= 30.000
     expect(current.running_cost?.alerts).toEqual(['PREAUTH_WARN', 'PREAUTH_EXHAUSTED']);
     expect(current.exposure_exhausted_at).not.toBeNull();
     const before = gateway.calls.length;
@@ -728,7 +728,7 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
     expect(events.filter((e) => e === 'session.exposure_exhausted')).toHaveLength(1);
     await transactions.stopTransaction(ctx(at(116)), {
       transactionId: start.transactionId,
-      meterStop: 16500,
+      meterStop: 23500,
       timestamp: at(116).toISOString(),
       reason: 'Remote',
     });
@@ -737,7 +737,7 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
     clock = at(118);
     const settled = await pricing.settle(session.id, { actor: 'test' });
     expect(settled.status).toBe('settled');
-    if (settled.status === 'settled') expect(BigInt(settled.calc.total_minor)).toBe(31_350n);
+    if (settled.status === 'settled') expect(BigInt(settled.calc.total_minor)).toBe(31_725n);
   });
 
   it('una transacción no solicitada recibe un snapshot retroactivo al liquidar; la duración máxima también detiene', async () => {
@@ -762,7 +762,7 @@ describe.skipIf(!baseUrl)('precios: tarifas, snapshot, costo en curso y liquidac
     expect(settled.status).toBe('settled');
     if (settled.status === 'settled') {
       expect(settled.calc.flags).toContain('RETRO_SNAPSHOT');
-      expect(BigInt(settled.calc.total_minor)).toBe(5_700n);
+      expect(BigInt(settled.calc.total_minor)).toBe(4_050n);
     }
     expect((await loadSessionSnapshot(sql, sessionId))?.retro).toBe(true);
 

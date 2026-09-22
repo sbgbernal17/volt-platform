@@ -88,7 +88,7 @@ Las tres líneas que imprime el bloque por cada proyecto (`GCP_PROJECT_ID_*`, `G
 
 ## 6. Más adelante
 
-- **Dominio** (iteración 8): comprar o asignar el dominio y crear la zona en Cloud DNS del proyecto prod; te dejaré los registros exactos.
+- **Dominio** (iteración 8): se usa `supercargadores.co`, cuya zona está en Netlify DNS (ADR 0019). No hay que comprar nada ni crear una zona en Cloud DNS: cuando exista el balanceador te daré la lista exacta de registros `A` (`ocpp`, `api`, `admin`, `app` y sus variantes `-staging`) con la IP de cada entorno para que los añadas en Netlify DNS; los certificados los emite Google automáticamente.
 - **Identity Platform** (iteración 6): activar en dev y prod desde Consola → Identity Platform → Habilitar, con proveedores de correo y contraseña y, si quieres, Google; MFA TOTP para administradores.
 - **Certificate Authority Service** (fase 2, perfil de seguridad 3): una CA subordinada Enterprise en prod (ADR 0005 del resumen de seguridad).
 - **Secret Manager** (iteración 8): los secretos de producción (Wompi, DIAN, base de datos) se crean directamente en Consola → Seguridad → Secret Manager del proyecto prod, nunca en GitHub.

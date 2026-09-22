@@ -181,10 +181,8 @@ describe.skipIf(!baseUrl)(
         elements: VOLT_BASE_TARIFF.elements.map((element) =>
           element.price_components.some((c) => c.type === 'PARKING_TIME')
             ? {
-                price_components: [
-                  { type: 'PARKING_TIME', price: '90000', vat: '19', step_size: 1 },
-                ],
-                x_volt: { grace_period_s: 2, idle_start: 'EARLIEST', max_idle_s: 14400 },
+                price_components: [{ type: 'PARKING_TIME', price: '90000', step_size: 1 }],
+                x_volt: { grace_period_s: 2, idle_start: 'EARLIEST' },
               }
             : element,
         ),
@@ -283,7 +281,7 @@ describe.skipIf(!baseUrl)(
         tariffCode: 'VOLT-BASE',
         tariffVersion: 2,
       });
-      expect(['1600', '2200', '1900']).toContain(evse.tariff.energy.pricePerKwhNow);
+      expect(['1350', '1200']).toContain(evse.tariff.energy.pricePerKwhNow);
       expect(evse.tariff.energy.elements).toHaveLength(3);
       expect(evse.tariff.idleFee.pricePerMinute).toBe('1500');
       expect(evse.tariff.quoteId).toMatch(/^[0-9a-f-]{36}$/);
@@ -463,7 +461,7 @@ describe.skipIf(!baseUrl)(
         assignment: { scope_type: 'PLATFORM' },
       });
       expect(resolution.candidates[0]).toMatchObject({ chosen: true, reason: 'respaldo PUBLIC' });
-      // Martes 10:00 en Bogotá, 60 min, 10 kWh a 1.900; 20 min conectado tras la parada: 5 min cobrables a 1.500 = 7.500.
+      // Martes 10:00 en Bogotá, 60 min, 10 kWh a 1.350; 20 min conectado tras la parada: 5 min cobrables a 1.500 = 7.500.
       const simulated = (
         await admin('POST', '/admin/v1/pricing/simulate', {
           tariff: VOLT_BASE_TARIFF,
@@ -476,9 +474,9 @@ describe.skipIf(!baseUrl)(
           },
         })
       ).json() as { total: string; lines: { dimension: string; total: string }[] };
-      expect(simulated.total).toBe('26500');
+      expect(simulated.total).toBe('21000');
       expect(simulated.lines.map((l) => [l.dimension, l.total])).toEqual([
-        ['ENERGY', '19000'],
+        ['ENERGY', '13500'],
         ['PARKING_TIME', '7500'],
       ]);
       const invalid = await admin('POST', `/admin/v1/tariffs/${tariffId}/versions/validate`, {

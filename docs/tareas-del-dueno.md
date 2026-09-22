@@ -10,20 +10,24 @@ Lista de lo que solo tú puedes conseguir o decidir, ordenada por la iteración 
 - [x] 2026-09-22: cuenta de Google Cloud creada.
 - [x] 2026-09-22: llaves de prueba de Wompi cargadas como secretos del repositorio en GitHub; documentación en <https://docs.wompi.co/docs/colombia/inicio-rapido/>.
 - [x] 2026-09-22: guía `docs/google-cloud-setup.md` ejecutada (facturación, proyectos, APIs, bucket de Terraform, Workload Identity Federation); variables `GCP_*` cargadas en GitHub; medición de latencia: `us-central1` la más rápida, adoptada como región principal (ADR 0015).
+- [x] 2026-09-22: precios reales de la tarifa base: 1.350 COP/kWh de 05:00 a 20:00 y 1.200 COP/kWh de 20:00 a 05:00 (ADR 0018); publicados como versión 1 de `VOLT-BASE`, cambiables desde el back-office.
+- [x] 2026-09-22: el servicio de carga está excluido de IVA (ADR 0018): la tarifa no lleva impuesto y el recibo no lo desglosa. Falta solo la nota escrita del contador para `docs/legal/`.
+- [x] 2026-09-22: carga máxima de 4 horas (parámetro `session.max_duration_min` = 240) y ocupación cobrada mientras la pistola siga conectada, sin tope de tiempo (ADR 0018).
+- [x] 2026-09-22: dominio `supercargadores.co` (zona en Netlify DNS) para `ocpp.`, `api.`, `admin.` y `app.` (ADR 0019). No hay nada que crear hasta la iteración 8.
+- [x] 2026-09-22: conectores de las tres primeras estaciones: 1 = CCS1 + CCS2, 2 = 2 × CCS2, 3 = CCS2 + GB/T (ADR 0003, actualización). El inventario ya los modela por conector.
+- [x] 2026-09-22: documento de Wompi (tokenización, 3DS, cobros posteriores, anulaciones, reembolsos, Nequi, comisiones) guardado en `docs/proveedor/wompi.md`; alimenta la iteración 5.
 
-## Pendiente ahora: lo que más me ayuda que entregues (iteraciones 4 y 5)
+## Pendiente ahora: lo que más me ayuda que entregues (iteraciones 5 a 7)
 
-Ordenado por urgencia. Ninguno bloquea el desarrollo: mientras llegan, uso valores de ejemplo marcados como tales.
+Ordenado por urgencia. Ninguno bloquea el desarrollo.
 
 | # | Qué necesito | Para qué | Cómo entregarlo |
 |---|---|---|---|
-| 1 | **Precios por kWh por franja horaria**, en pesos con IVA incluido, y las horas de cada franja (por ejemplo valle 22:00-06:00, punta 17:00-22:00, resto del día), indicando si los fines de semana cambian | Publicar la primera tarifa real de Volt (iteración 4). Hoy el sistema trae valores de ejemplo: 1.600, 2.200 y 1.900 COP/kWh | Una tabla en el chat o un archivo `docs/negocio/tarifa-inicial.md`. Si quieres una sola tarifa sin franjas, dímelo |
-| 2 | **Tope de exposición por sesión** (cuánto puede acumular una carga antes de que la plataforma la detenga) y a qué porcentaje avisar al conductor | Reemplaza la preautorización (ADR 0002). Ya está implementado con 200.000 COP y aviso al 80 % (parámetros `pricing.exposure_limit_minor` y `pricing.warn_pct`, cambiables sin tocar código) | Dos cifras en el chat si quieres otras |
-| 3 | **Tiempo máximo de sesión** (propongo 4 horas) y si al superarlo se detiene la carga o solo se avisa | Implementado como parámetro `session.max_duration_min` = 240: al superarlo la plataforma detiene la carga | En el chat si quieres otro valor o solo aviso |
-| 4 | **Confirmación del contador**: (a) IVA del 19 % sobre el servicio de carga, (b) que los precios al público se muestren con IVA incluido y el recibo desglose el impuesto, (c) retenciones que apliquen a los cobros por Wompi | Configurar impuestos y recibos (iteraciones 4 y 5) y no rehacer la facturación electrónica después. Mientras tanto el sistema asume (a) y (b) (ADR 0017: `pricing.tax_included = true`, IVA 19 % en cada componente) | Nota o correo del contador; guárdalo en `docs/legal/` sin datos sensibles |
-| 5 | **Preguntas escritas a Wompi**: tokenización con 3D Secure, cobros posteriores sin presencia del cliente (recurrentes o "con tarjeta guardada"), plazos y reglas de anulación y reembolso, si Nequi se puede tokenizar, comisiones | Iteración 5 (pagos). Sus respuestas definen el flujo de cobro al final de la carga | Sus respuestas en `docs/proveedor/wompi.md` |
-| 6 | **Dominio** para `ocpp.`, `api.` y `admin.` (comprar uno o asignar uno existente) | Certificados y balanceador de la iteración 8 | Nombre del dominio y dónde está registrado |
-| 7 | **Textos para el conductor**: nombre comercial de la tarifa, cómo quieres explicar la ocupación (los 15 minutos de gracia y los 1.500 COP por minuto) y el aviso antes de detener por tope | Los muestra la app antes de iniciar (Resolución 40123: precios visibles) | Dos o tres frases en el chat; yo las convierto en textos de la app en español e inglés |
+| 1 | **Nota escrita del contador** confirmando que el servicio de carga está excluido de IVA y qué retenciones aplican a los cobros por Wompi (retención en la fuente 1,5 %, ICA 0,2 % y retención de IVA 15 % con tarjeta según el documento de Wompi) | Cerrar impuestos, recibos y la conciliación de pagos (iteración 5) sin rehacer la facturación electrónica después. Mientras tanto el sistema ya opera sin IVA (ADR 0018) | Nota o correo del contador en `docs/legal/` sin datos sensibles |
+| 2 | **Preguntas abiertas a tu ejecutivo de Wompi** (sección 6 de `docs/proveedor/wompi.md`): qué procesador queda asignado (¿RBM?) y en qué modelo (Agregador o Gateway), responsabilidad por contracargo con y sin 3RI, plazo máximo real de reembolsos y si hay costo por reembolso o contracargo; y pedir al equipo de fraude la **activación de 3DS en fuentes de pago** para producción | Definir el flujo de cobro al final de la carga (iteración 5) y evitar sorpresas en tasa de aprobación y contracargos | Sus respuestas añadidas al final de `docs/proveedor/wompi.md` |
+| 3 | **Textos para el conductor**: nombre comercial de la tarifa, cómo explicar la ocupación (15 minutos de gracia y 1.500 COP por minuto mientras siga conectado) y el aviso antes de detener por tope | Los muestra la app antes de iniciar (Resolución 40123: precios visibles). Hoy usa un texto provisional | Dos o tres frases en el chat; yo las convierto en textos de la app en español e inglés |
+| 4 | **Manual de marca (identidad visual)**: logo en SVG o PNG con fondo transparente, colores (códigos), tipografías y ejemplos de uso; si tienes, íconos y fotos | Back-office (iteración 6) y app Volt (iteración 7). Cuanto antes llegue, antes lo aplico; no bloquea las iteraciones 5 | Súbelo en el chat (PDF, imágenes o ZIP) o en la carpeta `docs/marca/`; yo extraigo colores y tipografías a un archivo de tokens |
+| 5 | **Correo remitente** para recibos y avisos (por ejemplo `recibos@supercargadores.co`) y si quieres SMS o solo push | Recibos y notificaciones (iteraciones 5 y 7) | En el chat |
 
 ## Proveedor de cargadores y equipos (cuando los tengas)
 
@@ -57,7 +61,7 @@ Sigue `docs/google-cloud-setup.md` (facturación y presupuesto, tres proyectos, 
 - [x] 2026-09-22: proyectos creados y vinculados a facturación.
 - [x] 2026-09-22: bloque de Cloud Shell ejecutado en los tres proyectos.
 - [x] 2026-09-22: variables `GCP_PROJECT_ID_*`, `GCP_WIF_PROVIDER_*`, `GCP_DEPLOYER_SA_*` cargadas en GitHub.
-- [ ] Dominio para `ocpp.`, `api.` y `admin.` (comprar o asignar uno existente) antes de la iteración 8.
+- [x] Dominio: `supercargadores.co` con la zona en Netlify DNS (ADR 0019); en la iteración 8 te doy los registros `A` que hay que añadir.
 
 ## Qué probar de la iteración 2 (inventario y comisionamiento)
 
