@@ -1,4 +1,4 @@
-import { CommandService, CommissioningService, CsmsError } from '@volt/csms';
+import { CommandService, CommissioningService, CsmsError, SessionService } from '@volt/csms';
 import { createSql } from '@volt/db';
 import {
   GatewayClient,
@@ -10,12 +10,14 @@ import { Redis } from 'ioredis';
 import { ZodError } from 'zod';
 import { adminRoutes } from './admin/routes.ts';
 import type { ApiConfig } from './config.ts';
+import { DevDriverVerifier } from './public/auth.ts';
+import { publicRoutes } from './public/routes.ts';
 
 export interface AppDependencies {
   config: ApiConfig;
 }
 
-export const API_VERSION = '0.2.0';
+export const API_VERSION = '0.3.0';
 
 /**
  * Construye la aplicación Fastify: salud, preparación, versión y, con base de datos y token de
@@ -92,7 +94,7 @@ export function buildApp({ config }: AppDependencies): FastifyInstance {
 
   app.get('/v1/version', async () => ({ version: API_VERSION, ocpp: ['1.6J'] }));
 
-  if (sql && config.API_ADMIN_TOKEN) {
+  if (sql) {
     let gateway: GatewayClient | undefined;
     if (config.OCPP_GATEWAY_INTERNAL_TOKEN) {
       const directory = redis
@@ -115,15 +117,33 @@ export function buildApp({ config }: AppDependencies): FastifyInstance {
           rebootWaitMs: config.COMMISSIONING_REBOOT_WAIT_MS,
         })
       : undefined;
-    void app.register(adminRoutes, {
-      prefix: '/admin/v1',
+    const sessions = commands ? new SessionService(sql, commands, { logger: app.log }) : undefined;
+    const verifier = config.API_DEV_DRIVER_AUTH ? new DevDriverVerifier(sql) : undefined;
+    if (verifier) app.log.warn('API_DEV_DRIVER_AUTH activo: identidad de conductor de desarrollo');
+    void app.register(publicRoutes, {
+      prefix: '/v1',
       sql,
-      token: config.API_ADMIN_TOKEN,
-      ...(commands ? { commands } : {}),
-      ...(commissioning ? { commissioning } : {}),
+      verifier,
+      sessions,
+      ssePollMs: config.API_SSE_POLL_MS,
+      sseHeartbeatMs: config.API_SSE_HEARTBEAT_MS,
     });
+    if (config.API_ADMIN_TOKEN) {
+      void app.register(adminRoutes, {
+        prefix: '/admin/v1',
+        sql,
+        token: config.API_ADMIN_TOKEN,
+        ...(commands ? { commands } : {}),
+        ...(commissioning ? { commissioning } : {}),
+        ...(sessions ? { sessions } : {}),
+        ssePollMs: config.API_SSE_POLL_MS,
+        sseHeartbeatMs: config.API_SSE_HEARTBEAT_MS,
+      });
+    } else {
+      app.log.warn('API de administración deshabilitada: hace falta API_ADMIN_TOKEN');
+    }
   } else {
-    app.log.warn('API de administración deshabilitada: hacen falta DATABASE_URL y API_ADMIN_TOKEN');
+    app.log.warn('sin DATABASE_URL: solo salud y versión');
   }
 
   app.addHook('onClose', async () => {

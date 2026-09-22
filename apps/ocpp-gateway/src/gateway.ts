@@ -1,6 +1,12 @@
 import { EventEmitter } from 'node:events';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type {
+  InboundContext,
+  MeterValuesParams,
+  StartTransactionParams,
+  StopTransactionParams,
+} from '@volt/csms';
 import {
   bootNotificationStatusFor,
   isChargePointStatus,
@@ -300,7 +306,7 @@ export class Gateway extends EventEmitter<{ event: [EventEnvelope] }> {
         return { status, currentTime: this.now().toISOString(), interval };
       },
       Heartbeat: async () => ({ currentTime: this.now().toISOString() }),
-      StatusNotification: async (params) => {
+      StatusNotification: async (params, messageId) => {
         const connectorId = Number(params.connectorId);
         const status = params.status;
         if (!isChargePointStatus(status)) return {};
@@ -321,6 +327,8 @@ export class Gateway extends EventEmitter<{ event: [EventEnvelope] }> {
           chargePoint: connection.chargePoint,
           params,
           at: this.now(),
+          context: this.contextFor(connection, messageId),
+          previousStatus: previousStatus ?? null,
         });
         this.publish('connector.status.changed', connection.chargePoint, 'connector', key, {
           connectorId,
@@ -342,13 +350,78 @@ export class Gateway extends EventEmitter<{ event: [EventEnvelope] }> {
         );
         return { status: 'UnknownVendorId' };
       },
-      // Sin tokens emitidos todavía, ninguna autorización local es válida (SEG S4).
-      Authorize: async (params) => {
-        log.info(
-          { idTag: params.idTag },
-          'Authorize rechazado: autorización pendiente de la iteración 3',
+      // Solo los idTag emitidos por la plataforma son válidos (SEG S4).
+      Authorize: async (params, messageId) => {
+        const result = await this.persistence.transactions.authorize(
+          this.contextFor(connection, messageId),
+          String(params.idTag),
         );
-        return { idTagInfo: { status: 'Invalid' } };
+        log.info({ status: result.idTagInfo.status }, 'Authorize');
+        return result;
+      },
+      StartTransaction: async (params, messageId) => {
+        const result = await this.persistence.transactions.startTransaction(
+          this.contextFor(connection, messageId),
+          params as unknown as StartTransactionParams,
+        );
+        log.info(
+          {
+            connectorId: params.connectorId,
+            transactionId: result.transactionId,
+            status: result.idTagInfo.status,
+            duplicate: result.duplicate,
+          },
+          'StartTransaction',
+        );
+        this.publish(
+          'session.started',
+          connection.chargePoint,
+          'transaction',
+          `${chargePoint.identity}:${result.transactionId}`,
+          {
+            connectorId: params.connectorId,
+            transactionId: result.transactionId,
+            sessionId: result.sessionId,
+            idTagStatus: result.idTagInfo.status,
+            duplicate: result.duplicate,
+          },
+        );
+        return { transactionId: result.transactionId, idTagInfo: result.idTagInfo };
+      },
+      MeterValues: async (params, messageId) => {
+        await this.persistence.transactions.recordMeterValues(
+          this.contextFor(connection, messageId),
+          params as unknown as MeterValuesParams,
+        );
+        return {};
+      },
+      StopTransaction: async (params, messageId) => {
+        const result = await this.persistence.transactions.stopTransaction(
+          this.contextFor(connection, messageId),
+          params as unknown as StopTransactionParams,
+        );
+        log.info(
+          {
+            transactionId: params.transactionId,
+            sessionId: result.sessionId,
+            duplicate: result.duplicate,
+            orphan: result.orphan,
+          },
+          'StopTransaction',
+        );
+        this.publish(
+          'session.ended',
+          connection.chargePoint,
+          'transaction',
+          `${chargePoint.identity}:${String(params.transactionId)}`,
+          {
+            transactionId: params.transactionId,
+            sessionId: result.sessionId,
+            duplicate: result.duplicate,
+            orphan: result.orphan,
+          },
+        );
+        return result.idTagInfo ? { idTagInfo: result.idTagInfo } : {};
       },
     };
 
@@ -419,6 +492,23 @@ export class Gateway extends EventEmitter<{ event: [EventEnvelope] }> {
         },
       );
     });
+  }
+
+  private contextFor(connection: LiveConnection, uniqueId: string): InboundContext {
+    const cp = connection.chargePoint;
+    return {
+      chargePoint: {
+        id: cp.id,
+        identity: cp.identity,
+        tenantId: cp.tenantId,
+        lifecycle: cp.lifecycle,
+      },
+      uniqueId,
+      receivedAt: this.now(),
+      connectedAt: connection.connectedAt,
+      heartbeatIntervalS: this.deps.config.OCPP_HEARTBEAT_INTERVAL_S,
+      generation: connection.generation,
+    };
   }
 
   private async openInPersistence(

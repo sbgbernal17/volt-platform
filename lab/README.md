@@ -39,6 +39,25 @@ curl -s -X POST $API/charge-points/$CP/configuration/sync -H "$H" | jq '{drift: 
 curl -s $API/charge-points/$CP -H "$H" | jq '{lifecycle_status, connected, drift, alarms}'
 ```
 
+## Sesión de carga de punta a punta (iteración 3)
+
+Con el cargador simulado ya OPERATIONAL (pasos anteriores) y `pnpm dev:worker` en otra terminal:
+
+```bash
+# conductor de prueba e identidad de desarrollo (API_DEV_DRIVER_AUTH=true en .env)
+DRIVER=$(curl -s -X POST $API/drivers -H "$H" -H 'content-type: application/json' -d '{"email":"ana@example.com","displayName":"Ana"}' | jq -r .id)
+export D="Authorization: Bearer dev:$DRIVER"
+
+curl -s http://localhost:8080/v1/locations | jq '.items[0].evses'          # mapa con estado en vivo
+SESSION=$(curl -s -X POST http://localhost:8080/v1/sessions -H "$D" -H 'content-type: application/json' -H 'Idempotency-Key: demo-1' -d '{"evseId":"SIM-001-1"}' | jq -r .id)
+curl -sN http://localhost:8080/v1/sessions/$SESSION/events -H "$D"          # progreso por SSE (Ctrl+C para salir)
+curl -s http://localhost:8080/v1/sessions/$SESSION -H "$D" | jq '{state, energyKwh, powerKw, soc}'
+curl -s -X POST http://localhost:8080/v1/sessions/$SESSION/stop -H "$D" | jq .state
+curl -s $API/sessions/$SESSION -H "$H" | jq '{state, energy_wh, stop_reason, events: [.events[].type]}'
+```
+
+Corte de red: en el simulador, `goOffline()`/`goOnline()` encolan y reenvían `StartTransaction`, `MeterValues` y `StopTransaction` con sus sellos originales; el CSMS acepta la transacción, marca `offline_start`/`offline_stop` y no duplica nada aunque el cargador reintente (prueba `apps/ocpp-gateway/src/transactions.db.test.ts`).
+
 ## Simuladores de cargador externos
 
 `docker-compose.lab.yml` construye desde el código fuente dos simuladores que interpretan la especificación de forma distinta, lo que hace aflorar errores del servidor (HW §4.2):

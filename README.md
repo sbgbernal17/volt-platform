@@ -4,7 +4,7 @@ CSMS propio (Charging Station Management System) para operar una red de estacion
 
 ## Estado
 
-Diseño terminado y decisiones tomadas (septiembre de 2026): Colombia, Wompi con tokenización y cobro al final de la carga, parque inicial de 3 estaciones DC de 180 kW con dos mangueras (30 en el primer año), OCPP 1.6J con perfil de seguridad 2, región us-east1, app "Volt" en español e inglés, desarrollo por iteraciones con Claude Code. Las decisiones están en `docs/adr/`. Iteraciones 0 a 2 terminadas: gateway OCPP 1.6J con registro y persistencia en PostgreSQL, inventario y comisionamiento desde la API de administración, comandos remotos y detección de deriva; un cargador simulado pasa de inventariado a operativo (ver `docs/plan-de-trabajo.md` §5).
+Diseño terminado y decisiones tomadas (septiembre de 2026): Colombia, Wompi con tokenización y cobro al final de la carga, parque inicial de 3 estaciones DC de 180 kW con dos mangueras (30 en el primer año), OCPP 1.6J con perfil de seguridad 2, región us-east1, app "Volt" en español e inglés, desarrollo por iteraciones con Claude Code. Las decisiones están en `docs/adr/`. Iteraciones 0 a 3 terminadas: gateway OCPP 1.6J con registro y persistencia en PostgreSQL, inventario y comisionamiento desde la API de administración, comandos remotos, detección de deriva y sesiones de carga completas (inicio desde la app, progreso en vivo por SSE, parada, transacciones offline y reconexión) probadas con un cargador simulado (ver `docs/plan-de-trabajo.md` §5).
 
 ## Documentación
 
@@ -38,8 +38,8 @@ Con `DATABASE_URL` el gateway autentica contra el inventario (`assets.charge_poi
 | Directorio | Contenido |
 |---|---|
 | `apps/ocpp-gateway` | Servidor OCPP-J 1.6 (WebSocket persistente, allowlist, validación de esquemas, persistencia, API interna de comandos, directorio en Redis) |
-| `apps/api` | API Fastify: `/v1` para la app, `/admin/v1` para el back-office (inventario, comisionamiento, comandos, alarmas) |
-| `apps/worker` | Trabajos en segundo plano (revisión diaria de deriva; después outbox, timeouts, conciliación) |
+| `apps/api` | API Fastify: `/v1` para la app (sedes, EVSE, sesiones, SSE), `/admin/v1` para el back-office (inventario, comisionamiento, comandos, sesiones, alarmas) |
+| `apps/worker` | Trabajos en segundo plano: relay del outbox, expiración de arranques, cierre de transacciones huérfanas, particiones mensuales, revisión diaria de deriva |
 | `apps/backoffice`, `apps/mobile` | Back-office web y app Volt (iteraciones 6 y 7) |
 | `packages/domain` | Máquinas de estado y dinero en enteros |
 | `packages/ocpp-schemas` | Esquemas JSON oficiales de OCPP 1.6 y validadores |

@@ -176,14 +176,35 @@ describe('gateway OCPP 1.6J', () => {
     expect(lastConnected?.replacedPrevious).toBe(true);
   });
 
-  it('responde DataTransfer con UnknownVendorId y Authorize con Invalid', async () => {
+  it('responde DataTransfer con UnknownVendorId y, en modo laboratorio, Authorize con Accepted', async () => {
     const client = await connect('CP-OPER', 'clave-oper');
     expect(await client.call('DataTransfer', { vendorId: 'com.example', messageId: 'X' })).toEqual({
       status: 'UnknownVendorId',
     });
     expect(await client.call('Authorize', { idTag: 'ABC123' })).toEqual({
-      idTagInfo: { status: 'Invalid' },
+      idTagInfo: { status: 'Accepted' },
     });
+    const started = (await client.call('StartTransaction', {
+      connectorId: 1,
+      idTag: 'ABC123',
+      meterStart: 10,
+      timestamp: new Date().toISOString(),
+    })) as { transactionId: number; idTagInfo: { status: string } };
+    expect(started.transactionId).toBeGreaterThan(0);
+    expect(
+      await client.call('MeterValues', {
+        connectorId: 1,
+        transactionId: started.transactionId,
+        meterValue: [{ timestamp: new Date().toISOString(), sampledValue: [{ value: '15' }] }],
+      }),
+    ).toEqual({});
+    expect(
+      await client.call('StopTransaction', {
+        transactionId: started.transactionId,
+        meterStop: 20,
+        timestamp: new Date().toISOString(),
+      }),
+    ).toEqual({});
   });
 
   it('expone salud, preparación y métricas', async () => {

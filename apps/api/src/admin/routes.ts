@@ -6,39 +6,64 @@ import {
   CsmsError,
   createChargePoint,
   createConfigTemplate,
+  createDriver,
   createSite,
   getChargePoint,
   getConfigTemplate,
   getCredentialSummary,
+  getSessionView,
   getSite,
   issueCredential,
+  listAggregateEvents,
   listAlarms,
   listChargePoints,
   listConfigTemplates,
   listConfiguration,
   listConnectors,
   listConnectorsLive,
+  listDrivers,
   listLifecycleEvents,
+  listSessionViews,
   listSites,
   POWER_TYPES,
   REMOTE_ACTIONS,
   resolveAlarmById,
+  type SessionService,
   SITE_ACCESS_TYPES,
   transitionLifecycle,
   VOLT_TENANT_ID,
 } from '@volt/csms';
-import { LIFECYCLE_STATES } from '@volt/domain';
+import { LIFECYCLE_STATES, SESSION_STATES } from '@volt/domain';
 import { constantTimeEquals } from '@volt/security';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
+import { isSessionFinished, toPublicSession } from '../public/sessions-view.ts';
+import { streamSessionEvents } from '../public/sse.ts';
 
 export interface AdminRoutesOptions {
   sql: Sql;
   token: string;
   commands?: CommandService;
   commissioning?: CommissioningService;
+  sessions?: SessionService;
+  ssePollMs?: number;
+  sseHeartbeatMs?: number;
 }
+
+const driverBody = z.object({
+  email: z.string().email().max(120).optional(),
+  phone: z.string().max(32).optional(),
+  displayName: z.string().max(120).optional(),
+  locale: z.enum(['es', 'en']).optional(),
+});
+
+const sessionStartBody = z.object({
+  evseId: z.string().min(1).max(48).optional(),
+  evseUuid: z.string().uuid().optional(),
+  channel: z.enum(['OPERATOR', 'TEST']).default('OPERATOR'),
+  driverId: z.string().uuid().optional(),
+});
 
 const uuid = z.string().uuid();
 const params = z.object({ id: uuid });
@@ -310,5 +335,81 @@ export async function adminRoutes(
     if (!alarm)
       throw new CsmsError(`La alarma ${id} no existe o ya está resuelta`, 404, 'NOT_FOUND');
     return serialize(alarm);
+  });
+
+  // ---- Conductores ----
+  app.get('/drivers', async () => ({ items: serialize(await listDrivers(sql, tenantId)) }));
+  app.post('/drivers', async (request, reply) => {
+    const body = driverBody.parse(request.body);
+    const driver = await createDriver(sql, { tenantId, ...body });
+    reply.code(201);
+    return serialize(driver);
+  });
+
+  // ---- Sesiones (operador y pruebas de comisionamiento) ----
+  const requireSessions = (): SessionService => {
+    if (!options.sessions) {
+      throw new CsmsError(
+        'El enlace con el gateway OCPP no está configurado',
+        503,
+        'GATEWAY_UNAVAILABLE',
+      );
+    }
+    return options.sessions;
+  };
+  app.post('/sessions', async (request, reply) => {
+    const body = sessionStartBody.parse(request.body);
+    const session = await requireSessions().requestStart({
+      tenantId,
+      evseCode: body.evseId,
+      evseId: body.evseUuid,
+      driverId: body.driverId ?? null,
+      channel: body.channel,
+      requestedBy: actorOf(request),
+    });
+    const view = await getSessionView(sql, session.id);
+    reply.code(view.state === 'FAILED' ? 409 : 202);
+    return serialize({ ...view, public: toPublicSession(view, '/admin/v1') });
+  });
+  app.get('/sessions', async (request) => {
+    const query = z
+      .object({
+        chargePointId: uuid.optional(),
+        driverId: uuid.optional(),
+        state: z.enum(SESSION_STATES).optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+      })
+      .parse(request.query ?? {});
+    return { items: serialize(await listSessionViews(sql, { tenantId, ...query })) };
+  });
+  app.get('/sessions/:id', async (request) => {
+    const { id } = params.parse(request.params);
+    const view = await getSessionView(sql, id);
+    const events = await listAggregateEvents(sql, 'session', id, 0n, 500);
+    return serialize({ ...view, public: toPublicSession(view, '/admin/v1'), events });
+  });
+  app.post('/sessions/:id/stop', async (request, reply) => {
+    const { id } = params.parse(request.params);
+    await requireSessions().requestStop(id, actorOf(request));
+    reply.code(202);
+    return serialize(await getSessionView(sql, id));
+  });
+  app.post('/sessions/:id/cancel', async (request) => {
+    const { id } = params.parse(request.params);
+    await requireSessions().cancel(id, actorOf(request));
+    return serialize(await getSessionView(sql, id));
+  });
+  app.get('/sessions/:id/events', async (request, reply) => {
+    const { id } = params.parse(request.params);
+    await getSessionView(sql, id);
+    await streamSessionEvents(request, reply, sql, id, {
+      pollMs: options.ssePollMs ?? 1000,
+      heartbeatMs: options.sseHeartbeatMs ?? 15_000,
+      isFinished: async () => isSessionFinished((await getSessionView(sql, id)).state),
+    });
+  });
+  app.get('/charge-points/:id/transactions', async (request) => {
+    const { id } = params.parse(request.params);
+    return { items: serialize(await requireSessions().listTransactions(id)) };
   });
 }

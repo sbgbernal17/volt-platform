@@ -1,4 +1,16 @@
-import { INVENTORY_MISMATCH_ALARM, raiseAlarm, toJson, transitionLifecycle } from '@volt/csms';
+import {
+  INVENTORY_MISMATCH_ALARM,
+  type InboundContext,
+  type MeterValuesParams,
+  raiseAlarm,
+  type StartTransactionParams,
+  type StartTransactionResult,
+  type StopTransactionParams,
+  type StopTransactionResult,
+  TransactionService,
+  toJson,
+  transitionLifecycle,
+} from '@volt/csms';
 import { bootNotificationStatusFor, type LifecycleState } from '@volt/domain';
 import type { Logger } from 'pino';
 import type { Sql } from 'postgres';
@@ -40,6 +52,26 @@ export interface StatusInfo {
   chargePoint: RegisteredChargePoint;
   params: Record<string, unknown>;
   at: Date;
+  /** Contexto de conexión para las transiciones de sesión (iteración 3). */
+  context?: InboundContext | undefined;
+  previousStatus?: string | null | undefined;
+}
+
+/** Autorización y transacciones OCPP (Authorize, StartTransaction, MeterValues, StopTransaction). */
+export interface TransactionHandler {
+  authorize(
+    ctx: InboundContext,
+    idTag: string,
+  ): Promise<{ idTagInfo: { status: string; expiryDate?: string } }>;
+  startTransaction(
+    ctx: InboundContext,
+    params: StartTransactionParams,
+  ): Promise<StartTransactionResult>;
+  recordMeterValues(ctx: InboundContext, params: MeterValuesParams): Promise<unknown>;
+  stopTransaction(
+    ctx: InboundContext,
+    params: StopTransactionParams,
+  ): Promise<StopTransactionResult>;
 }
 
 export interface MessageLogEntry {
@@ -70,11 +102,51 @@ export interface GatewayPersistence {
   seen(chargePoint: RegisteredChargePoint, at: Date): Promise<void>;
   logMessage(entry: MessageLogEntry): void;
   flush(): Promise<void>;
+  readonly transactions: TransactionHandler;
+}
+
+/**
+ * Transacciones de laboratorio (sin base de datos): todo idTag se acepta, los transactionId son
+ * consecutivos y nada se persiste.
+ */
+export class MemoryTransactions implements TransactionHandler {
+  private nextTransactionId = 1;
+  readonly started: StartTransactionParams[] = [];
+  readonly stopped: StopTransactionParams[] = [];
+
+  async authorize(): Promise<{ idTagInfo: { status: string } }> {
+    return { idTagInfo: { status: 'Accepted' } };
+  }
+
+  async startTransaction(
+    _ctx: InboundContext,
+    params: StartTransactionParams,
+  ): Promise<StartTransactionResult> {
+    this.started.push(params);
+    const transactionId = this.nextTransactionId++;
+    return { transactionId, idTagInfo: { status: 'Accepted' }, duplicate: false, sessionId: null };
+  }
+
+  async recordMeterValues(): Promise<void> {}
+
+  async stopTransaction(
+    _ctx: InboundContext,
+    params: StopTransactionParams,
+  ): Promise<StopTransactionResult> {
+    this.stopped.push(params);
+    return {
+      ...(params.idTag ? { idTagInfo: { status: 'Accepted' as const } } : {}),
+      sessionId: null,
+      duplicate: false,
+      orphan: false,
+    };
+  }
 }
 
 export class MemoryPersistence implements GatewayPersistence {
   private readonly generations = new Map<string, number>();
   readonly messages: MessageLogEntry[] = [];
+  readonly transactions = new MemoryTransactions();
 
   async connectionOpened(info: ConnectionOpenedInfo): Promise<{ generation: number }> {
     const generation = (this.generations.get(info.chargePoint.identity) ?? 0) + 1;
@@ -129,12 +201,19 @@ export function maskSensitive(payload: unknown): unknown {
 export class DbPersistence implements GatewayPersistence {
   private buffer: MessageLogEntry[] = [];
   private flushTimer: NodeJS.Timeout | undefined;
+  readonly transactions: TransactionService;
 
   constructor(
     private readonly sql: Sql,
     private readonly logger: Logger,
-    private readonly options: { logFlushMs?: number; logBatchSize?: number } = {},
-  ) {}
+    private readonly options: {
+      logFlushMs?: number;
+      logBatchSize?: number;
+      transactions?: TransactionService;
+    } = {},
+  ) {
+    this.transactions = options.transactions ?? new TransactionService(sql, { logger });
+  }
 
   async connectionOpened(info: ConnectionOpenedInfo): Promise<{ generation: number }> {
     const rows = await this.sql<{ connection_generation: bigint }[]>`
@@ -252,6 +331,24 @@ export class DbPersistence implements GatewayPersistence {
     await this.sql`
       UPDATE assets.charge_point SET registration_status = ${bootNotificationStatusFor(lifecycle)}
       WHERE id = ${chargePoint.id}`;
+    const interrupted = await this.transactions.onBoot({
+      chargePoint: {
+        id: chargePoint.id,
+        identity: chargePoint.identity,
+        tenantId: chargePoint.tenantId,
+        lifecycle,
+      },
+      uniqueId: info.uniqueId,
+      receivedAt: at,
+      connectedAt: at,
+      heartbeatIntervalS: info.heartbeatIntervalS,
+      generation: 0,
+    });
+    if (interrupted > 0)
+      this.logger.warn(
+        { chargeBoxId: chargePoint.identity, interrupted },
+        'reinicio con sesiones en curso',
+      );
     return { lifecycle, inventoryMismatch: mismatch };
   }
 

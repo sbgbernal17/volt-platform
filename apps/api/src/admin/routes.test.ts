@@ -198,7 +198,7 @@ describe.skipIf(!baseUrl)('API de administración (sin gateway)', () => {
     expect(response.statusCode).toBe(503);
     expect((response.json() as { error: { code: string } }).error.code).toBe('GATEWAY_UNAVAILABLE');
     const badAction = await call('POST', `/admin/v1/charge-points/${chargePointId}/commands`, {
-      action: 'RemoteStartTransaction',
+      action: 'UpdateFirmware',
       payload: {},
     });
     expect(badAction.statusCode).toBe(400);

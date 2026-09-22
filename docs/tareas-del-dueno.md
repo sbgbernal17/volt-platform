@@ -49,6 +49,12 @@ No hace falta hardware. En tu máquina, con Docker, Node 22 y pnpm:
 4. Este paso queda para cuando exista un cargador real. Entonces, en vez del simulador, configura en él la URL `ws://<ip-de-tu-pc>:9220/ocpp/<chargeBoxId>` (solo en red local; en Internet será `wss://`), usuario = `chargeBoxId`, contraseña = la clave emitida, y repite los pasos 3 a 6 del laboratorio. Anota qué keys responden `NotSupported` o `Rejected`: eso alimenta la matriz de conformidad por modelo.
 5. Si algo falla, copia el error del terminal (sin la clave) en la sesión.
 
+## Qué probar de la iteración 3 (sesiones de carga)
+
+1. `pnpm lint && pnpm typecheck && DATABASE_URL=postgres://volt:volt@localhost:5432/volt REDIS_URL=redis://localhost:6379 pnpm test`: pasan las pruebas de sesiones (`apps/api/src/sessions.e2e.test.ts` y `apps/ocpp-gateway/src/transactions.db.test.ts`).
+2. Con el simulador operativo, sigue "Sesión de carga de punta a punta" en `lab/README.md`: crea un conductor, inicia la carga desde la API pública con la identidad de desarrollo, mira el progreso por SSE y detén la carga. Comprueba en `/admin/v1/sessions` que la sesión queda `ENDED` con energía y motivo `Remote`.
+3. Lo que aún no verás: el costo de la sesión (iteración 4) y el cobro (iteración 5).
+
 ## Para la próxima sesión (iteraciones 1 a 3)
 
 - [ ] **Proveedor de cargadores.** Enviar por escrito la lista de requisitos de `docs/00-resumen-ejecutivo.md` §8 para los modelos de 180 kW y 40 kW y entregarme lo que responda: manuales de instalador, procedimiento para cambiar URL, identidad y credenciales, perfiles de seguridad soportados, salida completa de `GetConfiguration`, measurands DC (`SoC`, `Power.Offered`), reparto de potencia entre las dos mangueras, mensajes `DataTransfer` propietarios, proceso de firmware.

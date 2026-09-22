@@ -18,6 +18,17 @@ const schema = z.object({
   OCPP_GATEWAY_INTERNAL_URL: z.string().url().optional(),
   /** Espera máxima a que un cargador reconecte tras Reset durante el comisionamiento. */
   COMMISSIONING_REBOOT_WAIT_MS: z.coerce.number().int().min(1000).max(600_000).default(30_000),
+  /**
+   * Identidad de conductor de desarrollo (`Authorization: Bearer dev:<driverId>`) hasta que llegue
+   * Identity Platform (iteración 7). Nunca en producción.
+   */
+  API_DEV_DRIVER_AUTH: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /** Sondeo del outbox para el flujo SSE de una sesión y latido de la conexión. */
+  API_SSE_POLL_MS: z.coerce.number().int().min(100).max(10_000).default(1000),
+  API_SSE_HEARTBEAT_MS: z.coerce.number().int().min(1000).max(120_000).default(15_000),
 });
 
 export type ApiConfig = z.infer<typeof schema>;
@@ -28,6 +39,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     throw new Error(
       `Configuración inválida: ${result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
     );
+  }
+  if (result.data.NODE_ENV === 'production' && result.data.API_DEV_DRIVER_AUTH) {
+    throw new Error('Configuración inválida: API_DEV_DRIVER_AUTH no puede activarse en producción');
   }
   return result.data;
 }

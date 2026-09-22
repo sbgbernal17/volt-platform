@@ -11,10 +11,10 @@ export interface RaiseAlarmInput {
   severity: AlarmSeverity;
   /** `kind|chargeBoxId|…`: una sola alarma abierta por huella (índice parcial `alarm_open_uq`). */
   fingerprint: string;
-  chargePointId?: string;
-  siteId?: string;
-  evseId?: string;
-  details?: Record<string, unknown>;
+  chargePointId?: string | undefined;
+  siteId?: string | undefined;
+  evseId?: string | undefined;
+  details?: Record<string, unknown> | undefined;
 }
 
 export interface AlarmRow {

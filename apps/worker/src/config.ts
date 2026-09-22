@@ -15,6 +15,16 @@ const schema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((value) => value === 'true'),
+  /** Relay del outbox (DAT §4.4): sondeo y tamaño de lote. */
+  WORKER_OUTBOX_POLL_MS: z.coerce.number().int().min(50).max(60_000).default(200),
+  WORKER_OUTBOX_BATCH: z.coerce.number().int().min(1).max(5000).default(500),
+  /** Canal Redis al que se publican los eventos mientras no exista Pub/Sub (iteración 8). */
+  WORKER_EVENTS_CHANNEL: z.string().min(1).default('domain-events'),
+  /** Sesiones STARTING vencidas: sondeo. */
+  WORKER_SESSION_TIMEOUT_POLL_MS: z.coerce.number().int().min(1000).max(600_000).default(10_000),
+  /** Transacciones sin StopTransaction con el cargador desconectado (FUN M04 `orphan_timeout_h`). */
+  WORKER_ORPHAN_TIMEOUT_H: z.coerce.number().min(0.01).max(720).default(12),
+  WORKER_ORPHAN_POLL_MS: z.coerce.number().int().min(1000).max(3_600_000).default(60_000),
 });
 
 export type WorkerConfig = z.infer<typeof schema>;

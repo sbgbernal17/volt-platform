@@ -18,6 +18,8 @@ export const REMOTE_ACTIONS = [
   'ChangeAvailability',
   'UnlockConnector',
   'ClearCache',
+  'RemoteStartTransaction',
+  'RemoteStopTransaction',
 ] as const;
 export type RemoteAction = (typeof REMOTE_ACTIONS)[number];
 

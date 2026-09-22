@@ -33,6 +33,31 @@ export interface SimulatedChargePointOptions {
   unlockNotSupported?: boolean;
   callTimeoutMs?: number;
   protocols?: string[];
+  /** Potencia de carga simulada por conector (W). */
+  chargingPowerW?: number;
+  /** Intervalo entre MeterValues durante una transacción (ms). */
+  meterValueIntervalMs?: number;
+  /** Tiempo entre RemoteStartTransaction aceptado y el enchufado del vehículo (ms). */
+  plugDelayMs?: number;
+  /** Lectura inicial del medidor (Wh). */
+  initialMeterWh?: number;
+}
+
+export interface SimulatedTransaction {
+  connectorId: number;
+  idTag: string;
+  /** transactionId asignado por el CSMS; negativo mientras el arranque está encolado offline. */
+  transactionId: number;
+  meterStartWh: number;
+  startedAt: Date;
+  timer?: NodeJS.Timeout | undefined;
+}
+
+interface QueuedMessage {
+  action: 'StartTransaction' | 'MeterValues' | 'StopTransaction';
+  payload: Record<string, unknown>;
+  /** id local (negativo) que se sustituye por el real al recibir StartTransaction.conf. */
+  localTransactionId?: number | undefined;
 }
 
 export interface BootNotificationResponse {
@@ -53,6 +78,11 @@ export interface SimulatedChargePointEvents {
   reboot: [];
   close: [{ code?: number; reason?: string }];
   status: [{ connectorId: number; status: ChargePointStatus }];
+  transactionStarted: [SimulatedTransaction & { idTagStatus: string }];
+  transactionStopped: [
+    { connectorId: number; transactionId: number; meterStopWh: number; reason: string },
+  ];
+  meterValues: [{ connectorId: number; transactionId: number; registerWh: number }];
 }
 
 /** Configuración de fábrica típica de un cargador 1.6J (valores distintos a la plantilla de Volt). */
@@ -114,15 +144,27 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
   authorizationKey: string | undefined;
   bootCount = 0;
   lastBoot: BootNotificationResponse | undefined;
+  /** Transacciones en curso por conector. */
+  readonly transactions = new Map<number, SimulatedTransaction>();
+  /** Registro de energía por conector (Wh). */
+  readonly meterWh = new Map<number, number>();
+  /** Mensajes de transacción encolados mientras el cargador está sin conexión. */
+  readonly offlineQueue: QueuedMessage[] = [];
+  /** Último payload enviado por acción (para simular reintentos). */
+  readonly lastSent = new Map<string, Record<string, unknown>>();
+  offline = false;
   private client: RPCClient | undefined;
   private password: string | null;
+  private endpoint: string;
   private readonly connectors: number;
   private closingForReset = false;
+  private localTransactionSeq = 0;
 
   constructor(private readonly options: SimulatedChargePointOptions) {
     super();
     this.connectors = options.connectors ?? 2;
     this.password = options.password;
+    this.endpoint = options.endpoint;
     for (const [key, entry] of Object.entries(factoryConfiguration(this.connectors))) {
       this.configuration.set(key, entry);
     }
@@ -134,7 +176,13 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
     }
     for (let connectorId = 0; connectorId <= this.connectors; connectorId++) {
       this.connectorStatus.set(connectorId, 'Available');
+      this.meterWh.set(connectorId, options.initialMeterWh ?? 12_000);
     }
+  }
+
+  /** Cambia el gateway al que se conecta (caída de pod, migración). */
+  setEndpoint(endpoint: string): void {
+    this.endpoint = endpoint;
   }
 
   get identity(): string {
@@ -148,7 +196,7 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
   private createClient(): RPCClient {
     const options = {
       identity: this.options.identity,
-      endpoint: this.options.endpoint,
+      endpoint: this.endpoint,
       password: this.password,
       protocols: this.options.protocols ?? ['ocpp1.6'],
       strictMode: false,
@@ -177,6 +225,12 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
   }
 
   async close(): Promise<void> {
+    for (const transaction of this.transactions.values()) {
+      if (transaction.timer && !this.offline) {
+        clearInterval(transaction.timer);
+        transaction.timer = undefined;
+      }
+    }
     const client = this.client;
     this.client = undefined;
     if (client)
@@ -199,7 +253,256 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
     action: string,
     payload: Record<string, unknown>,
   ): Promise<T> {
+    this.lastSent.set(action, payload);
     return (await this.requireClient().call(action, payload)) as T;
+  }
+
+  /** Vuelve a enviar el último mensaje de esa acción (reintento tras no recibir la respuesta). */
+  async resend<T = Record<string, unknown>>(action: string): Promise<T> {
+    const payload = this.lastSent.get(action);
+    if (!payload) throw new Error(`no hay ningún ${action} previo`);
+    return (await this.requireClient().call(action, payload)) as T;
+  }
+
+  /**
+   * Corta la conexión. Mientras esté offline, los mensajes de transacción se encolan con su sello
+   * de tiempo original y se reenvían en orden al volver (comportamiento verificado de 1.6, FUN M04).
+   */
+  async goOffline(): Promise<void> {
+    this.offline = true;
+    for (const transaction of this.transactions.values()) {
+      if (transaction.timer) {
+        clearInterval(transaction.timer);
+        transaction.timer = undefined;
+      }
+    }
+    await this.close();
+  }
+
+  /** Reconecta, vuelve a arrancar y reenvía la cola offline en orden cronológico. */
+  async goOnline(): Promise<BootNotificationResponse> {
+    this.offline = false;
+    const boot = await this.start();
+    await this.flushOfflineQueue();
+    for (const transaction of this.transactions.values()) {
+      if (!transaction.timer && transaction.transactionId > 0) this.startMeterValues(transaction);
+    }
+    return boot;
+  }
+
+  /** Genera un MeterValues "encolado" con un sello de tiempo dado, sin enviarlo (pruebas de corte). */
+  recordOfflineSample(connectorId: number, at: Date, energyDeltaWh: number): void {
+    const transaction = this.transactions.get(connectorId);
+    if (!transaction) throw new Error('sin transacción en el conector');
+    const register = (this.meterWh.get(connectorId) ?? 0) + energyDeltaWh;
+    this.meterWh.set(connectorId, register);
+    this.offlineQueue.push({
+      action: 'MeterValues',
+      payload: {
+        connectorId,
+        transactionId: transaction.transactionId,
+        meterValue: [
+          {
+            timestamp: at.toISOString(),
+            sampledValue: [
+              { value: String(register), measurand: 'Energy.Active.Import.Register', unit: 'Wh' },
+            ],
+          },
+        ],
+      },
+      localTransactionId: transaction.transactionId < 0 ? transaction.transactionId : undefined,
+    });
+  }
+
+  private async flushOfflineQueue(): Promise<void> {
+    const idMap = new Map<number, number>();
+    while (this.offlineQueue.length > 0) {
+      const message = this.offlineQueue.shift() as QueuedMessage;
+      const payload = { ...message.payload };
+      if (typeof payload.transactionId === 'number' && payload.transactionId < 0) {
+        const real = idMap.get(payload.transactionId);
+        if (real !== undefined) payload.transactionId = real;
+      }
+      const response = await this.call<Record<string, unknown>>(message.action, payload);
+      if (message.action === 'StartTransaction' && message.localTransactionId !== undefined) {
+        const real = Number(response.transactionId);
+        idMap.set(message.localTransactionId, real);
+        const transaction = this.transactions.get(Number(payload.connectorId));
+        if (transaction && transaction.transactionId === message.localTransactionId)
+          transaction.transactionId = real;
+      }
+    }
+  }
+
+  // ---- transacciones ----
+
+  async authorize(idTag: string): Promise<{ idTagInfo: { status: string } }> {
+    return this.call('Authorize', { idTag });
+  }
+
+  /**
+   * Arranque de transacción (local o tras RemoteStart): StartTransaction, estado Charging y
+   * MeterValues periódicos. Con idTagInfo distinto de Accepted la transacción se detiene
+   * (StopTransactionOnInvalidId = true).
+   */
+  async startTransaction(
+    connectorId: number,
+    idTag: string,
+    at: Date = new Date(),
+  ): Promise<SimulatedTransaction & { idTagStatus: string }> {
+    if (this.transactions.has(connectorId))
+      throw new Error(`el conector ${connectorId} ya tiene transacción`);
+    const meterStartWh = this.meterWh.get(connectorId) ?? 0;
+    const startedAt = at;
+    const payload = {
+      connectorId,
+      idTag,
+      meterStart: meterStartWh,
+      timestamp: startedAt.toISOString(),
+    };
+    const transaction: SimulatedTransaction = {
+      connectorId,
+      idTag,
+      transactionId: 0,
+      meterStartWh,
+      startedAt,
+    };
+    this.transactions.set(connectorId, transaction);
+    let idTagStatus = 'Accepted';
+    if (this.offline) {
+      this.localTransactionSeq += 1;
+      transaction.transactionId = -this.localTransactionSeq;
+      this.offlineQueue.push({
+        action: 'StartTransaction',
+        payload,
+        localTransactionId: transaction.transactionId,
+      });
+      this.connectorStatus.set(connectorId, 'Charging');
+    } else {
+      const response = await this.call<{ transactionId: number; idTagInfo: { status: string } }>(
+        'StartTransaction',
+        payload,
+      );
+      transaction.transactionId = response.transactionId;
+      idTagStatus = response.idTagInfo.status;
+      if (idTagStatus !== 'Accepted') {
+        await this.sendStatus(connectorId, 'Finishing');
+        await this.stopTransaction(connectorId, 'DeAuthorized');
+        await this.sendStatus(connectorId, 'Available');
+        return { ...transaction, idTagStatus };
+      }
+      await this.sendStatus(connectorId, 'Charging');
+      this.startMeterValues(transaction);
+    }
+    this.emit('transactionStarted', { ...transaction, idTagStatus });
+    return { ...transaction, idTagStatus };
+  }
+
+  /** Envía un MeterValues de la transacción con el registro actual (más la energía de este intervalo). */
+  async sendMeterValues(connectorId: number, energyDeltaWh = 0): Promise<void> {
+    const transaction = this.transactions.get(connectorId);
+    if (!transaction) return;
+    const register = (this.meterWh.get(connectorId) ?? 0) + energyDeltaWh;
+    this.meterWh.set(connectorId, register);
+    const powerW = this.options.chargingPowerW ?? 22_000;
+    const payload = {
+      connectorId,
+      transactionId: transaction.transactionId,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [
+            {
+              value: String(register),
+              measurand: 'Energy.Active.Import.Register',
+              unit: 'Wh',
+              context: 'Sample.Periodic',
+            },
+            { value: String(powerW), measurand: 'Power.Active.Import', unit: 'W' },
+            {
+              value: String(
+                Math.min(100, 20 + Math.round((register - transaction.meterStartWh) / 500)),
+              ),
+              measurand: 'SoC',
+              unit: 'Percent',
+            },
+          ],
+        },
+      ],
+    };
+    if (this.offline) {
+      this.offlineQueue.push({
+        action: 'MeterValues',
+        payload,
+        localTransactionId: transaction.transactionId < 0 ? transaction.transactionId : undefined,
+      });
+    } else {
+      await this.call('MeterValues', payload);
+    }
+    this.emit('meterValues', {
+      connectorId,
+      transactionId: transaction.transactionId,
+      registerWh: register,
+    });
+  }
+
+  async stopTransaction(
+    connectorId: number,
+    reason = 'Local',
+    at: Date = new Date(),
+  ): Promise<{ transactionId: number; meterStopWh: number }> {
+    const transaction = this.transactions.get(connectorId);
+    if (!transaction) throw new Error(`el conector ${connectorId} no tiene transacción`);
+    if (transaction.timer) clearInterval(transaction.timer);
+    this.transactions.delete(connectorId);
+    const meterStopWh = this.meterWh.get(connectorId) ?? 0;
+    const payload = {
+      transactionId: transaction.transactionId,
+      meterStop: meterStopWh,
+      timestamp: at.toISOString(),
+      reason,
+      idTag: transaction.idTag,
+      transactionData: [
+        {
+          timestamp: at.toISOString(),
+          sampledValue: [
+            {
+              value: String(meterStopWh),
+              measurand: 'Energy.Active.Import.Register',
+              unit: 'Wh',
+              context: 'Transaction.End',
+            },
+          ],
+        },
+      ],
+    };
+    if (this.offline) {
+      this.offlineQueue.push({
+        action: 'StopTransaction',
+        payload,
+        localTransactionId: transaction.transactionId < 0 ? transaction.transactionId : undefined,
+      });
+      this.connectorStatus.set(connectorId, 'Available');
+    } else {
+      await this.call('StopTransaction', payload);
+    }
+    this.emit('transactionStopped', {
+      connectorId,
+      transactionId: transaction.transactionId,
+      meterStopWh,
+      reason,
+    });
+    return { transactionId: transaction.transactionId, meterStopWh };
+  }
+
+  private startMeterValues(transaction: SimulatedTransaction): void {
+    const intervalMs = this.options.meterValueIntervalMs ?? 60_000;
+    const powerW = this.options.chargingPowerW ?? 22_000;
+    const deltaWh = Math.max(1, Math.round((powerW * intervalMs) / 3_600_000));
+    transaction.timer = setInterval(() => {
+      void this.sendMeterValues(transaction.connectorId, deltaWh).catch(() => undefined);
+    }, intervalMs);
+    transaction.timer.unref();
   }
 
   async boot(): Promise<BootNotificationResponse> {
@@ -312,8 +615,9 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
       case 'ClearCache':
         return { status: 'Accepted' };
       case 'RemoteStartTransaction':
+        return this.remoteStart(params);
       case 'RemoteStopTransaction':
-        return { status: 'Rejected' };
+        return this.remoteStop(params);
       default:
         throw createRPCError('NotImplemented', `El simulador no implementa ${action}`);
     }
@@ -371,6 +675,49 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
         }
       })();
     }, 20);
+    return { status: 'Accepted' };
+  }
+
+  private remoteStart(params: Record<string, unknown>): Record<string, unknown> {
+    const connectorId = typeof params.connectorId === 'number' ? params.connectorId : 1;
+    const idTag = String(params.idTag ?? '');
+    const status = this.connectorStatus.get(connectorId);
+    if (
+      !this.connectorStatus.has(connectorId) ||
+      this.transactions.has(connectorId) ||
+      (status !== 'Available' && status !== 'Preparing')
+    ) {
+      return { status: 'Rejected' };
+    }
+    setTimeout(() => {
+      void (async () => {
+        try {
+          await this.sendStatus(connectorId, 'Preparing');
+          await new Promise((resolve) => setTimeout(resolve, this.options.plugDelayMs ?? 50));
+          await this.startTransaction(connectorId, idTag);
+        } catch {
+          // Gateway detenido o conexión cerrada: la sesión quedará en STARTING hasta su plazo.
+        }
+      })();
+    }, 10);
+    return { status: 'Accepted' };
+  }
+
+  private remoteStop(params: Record<string, unknown>): Record<string, unknown> {
+    const transactionId = Number(params.transactionId);
+    const entry = [...this.transactions.values()].find((t) => t.transactionId === transactionId);
+    if (!entry) return { status: 'Rejected' };
+    setTimeout(() => {
+      void (async () => {
+        try {
+          await this.sendStatus(entry.connectorId, 'Finishing');
+          await this.stopTransaction(entry.connectorId, 'Remote');
+          await this.sendStatus(entry.connectorId, 'Available');
+        } catch {
+          // idem
+        }
+      })();
+    }, 10);
     return { status: 'Accepted' };
   }
 
