@@ -25,6 +25,16 @@ import { DbPersistence } from './persistence.ts';
 const baseUrl = process.env.DATABASE_URL;
 const redisUrl = process.env.REDIS_URL;
 
+/** Espera (sondeando) a que una condición asíncrona se cumpla; falla al vencer el plazo. */
+async function until(condition: () => Promise<boolean>, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`condición no cumplida en ${timeoutMs} ms`);
+}
+
 describe.skipIf(!baseUrl)('gateway con registro y persistencia en PostgreSQL', () => {
   let database: TemporaryDatabase;
   let sql: Sql;
@@ -144,7 +154,7 @@ describe.skipIf(!baseUrl)('gateway con registro y persistencia en PostgreSQL', (
   it('acepta la clave correcta, persiste la conexión y publica el cargador en el directorio', async () => {
     const sim = simulator('CP-DB-1', authorizationKey);
     await sim.connect();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await until(async () => (await getChargePoint(sql, chargePointId)).connected);
     const chargePoint = await getChargePoint(sql, chargePointId);
     expect(chargePoint.connected).toBe(true);
     expect(Number(chargePoint.connection_generation)).toBe(1);
@@ -202,9 +212,13 @@ describe.skipIf(!baseUrl)('gateway con registro y persistencia en PostgreSQL', (
     const again = simulator('CP-DB-1', authorizationKey);
     await again.connect();
     expect((await closed).code).toBe(1000);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const replaced = await sql<{ generation: bigint; close_reason: string | null }[]>`
+    const readReplaced = () => sql<{ generation: bigint; close_reason: string | null }[]>`
       SELECT generation, close_reason FROM ops.charge_point_connection WHERE charge_point_id = ${chargePointId} ORDER BY generation`;
+    await until(async () => {
+      const rows = await readReplaced();
+      return rows.length === 2 && rows[0]?.close_reason !== null;
+    });
+    const replaced = await readReplaced();
     expect(replaced.map((r) => [Number(r.generation), r.close_reason])).toEqual([
       [1, 'Replaced by a newer connection'],
       [2, null],
@@ -213,7 +227,7 @@ describe.skipIf(!baseUrl)('gateway con registro y persistencia en PostgreSQL', (
 
     // Cierre: el cargador queda desconectado y desaparece del directorio.
     await again.close();
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await until(async () => !(await getChargePoint(sql, chargePointId)).connected);
     const after = await getChargePoint(sql, chargePointId);
     expect(after.connected).toBe(false);
     expect(after.last_disconnect_at).toBeInstanceOf(Date);

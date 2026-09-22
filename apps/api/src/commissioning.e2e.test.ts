@@ -26,7 +26,15 @@ const redisUrl = process.env.REDIS_URL;
 const ADMIN_TOKEN = 'token-admin-de-pruebas-0123456789';
 const INTERNAL_TOKEN = 'token-interno-de-pruebas-0123456789';
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Espera (sondeando) a que una condición se cumpla; falla al vencer el plazo. */
+async function until(condition: () => Promise<boolean> | boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`condición no cumplida en ${timeoutMs} ms`);
+}
 
 describe.skipIf(!baseUrl)('aceptación iteración 2: de inventariado a operativo', () => {
   let database: TemporaryDatabase;
@@ -190,7 +198,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 2: de inventariado a operativo
     });
     const boot = await sim.start();
     expect(boot.status).toBe('Pending');
-    await sleep(100);
+    await until(async () => (await detail()).connected === true);
     const cp = await detail();
     expect(cp.lifecycle_status).toBe('CONNECTED_PENDING');
     expect(cp.connected).toBe(true);
@@ -228,8 +236,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 2: de inventariado a operativo
     expect(sim.configuration.get('HeartbeatInterval')?.value).toBe('300');
     expect(sim.configuration.get('WebSocketPingInterval')?.value).toBe('60');
     // Tras TriggerMessage(BootNotification) el cargador ya recibe Accepted.
-    await sleep(300);
-    expect(sim.lastBoot?.status).toBe('Accepted');
+    await until(() => sim.lastBoot?.status === 'Accepted');
     const cp = await detail();
     expect(cp.lifecycle_status).toBe('CONFIGURED');
     expect(cp.registration_status).toBe('Accepted');
@@ -253,18 +260,14 @@ describe.skipIf(!baseUrl)('aceptación iteración 2: de inventariado a operativo
       })
     ).json() as { command: { state: string } };
     expect(inoperative.command.state).toBe('ACCEPTED');
-    await sleep(150);
-    expect((await detail()).connectors.find((c) => c.ocpp_connector_id === 1)?.ocpp_status).toBe(
-      'Unavailable',
-    );
+    const connectorStatus = async () =>
+      (await detail()).connectors.find((c) => c.ocpp_connector_id === 1)?.ocpp_status;
+    await until(async () => (await connectorStatus()) === 'Unavailable');
     await call('POST', commands, {
       action: 'ChangeAvailability',
       payload: { connectorId: 1, type: 'Operative' },
     });
-    await sleep(150);
-    expect((await detail()).connectors.find((c) => c.ocpp_connector_id === 1)?.ocpp_status).toBe(
-      'Available',
-    );
+    await until(async () => (await connectorStatus()) === 'Available');
 
     const unlock = (
       await call('POST', commands, { action: 'UnlockConnector', payload: { connectorId: 2 } })
