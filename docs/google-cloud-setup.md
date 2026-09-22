@@ -32,7 +32,7 @@ PROJECT_ID="volt-dev-xxxx"              # ID del proyecto
 ENV="dev"                                # dev | staging | prod
 GITHUB_REPO="sbgbernal17/volt-platform"  # repositorio autorizado a desplegar
 # --------------------------------
-REGION="us-east1"
+REGION="us-central1"
 gcloud config set project "$PROJECT_ID"
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
 
@@ -103,4 +103,4 @@ for r in us-east1 us-central1 northamerica-south1 southamerica-west1 southameric
 done
 ```
 
-Si `us-east1` no es la más rápida, me lo cuentas y ajustamos la región antes de la iteración 8.
+Resultado del 22 de septiembre de 2026: `us-central1` fue la más rápida (684 ms de conexión, valor alto que depende de la red usada); queda como región principal (ADR 0015). Conviene repetir la medición desde la red de las sedes o desde un teléfono antes de la iteración 8.

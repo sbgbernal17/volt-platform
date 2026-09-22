@@ -8,6 +8,8 @@ Lista de lo que solo tú puedes conseguir o decidir, ordenada por la iteración 
 - [x] 2026-09-22: cuenta de Wompi creada.
 - [x] 2026-09-22: `main` es la rama predeterminada en GitHub.
 - [x] 2026-09-22: cuenta de Google Cloud creada.
+- [x] 2026-09-22: llaves de prueba de Wompi cargadas como secretos del repositorio en GitHub; documentación en <https://docs.wompi.co/docs/colombia/inicio-rapido/>.
+- [x] 2026-09-22: guía `docs/google-cloud-setup.md` ejecutada (facturación, proyectos, APIs, bucket de Terraform, Workload Identity Federation); variables `GCP_*` cargadas en GitHub; medición de latencia: `us-central1` la más rápida, adoptada como región principal (ADR 0015).
 
 ## Wompi: cómo subir las llaves
 
@@ -24,17 +26,18 @@ Las llaves del ambiente de pruebas (sandbox) se usan en las pruebas automáticas
 5. Si una llave llega a quedar expuesta en cualquier lugar público, regenérala en Wompi de inmediato.
 6. En el panel de Wompi, la URL de eventos (webhook) del sandbox se configura en la iteración 5, cuando exista el endpoint en staging.
 
-- [ ] Secretos de prueba de Wompi cargados en GitHub (y opcionalmente en el entorno de Claude Code).
+- [x] 2026-09-22: secretos de prueba de Wompi cargados en GitHub. CI comprueba su presencia (sin mostrar valores) en cada ejecución en `main`; si alguno aparece como "no configurado", revisa el nombre.
 - [ ] Preguntar a Wompi por escrito: flujo de tokenización de tarjeta con 3D Secure y cobros posteriores sin presencia del cliente, reglas y plazos de anulación y reembolso, Nequi como fuente de pago tokenizada, comisiones.
 
 ## Google Cloud: qué crear
 
 Sigue `docs/google-cloud-setup.md` (facturación y presupuesto, tres proyectos, APIs, bucket de Terraform y acceso de GitHub Actions sin claves). Al terminar, carga en GitHub como **variables** (no secretos) las tres líneas que imprime el bloque de Cloud Shell por cada proyecto.
 
-- [ ] Cuenta de facturación y presupuesto con alertas.
-- [ ] Proyectos `volt-dev-*`, `volt-staging-*`, `volt-prod-*` creados y vinculados a facturación.
-- [ ] Bloque de Cloud Shell ejecutado en los tres proyectos.
-- [ ] Variables `GCP_PROJECT_ID_*`, `GCP_WIF_PROVIDER_*`, `GCP_DEPLOYER_SA_*` cargadas en GitHub.
+- [x] 2026-09-22: cuenta de facturación y presupuesto con alertas.
+- [x] 2026-09-22: proyectos creados y vinculados a facturación.
+- [x] 2026-09-22: bloque de Cloud Shell ejecutado en los tres proyectos.
+- [x] 2026-09-22: variables `GCP_PROJECT_ID_*`, `GCP_WIF_PROVIDER_*`, `GCP_DEPLOYER_SA_*` cargadas en GitHub.
+- [ ] Dominio para `ocpp.`, `api.` y `admin.` (comprar o asignar uno existente) antes de la iteración 8.
 
 ## Qué probar de la iteración 2 (inventario y comisionamiento)
 
@@ -43,13 +46,13 @@ No hace falta hardware. En tu máquina, con Docker, Node 22 y pnpm:
 1. `pnpm install && cp .env.example .env && pnpm services:up && pnpm db:migrate`.
 2. `pnpm lint && pnpm typecheck && DATABASE_URL=postgres://volt:volt@localhost:5432/volt REDIS_URL=redis://localhost:6379 pnpm test`: deben pasar todas las suites, incluida `apps/api/src/commissioning.e2e.test.ts` (un simulador pasa de inventariado a operativo y se detecta deriva).
 3. Sigue el paso a paso de `lab/README.md` ("Simulador embebido"): crea sede, plantilla y cargador, emite la credencial, arranca el simulador con esa clave, comisiona desde la API y aprueba el cargador. Comprueba que con una clave equivocada el simulador no entra y que al cambiar `HeartbeatInterval` en el simulador la sincronización abre una alarma `CONFIG_DRIFT`.
-4. Cuando tengas el cargador de laboratorio real: en vez del simulador, configura en él la URL `ws://<ip-de-tu-pc>:9220/ocpp/<chargeBoxId>` (solo en red local; en Internet será `wss://`), usuario = `chargeBoxId`, contraseña = la clave emitida, y repite los pasos 3 a 6 del laboratorio. Anota qué keys responden `NotSupported` o `Rejected`: eso alimenta la matriz de conformidad por modelo.
+4. Este paso queda para cuando exista un cargador real. Entonces, en vez del simulador, configura en él la URL `ws://<ip-de-tu-pc>:9220/ocpp/<chargeBoxId>` (solo en red local; en Internet será `wss://`), usuario = `chargeBoxId`, contraseña = la clave emitida, y repite los pasos 3 a 6 del laboratorio. Anota qué keys responden `NotSupported` o `Rejected`: eso alimenta la matriz de conformidad por modelo.
 5. Si algo falla, copia el error del terminal (sin la clave) en la sesión.
 
 ## Para la próxima sesión (iteraciones 1 a 3)
 
 - [ ] **Proveedor de cargadores.** Enviar por escrito la lista de requisitos de `docs/00-resumen-ejecutivo.md` §8 para los modelos de 180 kW y 40 kW y entregarme lo que responda: manuales de instalador, procedimiento para cambiar URL, identidad y credenciales, perfiles de seguridad soportados, salida completa de `GetConfiguration`, measurands DC (`SoC`, `Power.Offered`), reparto de potencia entre las dos mangueras, mensajes `DataTransfer` propietarios, proceso de firmware.
-- [ ] **Cargador de laboratorio.** Instalarlo con red propia y anotar fabricante, modelo, número de serie, versión de firmware y cómo se accede a su configuración. Si es posible, acceso remoto al laboratorio para pruebas contra staging.
+- [ ] **Cargador de laboratorio (cuando exista).** Hoy no hay ninguno disponible ni forma de montar un simulador en tu lado, así que no es necesario hacer nada: las pruebas se hacen con el simulador embebido en CI y, desde la iteración 8, con un cargador sintético en staging. Cuando llegue el primer equipo, anota fabricante, modelo, número de serie, versión de firmware y cómo se accede a su configuración, y avísame para conectarlo a staging con la credencial que emita la API.
 - [ ] **Tipo de conector** de los equipos (CCS2 esperado) y si el modelo de 180 kW carga dos vehículos a la vez y con qué reparto.
 - [ ] **Precios por kWh por franja horaria** que quieres publicar al inicio (el archivo `packages/tariff-engine/fixtures/volt-colombia-tarifa-base.json` trae valores de ejemplo).
 

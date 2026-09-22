@@ -1,6 +1,6 @@
 # 0005. Región de Google Cloud, idiomas, marca y retención de datos
 
-Fecha: 2026-09-19. Estado: aceptada.
+Fecha: 2026-09-19. Estado: aceptada; el punto 1 (región) fue reemplazado por el ADR 0015 (`us-central1`).
 
 ## Contexto
 

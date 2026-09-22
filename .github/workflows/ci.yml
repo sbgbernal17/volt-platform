@@ -52,6 +52,38 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # Solo comprueba que existen (nunca imprime valores): avisa si falta alguno de los
+      # secretos de Wompi o de las variables de Google Cloud que usan las iteraciones 5 y 8.
+      - name: Comprobar secretos y variables configurados
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          WOMPI_PUBLIC_KEY_TEST: ${{ secrets.WOMPI_PUBLIC_KEY_TEST }}
+          WOMPI_PRIVATE_KEY_TEST: ${{ secrets.WOMPI_PRIVATE_KEY_TEST }}
+          WOMPI_INTEGRITY_SECRET_TEST: ${{ secrets.WOMPI_INTEGRITY_SECRET_TEST }}
+          WOMPI_EVENTS_SECRET_TEST: ${{ secrets.WOMPI_EVENTS_SECRET_TEST }}
+          GCP_PROJECT_ID_DEV: ${{ vars.GCP_PROJECT_ID_DEV }}
+          GCP_PROJECT_ID_STAGING: ${{ vars.GCP_PROJECT_ID_STAGING }}
+          GCP_PROJECT_ID_PROD: ${{ vars.GCP_PROJECT_ID_PROD }}
+          GCP_WIF_PROVIDER_DEV: ${{ vars.GCP_WIF_PROVIDER_DEV }}
+          GCP_WIF_PROVIDER_STAGING: ${{ vars.GCP_WIF_PROVIDER_STAGING }}
+          GCP_WIF_PROVIDER_PROD: ${{ vars.GCP_WIF_PROVIDER_PROD }}
+          GCP_DEPLOYER_SA_DEV: ${{ vars.GCP_DEPLOYER_SA_DEV }}
+          GCP_DEPLOYER_SA_STAGING: ${{ vars.GCP_DEPLOYER_SA_STAGING }}
+          GCP_DEPLOYER_SA_PROD: ${{ vars.GCP_DEPLOYER_SA_PROD }}
+        run: |
+          missing=0
+          for name in WOMPI_PUBLIC_KEY_TEST WOMPI_PRIVATE_KEY_TEST WOMPI_INTEGRITY_SECRET_TEST WOMPI_EVENTS_SECRET_TEST \
+                      GCP_PROJECT_ID_DEV GCP_PROJECT_ID_STAGING GCP_PROJECT_ID_PROD \
+                      GCP_WIF_PROVIDER_DEV GCP_WIF_PROVIDER_STAGING GCP_WIF_PROVIDER_PROD \
+                      GCP_DEPLOYER_SA_DEV GCP_DEPLOYER_SA_STAGING GCP_DEPLOYER_SA_PROD; do
+            if [ -n "${!name}" ]; then
+              echo "$name: configurado"
+            else
+              echo "::warning::$name no configurado"
+              missing=$((missing + 1))
+            fi
+          done
+          echo "Faltan $missing de 13 (aviso informativo; no bloquea la ejecución)."
 
   docker:
     name: Construir imágenes

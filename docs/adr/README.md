@@ -8,7 +8,7 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0002](0002-pasarela-wompi-y-modelo-de-cobro.md) | Pasarela Wompi y modelo de cobro con tarjeta tokenizada al final de la carga |
 | [0003](0003-parque-inicial-hardware-y-version-ocpp.md) | Parque inicial DC de 180 kW y 40 kW, OCPP 1.6J, perfil de seguridad 2 y luego 3 |
 | [0004](0004-operador-unico-y-propietarios-de-sede.md) | Operador único con propietarios de sede de solo lectura en el futuro |
-| [0005](0005-region-idiomas-marca-y-retencion.md) | Región us-east1, app Volt en español e inglés, retención de datos |
+| [0005](0005-region-idiomas-marca-y-retencion.md) | Región us-east1 (reemplazada por 0015), app Volt en español e inglés, retención de datos |
 | [0006](0006-equipo-y-metodo-de-desarrollo.md) | Desarrollo por iteraciones con Claude Code; responsabilidades del dueño del proyecto |
 | [0007](0007-gateway-ocpp-en-gke-y-resto-en-cloud-run.md) | Gateway OCPP en GKE Autopilot; API, worker y back-office en Cloud Run |
 | [0008](0008-monolito-modular-con-gateway-separado.md) | Monolito modular hexagonal con el gateway como proceso separado y eventos por outbox |
@@ -18,6 +18,7 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0012](0012-tarifa-inicial-e-idle-fee.md) | Tarifa inicial de Volt: energía por franjas, gracia de 15 minutos configurable y 1.500 COP por minuto de ocupación |
 | [0013](0013-api-interna-del-gateway-y-directorio-en-redis.md) | API interna HTTP del gateway con token, directorio de conexiones en Redis y `uniqueId` generado por el gateway |
 | [0014](0014-hash-de-authorizationkey-con-scrypt.md) | Hash de la `AuthorizationKey` con scrypt de `node:crypto` |
+| [0015](0015-region-us-central1.md) | Región principal `us-central1` tras medir la latencia desde Bogotá |
 
 ```markdown
 # NNNN. Título de la decisión
