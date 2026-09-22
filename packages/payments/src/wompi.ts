@@ -47,7 +47,8 @@ export const WOMPI_BASE_URLS = {
   production: 'https://production.wompi.co/v1',
 } as const;
 
-const KEY_PREFIXES = {
+/** Prefijos de las llaves de Wompi por ambiente; el adaptador rechaza llaves de otro ambiente. */
+export const WOMPI_KEY_PREFIXES = {
   sandbox: { public: 'pub_test_', private: 'prv_test_' },
   production: { public: 'pub_prod_', private: 'prv_prod_' },
 } as const;
@@ -84,7 +85,7 @@ export class WompiGateway implements PaymentGateway {
 
   constructor(options: WompiGatewayOptions) {
     this.environment = options.environment;
-    const prefixes = KEY_PREFIXES[options.environment];
+    const prefixes = WOMPI_KEY_PREFIXES[options.environment];
     if (
       !options.publicKey.startsWith(prefixes.public) ||
       !options.privateKey.startsWith(prefixes.private)
@@ -365,9 +366,11 @@ export class WompiGateway implements PaymentGateway {
       try {
         json = JSON.parse(text) as Json;
       } catch {
+        // La API de Wompi siempre responde JSON: un cuerpo distinto viene de un intermediario
+        // (proxy, CDN, WAF), así que se trata como fallo de red reintentable.
         throw new PaymentGatewayError(
-          'Wompi devolvió una respuesta que no es JSON',
-          'PROVIDER',
+          'Wompi devolvió una respuesta que no es JSON (¿intermediario de red?)',
+          'NETWORK',
           response.status,
           {
             path,
