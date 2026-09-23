@@ -165,6 +165,17 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
         })
       ).statusCode,
     ).toBe(200);
+    // Las sesiones simuladas cuestan menos de 1.500 COP (mínimo de Wompi, migración 0008): sin este
+    // ajuste se condonarían en vez de cobrarse, que es lo que prueba esta suite.
+    expect(
+      (
+        await admin('PUT', '/admin/v1/parameters/billing.min_charge_minor', {
+          scopeType: 'PLATFORM',
+          value: 0,
+          reason: 'prueba',
+        })
+      ).statusCode,
+    ).toBe(200);
     sim = new SimulatedChargePoint({
       identity: 'VOLT-BOG05-CP01',
       password: issued.authorizationKey,

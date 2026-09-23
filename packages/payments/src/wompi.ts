@@ -392,8 +392,19 @@ export class WompiGateway implements PaymentGateway {
                 ? 'RATE_LIMIT'
                 : 'PROVIDER';
       const reason = str(error.reason) || str(error.type) || `HTTP ${response.status}`;
+      // Los mensajes de validación de Wompi (campo → textos) no son secretos y explican el rechazo.
+      const messages = error.messages as Record<string, unknown> | undefined;
+      const detail =
+        messages && typeof messages === 'object'
+          ? Object.entries(messages)
+              .map(
+                ([field, texts]) =>
+                  `${field}: ${Array.isArray(texts) ? texts.join(' ') : str(texts)}`,
+              )
+              .join('; ')
+          : '';
       throw new PaymentGatewayError(
-        `Wompi rechazó la operación: ${reason}`,
+        `Wompi rechazó la operación: ${reason}${detail ? ` (${detail})` : ''}`,
         code,
         response.status,
         {

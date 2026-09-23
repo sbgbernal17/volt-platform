@@ -2,7 +2,8 @@
  * Prueba opcional contra el sandbox real de Wompi (ADR 0020). Solo corre cuando existen las llaves de
  * prueba en el entorno (en CI, los secretos WOMPI_*_TEST del repositorio): tokeniza la tarjeta de
  * prueba aprobada, crea la fuente de pago con los tokens de aceptación, cobra 1.000 COP con la firma
- * de integridad, espera el resultado y anula la transacción. Nunca imprime las llaves.
+ * de integridad (5.000 COP, por encima del mínimo de Wompi), espera el resultado y anula la
+ * transacción. Nunca imprime las llaves.
  */
 import { PaymentGatewayError, WOMPI_KEY_PREFIXES, WompiGateway } from '@volt/payments';
 import { describe, expect, it } from 'vitest';
@@ -76,9 +77,10 @@ describe.skipIf(!configured)('sandbox de Wompi (opcional, con llaves de prueba)'
       return;
     }
     const reference = `VOLT-SANDBOX-${Date.now()}`;
+    // Wompi exige un importe mínimo por transacción (1.500 COP); se cobran 5.000 COP y se anulan.
     let transaction = await gateway.charge({
       reference,
-      amountMinor: 1_000n,
+      amountMinor: 5_000n,
       currency: 'COP',
       currencyExponent: 0,
       customerEmail: 'pruebas@supercargadores.co',
@@ -87,7 +89,7 @@ describe.skipIf(!configured)('sandbox de Wompi (opcional, con llaves de prueba)'
       recurrent: false,
     });
     expect(transaction.reference).toBe(reference);
-    expect(transaction.amountMinor).toBe(1_000n);
+    expect(transaction.amountMinor).toBe(5_000n);
     const deadline = Date.now() + 60_000;
     while (transaction.status === 'PENDING' && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
