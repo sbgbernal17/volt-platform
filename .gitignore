@@ -32,3 +32,6 @@ crash.log
 *.log
 tmp/
 .cache/
+
+# Instantánea de un Redis local arrancado desde la raíz del repositorio
+dump.rdb
