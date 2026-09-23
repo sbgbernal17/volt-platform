@@ -299,11 +299,20 @@ describe.skipIf(!baseUrl)('aceptación iteración 3: sesiones por la API', () =>
       .map((line) => Number(line.slice(4)));
     expect(ids).toEqual([...ids].sort((a, b) => a - b));
 
-    // Reanudación con Last-Event-ID: solo llegan los eventos posteriores.
+    // Reanudación con Last-Event-ID: solo llegan los eventos posteriores. Tras cerrar el primer flujo
+    // pueden seguir llegando eventos de la sesión (fin de la ocupación, liquidación), así que se
+    // comprueba el orden y no la cantidad exacta.
+    const lastEventId = ids[ids.length - 2] as number;
     const resumed = await driver('GET', `/v1/sessions/${body.id}/events`, undefined, {
-      'last-event-id': String(ids[ids.length - 2]),
+      'last-event-id': String(lastEventId),
     });
-    expect(resumed.payload.split('\n').filter((line) => line.startsWith('id: '))).toHaveLength(1);
+    const resumedIds = resumed.payload
+      .split('\n')
+      .filter((line) => line.startsWith('id: '))
+      .map((line) => Number(line.slice(4)));
+    expect(resumedIds.length).toBeGreaterThanOrEqual(1);
+    expect(resumedIds[0]).toBe(ids[ids.length - 1]);
+    expect(resumedIds.every((id) => id > lastEventId)).toBe(true);
 
     const history = (await driver('GET', '/v1/sessions')).json() as { items: { id: string }[] };
     expect(history.items.map((s) => s.id)).toEqual([body.id]);
