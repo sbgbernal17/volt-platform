@@ -86,8 +86,7 @@ export function LoginPage() {
       <div className="card">
         <div className="row between mb">
           <div className="brand">
-            <span className="logo">⚡</span>
-            <span>Volt</span>
+            <img src="/brand/volt-logo-rojo.svg" alt="VOLT" />
           </div>
           <select
             aria-label={t('app.language')}

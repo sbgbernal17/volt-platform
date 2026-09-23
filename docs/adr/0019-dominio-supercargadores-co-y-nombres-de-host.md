@@ -18,6 +18,8 @@ La plataforma necesita nombres públicos con certificado TLS para tres entradas:
 3. **La zona sigue en Netlify DNS.** No se migra a Cloud DNS: la iteración 8 crea en Google Cloud una IP estática por entorno para el balanceador y el dueño añade en Netlify DNS un registro `A` por host apuntando a esa IP (TTL 300 segundos). Los certificados los emite Google (Certificate Manager, gestionados) una vez los registros resuelven; no hay que comprar ni renovar certificados.
 4. **Mensajería y correo** no forman parte de esta decisión; el dominio de correo de los conductores (recibos) se decide con la iteración 5.
 
+   *Adición del 23 de septiembre de 2026:* el remitente de recibos y avisos a conductores es `notificaciones@supercargadores.co` (buzón creado por el dueño). El servicio de envío (SMTP de Google Workspace o un proveedor transaccional) se decide en la iteración 7 junto con las plantillas de correo.
+
 ## Alternativas consideradas
 
 - **Delegar la zona a Cloud DNS**: permitiría que Terraform cree los registros solo; a cambio obliga a mover el sitio actual y los registros existentes. Se puede hacer más adelante sin cambiar los nombres.

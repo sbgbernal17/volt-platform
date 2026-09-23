@@ -31,8 +31,7 @@ export function Layout({ children }: { children: ReactNode }) {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="logo">⚡</span>
-          <span>Volt</span>
+          <img src="/brand/volt-logo-rojo.svg" alt="VOLT" />
         </div>
         {NAV.filter((item) => !item.permission || auth.can(item.permission)).map((item) => (
           <Link key={item.to} to={item.to}>

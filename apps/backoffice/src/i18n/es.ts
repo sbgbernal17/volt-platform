@@ -1,6 +1,6 @@
 /** Textos en español (idioma principal, ADR 0005). Las claves son la fuente de verdad para `en`. */
 export const es = {
-  'app.title': 'Volt · Operación',
+  'app.title': 'VOLT · Operación',
   'app.loading': 'Cargando…',
   'app.error': 'Ocurrió un error',
   'app.retry': 'Reintentar',

@@ -2,7 +2,7 @@ import type { MessageKey } from './es.ts';
 
 /** English texts: the type forces every Spanish key to exist here. */
 export const en: Record<MessageKey, string> = {
-  'app.title': 'Volt · Operations',
+  'app.title': 'VOLT · Operations',
   'app.loading': 'Loading…',
   'app.error': 'Something went wrong',
   'app.retry': 'Retry',
