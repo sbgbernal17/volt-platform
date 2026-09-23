@@ -10,6 +10,14 @@ on:
         description: 'Ambientes a verificar, separados por coma (dev, staging, prod)'
         default: 'dev,staging,prod'
         required: true
+      initialize:
+        description: 'Inicializar Identity Platform en los proyectos donde falte'
+        type: boolean
+        default: false
+      enable_totp:
+        description: 'Habilitar correo y contraseña y MFA TOTP en Identity Platform'
+        type: boolean
+        default: false
   # También corre al cambiar este archivo (así se verifica sin disparo manual).
   push:
     branches: [main, 'claude/**']
@@ -86,14 +94,40 @@ jobs:
       - name: Configuración de Identity Platform
         env:
           ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          INITIALIZE: ${{ inputs.initialize == true }}
+          ENABLE_TOTP: ${{ inputs.enable_totp == true }}
         run: |
-          status=$(curl -sS -o config.json -w "%{http_code}" \
-            -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://identitytoolkit.googleapis.com/admin/v2/projects/$PROJECT_ID/config")
+          base="https://identitytoolkit.googleapis.com/admin/v2/projects/$PROJECT_ID"
+          fetch_config() {
+            curl -sS -o config.json -w "%{http_code}" -H "Authorization: Bearer $ACCESS_TOKEN" "$base/config"
+          }
+          status=$(fetch_config)
+          if [ "$status" = "404" ] && [ "$INITIALIZE" = "true" ]; then
+            echo "Inicializando Identity Platform en $PROJECT_ID"
+            init=$(curl -sS -o init.json -w "%{http_code}" -X POST \
+              -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" -d '{}' \
+              "$base/identityPlatform:initializeAuth")
+            echo "initializeAuth: HTTP $init"
+            status=$(fetch_config)
+          fi
           if [ "$status" != "200" ]; then
             echo "::error::Identity Platform no responde la configuración de $PROJECT_ID (HTTP $status): ¿está habilitado en la consola?"
             jq -r '.error.message // empty' config.json || true
             exit 1
+          fi
+          if [ "$ENABLE_TOTP" = "true" ]; then
+            echo "Habilitando correo/contraseña y MFA TOTP en $PROJECT_ID"
+            patch=$(curl -sS -o patch.json -w "%{http_code}" -X PATCH \
+              -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+              -d '{"signIn":{"email":{"enabled":true,"passwordRequired":true}},"mfa":{"state":"ENABLED","providerConfigs":[{"state":"ENABLED","totpProviderConfig":{"adjacentIntervals":5}}]}}' \
+              "$base/config?updateMask=signIn.email,mfa")
+            echo "PATCH config: HTTP $patch"
+            if [ "$patch" != "200" ]; then
+              echo "::error::No se pudo actualizar la configuración (HTTP $patch)"
+              jq -r '.error.message // empty' patch.json || true
+              exit 1
+            fi
+            status=$(fetch_config)
           fi
           # Solo campos sin secretos (nunca hashConfig ni llaves).
           jq '{
