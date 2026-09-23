@@ -9,6 +9,7 @@ import {
   createConfigTemplate,
   createDriver,
   createSite,
+  ForbiddenError,
   getChargePoint,
   getConfigTemplate,
   getCredentialSummary,
@@ -31,22 +32,32 @@ import {
   resolveAlarmById,
   type SessionService,
   SITE_ACCESS_TYPES,
+  SUPPORT_ACTIONS,
   transitionLifecycle,
   VOLT_TENANT_ID,
 } from '@volt/csms';
 import { LIFECYCLE_STATES, SESSION_STATES } from '@volt/domain';
-import { constantTimeEquals } from '@volt/security';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
 import { isSessionFinished, toPublicSession } from '../public/sessions-view.ts';
 import { streamSessionEvents } from '../public/sse.ts';
 import { billingAdminRoutes } from './billing-routes.ts';
 import { pricingRoutes } from './pricing-routes.ts';
+import {
+  assertInScope,
+  hasPermission,
+  registerStaffAuth,
+  type StaffAuthenticator,
+  siteScope,
+  staffOf,
+} from './staff-auth.ts';
+import { type AuthConfig, staffRoutes } from './staff-routes.ts';
 
 export interface AdminRoutesOptions {
   sql: Sql;
-  token: string;
+  authenticator: StaffAuthenticator;
+  authConfig: AuthConfig;
   commands?: CommandService;
   commissioning?: CommissioningService;
   sessions?: SessionService;
@@ -136,16 +147,17 @@ const commandBody = z.object({
   action: z.enum(REMOTE_ACTIONS),
   payload: z.record(z.string(), z.unknown()).default({}),
   timeoutMs: z.number().int().min(1000).max(120_000).optional(),
+  /** Motivo que declara el operador (queda en la auditoría). */
+  reason: z.string().max(300).optional(),
 });
 
 const overrideBody = z.object({ value: z.string().max(500) });
 const templateAssignBody = z.object({ templateId: uuid });
 const resolveBody = z.object({ resolution: z.string().min(1).max(500) });
 
+/** Actor auditable de la petición: sale de la identidad verificada, nunca del cuerpo. */
 export function actorOf(request: FastifyRequest): string {
-  const header = request.headers['x-actor'];
-  const value = Array.isArray(header) ? header[0] : header;
-  return value && /^[A-Za-z0-9:_.@-]{1,80}$/.test(value) ? value : 'staff:admin-token';
+  return staffOf(request).actor;
 }
 
 export function serialize<T>(value: T): T {
@@ -157,9 +169,11 @@ export function serialize<T>(value: T): T {
 }
 
 /**
- * Rutas de administración (back-office) de la iteración 2: sedes, plantillas, cargadores,
- * credenciales, comisionamiento, configuración, comandos, ciclo de vida y alarmas.
- * Autenticación: `Authorization: Bearer <API_ADMIN_TOKEN>`; el actor se toma de `X-Actor`.
+ * Rutas de administración (back-office): sedes, plantillas, cargadores, credenciales,
+ * comisionamiento, configuración, comandos, ciclo de vida, alarmas, conductores y sesiones; más las
+ * de precios, pagos y personal. Autenticación con `Authorization: Bearer <token>` (token estático de
+ * laboratorio o ID token de Identity Platform), autorización por la política central y auditoría de
+ * cada mutación (`staff-auth.ts`).
  */
 export async function adminRoutes(
   app: FastifyInstance,
@@ -168,19 +182,7 @@ export async function adminRoutes(
   const { sql, commands, commissioning } = options;
   const tenantId = VOLT_TENANT_ID;
 
-  app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
-    const header = request.headers.authorization ?? '';
-    const [scheme, presented] = header.split(' ');
-    if (
-      scheme?.toLowerCase() !== 'bearer' ||
-      !presented ||
-      !constantTimeEquals(presented, options.token)
-    ) {
-      reply
-        .code(401)
-        .send({ error: { code: 'UNAUTHORIZED', message: 'Token de administración inválido' } });
-    }
-  });
+  registerStaffAuth(app, { sql, tenantId, authenticator: options.authenticator });
 
   const requireGateway = (): { commands: CommandService; commissioning: CommissioningService } => {
     if (!commands || !commissioning) {
@@ -198,18 +200,35 @@ export async function adminRoutes(
     sql,
     ...(options.sessions ? { sessions: options.sessions } : {}),
   });
+  await app.register(staffRoutes, {
+    sql,
+    tenantId,
+    billing: options.billing,
+    authConfig: options.authConfig,
+  });
+
+  /** Cargador dentro del alcance del solicitante (SITE_OWNER) o error. */
+  const scopedChargePoint = async (request: FastifyRequest, id: string) => {
+    const chargePoint = await getChargePoint(sql, id);
+    assertInScope(request, chargePoint.site_id);
+    return chargePoint;
+  };
 
   // ---- Sedes ----
-  app.get('/sites', async () => ({ items: serialize(await listSites(sql, tenantId)) }));
+  app.get('/sites', async (request) => ({
+    items: serialize(await listSites(sql, tenantId, siteScope(request))),
+  }));
   app.post('/sites', async (request, reply) => {
     const body = siteBody.parse(request.body);
     const site = await createSite(sql, { tenantId, ...body });
     reply.code(201);
     return serialize(site);
   });
-  app.get('/sites/:id', async (request) =>
-    serialize(await getSite(sql, params.parse(request.params).id)),
-  );
+  app.get('/sites/:id', async (request) => {
+    const site = await getSite(sql, params.parse(request.params).id);
+    assertInScope(request, site.id);
+    return serialize(site);
+  });
 
   // ---- Plantillas ----
   app.get('/config-templates', async () => ({
@@ -230,7 +249,11 @@ export async function adminRoutes(
     const query = z
       .object({ siteId: uuid.optional(), lifecycle: z.enum(LIFECYCLE_STATES).optional() })
       .parse(request.query ?? {});
-    return { items: serialize(await listChargePoints(sql, { tenantId, ...query })) };
+    return {
+      items: serialize(
+        await listChargePoints(sql, { tenantId, ...query, siteIds: siteScope(request) }),
+      ),
+    };
   });
   app.post('/charge-points', async (request, reply) => {
     const body = chargePointBody.parse(request.body);
@@ -240,7 +263,7 @@ export async function adminRoutes(
   });
   app.get('/charge-points/:id', async (request) => {
     const { id } = params.parse(request.params);
-    const chargePoint = await getChargePoint(sql, id);
+    const chargePoint = await scopedChargePoint(request, id);
     const [connectors, live, credential, configuration, events, alarms] = await Promise.all([
       listConnectors(sql, id),
       listConnectorsLive(sql, id),
@@ -290,14 +313,18 @@ export async function adminRoutes(
     });
     return result;
   });
-  app.get('/charge-points/:id/lifecycle-events', async (request) => ({
-    items: serialize(await listLifecycleEvents(sql, params.parse(request.params).id)),
-  }));
+  app.get('/charge-points/:id/lifecycle-events', async (request) => {
+    const { id } = params.parse(request.params);
+    await scopedChargePoint(request, id);
+    return { items: serialize(await listLifecycleEvents(sql, id)) };
+  });
 
   // ---- Configuración y comisionamiento ----
-  app.get('/charge-points/:id/configuration', async (request) => ({
-    items: serialize(await listConfiguration(sql, params.parse(request.params).id)),
-  }));
+  app.get('/charge-points/:id/configuration', async (request) => {
+    const { id } = params.parse(request.params);
+    await scopedChargePoint(request, id);
+    return { items: serialize(await listConfiguration(sql, id)) };
+  });
   app.post('/charge-points/:id/commission', async (request) => {
     const { id } = params.parse(request.params);
     return serialize(await requireGateway().commissioning.applyTemplate(id, actorOf(request)));
@@ -320,6 +347,20 @@ export async function adminRoutes(
   app.post('/charge-points/:id/commands', async (request) => {
     const { id } = params.parse(request.params);
     const body = commandBody.parse(request.body);
+    // SUPPORT solo envía los comandos de sus runbooks; el resto exige commands:execute.
+    if (
+      !hasPermission(request, 'commands:execute') &&
+      !(SUPPORT_ACTIONS as readonly string[]).includes(body.action)
+    ) {
+      throw new ForbiddenError(
+        `El rol ${staffOf(request).role} no puede enviar ${body.action}`,
+        'FORBIDDEN',
+        {
+          permission: 'commands:execute',
+          allowed: SUPPORT_ACTIONS,
+        },
+      );
+    }
     const result = await requireGateway().commands.send({
       chargePointId: id,
       action: body.action,
@@ -329,16 +370,20 @@ export async function adminRoutes(
     });
     return serialize(result);
   });
-  app.get('/charge-points/:id/commands', async (request) => ({
-    items: serialize(await requireGateway().commands.list(params.parse(request.params).id)),
-  }));
+  app.get('/charge-points/:id/commands', async (request) => {
+    const { id } = params.parse(request.params);
+    await scopedChargePoint(request, id);
+    return { items: serialize(await requireGateway().commands.list(id)) };
+  });
 
   // ---- Alarmas ----
   app.get('/alarms', async (request) => {
     const query = z
       .object({ chargePointId: uuid.optional(), includeResolved: z.coerce.boolean().optional() })
       .parse(request.query ?? {});
-    return { items: serialize(await listAlarms(sql, { tenantId, ...query })) };
+    return {
+      items: serialize(await listAlarms(sql, { tenantId, ...query, siteIds: siteScope(request) })),
+    };
   });
   app.post('/alarms/:id/resolve', async (request) => {
     const { id } = params.parse(request.params);
@@ -394,11 +439,16 @@ export async function adminRoutes(
         limit: z.coerce.number().int().min(1).max(200).optional(),
       })
       .parse(request.query ?? {});
-    return { items: serialize(await listSessionViews(sql, { tenantId, ...query })) };
+    return {
+      items: serialize(
+        await listSessionViews(sql, { tenantId, ...query, siteIds: siteScope(request) }),
+      ),
+    };
   });
   app.get('/sessions/:id', async (request) => {
     const { id } = params.parse(request.params);
     const view = await getSessionView(sql, id);
+    assertInScope(request, view.site_id);
     const events = await listAggregateEvents(sql, 'session', id, 0n, 500);
     return serialize({ ...view, public: toPublicSession(view, '/admin/v1'), events });
   });
@@ -415,7 +465,7 @@ export async function adminRoutes(
   });
   app.get('/sessions/:id/events', async (request, reply) => {
     const { id } = params.parse(request.params);
-    await getSessionView(sql, id);
+    assertInScope(request, (await getSessionView(sql, id)).site_id);
     await streamSessionEvents(request, reply, sql, id, {
       pollMs: options.ssePollMs ?? 1000,
       heartbeatMs: options.sseHeartbeatMs ?? 15_000,
@@ -424,6 +474,7 @@ export async function adminRoutes(
   });
   app.get('/charge-points/:id/transactions', async (request) => {
     const { id } = params.parse(request.params);
+    await scopedChargePoint(request, id);
     return { items: serialize(await requireSessions().listTransactions(id)) };
   });
 }

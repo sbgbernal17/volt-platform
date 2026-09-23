@@ -5,14 +5,17 @@
 import {
   type BillingService,
   CsmsError,
+  ForbiddenError,
   getReceipt,
   listPaymentMethods,
   renderReceiptHtml,
+  resolveParam,
 } from '@volt/csms';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
 import { actorOf, serialize } from './routes.ts';
+import { hasPermission, staffOf } from './staff-auth.ts';
 
 export interface BillingAdminOptions {
   sql: Sql;
@@ -50,6 +53,25 @@ export async function billingAdminRoutes(
   app.get('/payments/:id', async (request) =>
     serialize(await requireBilling().getPayment(params.parse(request.params).id)),
   );
+  /**
+   * SUPPORT devuelve o condona solo hasta `billing.support_refund_limit_minor`; por encima hace falta
+   * un administrador (OPS §7.4, "reembolsos hasta un límite").
+   */
+  const assertRefundWithinLimit = async (request: FastifyRequest, amountMinor: bigint) => {
+    if (hasPermission(request, 'billing:operate') && staffOf(request).role !== 'SUPPORT') return;
+    const limit = await resolveParam<unknown>(sql, 'billing.support_refund_limit_minor', {
+      tenantId,
+    });
+    const limitMinor = BigInt(typeof limit === 'number' ? Math.trunc(limit) : String(limit ?? 0));
+    if (amountMinor > limitMinor) {
+      throw new ForbiddenError(
+        `El importe supera el límite de ${limitMinor.toString()} para el rol SUPPORT`,
+        'REFUND_LIMIT',
+        { limitMinor: limitMinor.toString(), amountMinor: amountMinor.toString() },
+      );
+    }
+  };
+
   app.post('/payments/:id/reverse', async (request) => {
     const { id } = params.parse(request.params);
     const body = z
@@ -58,6 +80,11 @@ export async function billingAdminRoutes(
         amountMinor: z.coerce.number().int().positive().optional(),
       })
       .parse(request.body);
+    const payment = await requireBilling().getPayment(id);
+    await assertRefundWithinLimit(
+      request,
+      body.amountMinor === undefined ? BigInt(payment.amount_minor) : BigInt(body.amountMinor),
+    );
     return serialize(
       await requireBilling().reversePayment(id, {
         actor: actorOf(request),
@@ -112,6 +139,8 @@ export async function billingAdminRoutes(
   app.post('/debts/:id/waive', async (request) => {
     const { id } = params.parse(request.params);
     const body = z.object({ reason: z.string().min(3).max(300) }).parse(request.body);
+    const debt = await requireBilling().getDebt(id);
+    await assertRefundWithinLimit(request, BigInt(debt.amount_minor));
     return serialize(
       await requireBilling().waiveDebt(id, { actor: actorOf(request), reason: body.reason }),
     );

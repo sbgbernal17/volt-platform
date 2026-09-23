@@ -9,6 +9,8 @@ const schema = z.object({
   OCPP_GATEWAY_INTERNAL_URL: z.string().url().optional(),
   /** Hora UTC de la revisión diaria de deriva (09:00 UTC = 04:00 en Bogotá, OPS §1.4). */
   WORKER_DRIFT_CHECK_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(9),
+  /** Hora UTC de la verificación diaria de la cadena de auditoría (SEG §2.8). */
+  WORKER_AUDIT_CHECK_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(7),
   /** Cargadores consultados por segundo durante la revisión de deriva. */
   WORKER_DRIFT_RATE_PER_S: z.coerce.number().int().min(1).max(200).default(20),
   WORKER_DRIFT_ENABLED: z

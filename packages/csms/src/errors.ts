@@ -39,3 +39,15 @@ export class ChargePointOfflineError extends CsmsError {
     );
   }
 }
+
+export class UnauthorizedError extends CsmsError {
+  constructor(message = 'Identidad requerida', code = 'UNAUTHORIZED', details?: unknown) {
+    super(message, 401, code, details);
+  }
+}
+
+export class ForbiddenError extends CsmsError {
+  constructor(message = 'Sin permiso para esta acción', code = 'FORBIDDEN', details?: unknown) {
+    super(message, 403, code, details);
+  }
+}

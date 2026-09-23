@@ -42,6 +42,8 @@ export interface SessionViewFilter {
   tenantId: string;
   driverId?: string | undefined;
   chargePointId?: string | undefined;
+  /** Alcance por sedes (SITE_OWNER); undefined = todas. */
+  siteIds?: readonly string[] | undefined;
   state?: SessionState | undefined;
   limit?: number | undefined;
 }
@@ -50,11 +52,13 @@ export async function listSessionViews(
   db: ISql,
   filter: SessionViewFilter,
 ): Promise<SessionView[]> {
+  const scope = filter.siteIds ? [...filter.siteIds] : null;
   return db<SessionView[]>`
     ${VIEW_SELECT(db)}
     WHERE s.tenant_id = ${filter.tenantId}
       AND (${filter.driverId ?? null}::uuid IS NULL OR s.driver_id = ${filter.driverId ?? null})
       AND (${filter.chargePointId ?? null}::uuid IS NULL OR s.charge_point_id = ${filter.chargePointId ?? null})
+      AND (${scope}::uuid[] IS NULL OR s.site_id = ANY(${scope}::uuid[]))
       AND (${filter.state ?? null}::text IS NULL OR s.state::text = ${filter.state ?? null})
     ORDER BY s.requested_at DESC LIMIT ${filter.limit ?? 50}`;
 }

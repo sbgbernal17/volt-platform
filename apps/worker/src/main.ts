@@ -16,6 +16,7 @@ import { WompiGateway } from '@volt/payments';
 import { Redis } from 'ioredis';
 import { pino } from 'pino';
 import { loadConfig } from './config.ts';
+import { runAuditChainCheck } from './jobs/audit.ts';
 import { runBillingCycle, runReconciliation } from './jobs/billing.ts';
 import { dailyAt, runConfigDriftCheck } from './jobs/config-drift.ts';
 import { LogEventPublisher, RedisEventPublisher, relayOutbox } from './jobs/outbox-relay.ts';
@@ -72,6 +73,9 @@ if (sql) {
       },
     },
     dailyAt('partitions', 1, () => ensureMonthlyPartitions(sql, { logger })),
+    dailyAt('audit-chain', config.WORKER_AUDIT_CHECK_HOUR_UTC, () =>
+      runAuditChainCheck(sql, logger),
+    ),
     {
       name: 'pricing-settlement',
       intervalMs: config.WORKER_PRICING_POLL_MS,

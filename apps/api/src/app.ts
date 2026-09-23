@@ -1,10 +1,12 @@
 import {
   BillingAuthorizer,
   BillingService,
+  bootstrapFirstAdmin,
   CommandService,
   CommissioningService,
   CsmsError,
   SessionService,
+  VOLT_TENANT_ID,
 } from '@volt/csms';
 import { createSql } from '@volt/db';
 import {
@@ -16,8 +18,12 @@ import { FakeGateway, type PaymentGateway, WompiGateway } from '@volt/payments';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Redis } from 'ioredis';
 import { ZodError } from 'zod';
+import { IdentityPlatformVerifier } from './admin/identity.ts';
 import { adminRoutes } from './admin/routes.ts';
+import { StaffAuthenticator } from './admin/staff-auth.ts';
+import { type AuthConfig, authConfigRoute } from './admin/staff-routes.ts';
 import type { ApiConfig } from './config.ts';
+import { registerCors } from './cors.ts';
 import { DevDriverVerifier } from './public/auth.ts';
 import { publicRoutes } from './public/routes.ts';
 
@@ -27,7 +33,7 @@ export interface AppDependencies {
   gateway?: PaymentGateway | undefined;
 }
 
-export const API_VERSION = '0.4.0';
+export const API_VERSION = '0.5.0';
 
 /**
  * Construye la aplicación Fastify: salud, preparación, versión y, con base de datos y token de
@@ -90,6 +96,8 @@ export function buildApp({ config, gateway: injectedGateway }: AppDependencies):
       },
     });
   });
+
+  registerCors(app, config.API_CORS_ORIGINS);
 
   app.get('/healthz', async () => ({ status: 'ok', service: 'api', version: API_VERSION }));
 
@@ -177,11 +185,44 @@ export function buildApp({ config, gateway: injectedGateway }: AppDependencies):
       authorizer,
       paymentsRedirectUrl: config.PAYMENTS_REDIRECT_URL,
     });
-    if (config.API_ADMIN_TOKEN) {
+    const staffVerifier = config.IDENTITY_PLATFORM_PROJECT_ID
+      ? new IdentityPlatformVerifier({
+          projectId: config.IDENTITY_PLATFORM_PROJECT_ID,
+          jwksUrl: config.IDENTITY_PLATFORM_JWKS_URL,
+        })
+      : undefined;
+    const authConfig: AuthConfig = {
+      provider: staffVerifier ? 'identity-platform' : config.API_ADMIN_TOKEN ? 'token' : 'none',
+      projectId: config.IDENTITY_PLATFORM_PROJECT_ID ?? null,
+      apiKey: staffVerifier ? (config.IDENTITY_PLATFORM_API_KEY ?? null) : null,
+      authDomain: staffVerifier
+        ? (config.IDENTITY_PLATFORM_AUTH_DOMAIN ??
+          `${config.IDENTITY_PLATFORM_PROJECT_ID}.firebaseapp.com`)
+        : null,
+      tokenLogin: Boolean(config.API_ADMIN_TOKEN),
+    };
+    void app.register(authConfigRoute, { prefix: '/admin/v1', authConfig });
+    if (staffVerifier || config.API_ADMIN_TOKEN) {
+      const authenticator = new StaffAuthenticator({
+        sql,
+        tenantId: VOLT_TENANT_ID,
+        staticToken: config.API_ADMIN_TOKEN,
+        verifier: staffVerifier,
+      });
+      if (staffVerifier) {
+        app.log.info(
+          { projectId: staffVerifier.projectId },
+          'personal autenticado con Identity Platform',
+        );
+      }
+      if (config.API_ADMIN_TOKEN) {
+        app.log.warn('API_ADMIN_TOKEN activo: token estático de administración (solo laboratorio)');
+      }
       void app.register(adminRoutes, {
         prefix: '/admin/v1',
         sql,
-        token: config.API_ADMIN_TOKEN,
+        authenticator,
+        authConfig,
         ...(commands ? { commands } : {}),
         ...(commissioning ? { commissioning } : {}),
         ...(sessions ? { sessions } : {}),
@@ -190,7 +231,16 @@ export function buildApp({ config, gateway: injectedGateway }: AppDependencies):
         sseHeartbeatMs: config.API_SSE_HEARTBEAT_MS,
       });
     } else {
-      app.log.warn('API de administración deshabilitada: hace falta API_ADMIN_TOKEN');
+      app.log.warn(
+        'API de administración deshabilitada: hacen falta IDENTITY_PLATFORM_PROJECT_ID o API_ADMIN_TOKEN',
+      );
+    }
+    if (config.API_STAFF_BOOTSTRAP_EMAIL) {
+      const email = config.API_STAFF_BOOTSTRAP_EMAIL;
+      app.addHook('onReady', async () => {
+        const created = await bootstrapFirstAdmin(sql, VOLT_TENANT_ID, email);
+        if (created) app.log.info({ email: created.email }, 'primer administrador invitado');
+      });
     }
   } else {
     app.log.warn('sin DATABASE_URL: solo salud y versión');

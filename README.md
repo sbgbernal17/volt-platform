@@ -31,6 +31,7 @@ pnpm db:migrate           # aplica las migraciones
 pnpm lint && pnpm typecheck && pnpm test
 pnpm dev:gateway          # gateway OCPP en ws://localhost:9220/ocpp/{chargeBoxId}
 pnpm dev:api              # API en http://localhost:8080
+pnpm dev:backoffice       # back-office en http://localhost:5173 (reenvía /admin/v1 a la API)
 ```
 
 Con `DATABASE_URL` el gateway autentica contra el inventario (`assets.charge_point` y sus credenciales); sin ella usa el registro estático `OCPP_STATIC_REGISTRY` (laboratorio). Para comisionar un cargador simulado de punta a punta con la API de administración sigue `lab/README.md`. Las convenciones de trabajo están en `CLAUDE.md`.
@@ -38,9 +39,10 @@ Con `DATABASE_URL` el gateway autentica contra el inventario (`assets.charge_poi
 | Directorio | Contenido |
 |---|---|
 | `apps/ocpp-gateway` | Servidor OCPP-J 1.6 (WebSocket persistente, allowlist, validación de esquemas, persistencia, API interna de comandos, directorio en Redis) |
-| `apps/api` | API Fastify: `/v1` para la app (sedes, EVSE con tarifa, sesiones con costo, SSE, medios de pago, deudas, recibos, webhook de Wompi), `/admin/v1` para el back-office (inventario, comisionamiento, comandos, sesiones, alarmas, tarifas, asignaciones, parámetros, simulador de precios, costo y liquidación, pagos, deudas, bloqueos, conciliación) |
+| `apps/api` | API Fastify: `/v1` para la app (sedes, EVSE con tarifa, sesiones con costo, SSE, medios de pago, deudas, recibos, webhook de Wompi), `/admin/v1` para el back-office (inventario, comisionamiento, comandos, sesiones, alarmas, tarifas, asignaciones, parámetros, simulador de precios, costo y liquidación, pagos, deudas, bloqueos, conciliación, personal, resumen en vivo, bitácora y auditoría) con identidad del personal por Identity Platform o token de laboratorio, política central de permisos y auditoría automática (ADR 0021) |
 | `apps/worker` | Trabajos en segundo plano: relay del outbox, expiración de arranques, cierre de transacciones huérfanas, particiones mensuales, revisión diaria de deriva, liquidación de sesiones, límites de sesión (tope de exposición, duración máxima), activación de tarifas programadas, cobros con reintentos y conciliación diaria |
-| `apps/backoffice`, `apps/mobile` | Back-office web y app Volt (iteraciones 6 y 7) |
+| `apps/backoffice` | Back-office web del operador (React + Vite, español e inglés): mapa y lista en vivo, sedes, cargadores, sesiones, tarifas y simulador, parámetros, pagos, conductores, alarmas, auditoría y personal; se sirve con nginx (ADR 0021) |
+| `apps/mobile` | App Volt (iteración 7) |
 | `packages/domain` | Máquinas de estado y dinero en enteros |
 | `packages/ocpp-schemas` | Esquemas JSON oficiales de OCPP 1.6 y validadores |
 | `packages/events` | Catálogo y sobre de eventos de dominio |

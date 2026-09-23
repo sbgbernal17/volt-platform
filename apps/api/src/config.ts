@@ -8,10 +8,32 @@ const schema = z.object({
   DATABASE_URL: z.string().url().optional(),
   REDIS_URL: z.string().url().optional(),
   /**
-   * Token de la API de administración (/admin/v1) hasta que llegue Identity Platform con RBAC
-   * (iteración 6). Sin él, las rutas de administración no se registran.
+   * Token estático de la API de administración (/admin/v1) para laboratorio, pruebas y automatización:
+   * entra como administrador con actor `staff:admin-token`. Nunca en producción (lo impide la
+   * configuración); allí el personal entra con Identity Platform (iteración 6).
    */
   API_ADMIN_TOKEN: z.string().min(16).optional(),
+  /**
+   * Identity Platform del personal (SEG §3.1): proyecto (emisor y audiencia del ID token), clave web
+   * pública y dominio de autenticación que usa el back-office. Obligatorio en producción.
+   */
+  IDENTITY_PLATFORM_PROJECT_ID: z.string().min(4).max(64).optional(),
+  IDENTITY_PLATFORM_API_KEY: z.string().min(8).optional(),
+  IDENTITY_PLATFORM_AUTH_DOMAIN: z.string().min(4).optional(),
+  /** Solo pruebas: URL alternativa de las claves públicas (JWKS). */
+  IDENTITY_PLATFORM_JWKS_URL: z.string().url().optional(),
+  /** Correo del primer administrador: se invita al arrancar si no hay personal registrado. */
+  API_STAFF_BOOTSTRAP_EMAIL: z.string().email().optional(),
+  /** Orígenes (esquema://host[:puerto]) del back-office y la app web autorizados por CORS, separados por coma. */
+  API_CORS_ORIGINS: z
+    .string()
+    .default('')
+    .transform((value) =>
+      value
+        .split(',')
+        .map((origin) => origin.trim().replace(/\/$/, ''))
+        .filter((origin) => origin.length > 0),
+    ),
   /** Token compartido con la API interna del gateway (OCPP_GATEWAY_INTERNAL_TOKEN). */
   OCPP_GATEWAY_INTERNAL_TOKEN: z.string().min(16).optional(),
   /** URL del gateway cuando no hay directorio en Redis (un solo pod; laboratorio y pruebas). */
@@ -55,6 +77,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   }
   if (result.data.NODE_ENV === 'production' && result.data.API_DEV_DRIVER_AUTH) {
     throw new Error('Configuración inválida: API_DEV_DRIVER_AUTH no puede activarse en producción');
+  }
+  if (result.data.NODE_ENV === 'production' && result.data.API_ADMIN_TOKEN) {
+    throw new Error(
+      'Configuración inválida: API_ADMIN_TOKEN no puede usarse en producción (el personal entra con Identity Platform)',
+    );
+  }
+  if (result.data.NODE_ENV === 'production' && !result.data.IDENTITY_PLATFORM_PROJECT_ID) {
+    throw new Error('Configuración inválida: en producción falta IDENTITY_PLATFORM_PROJECT_ID');
   }
   if (result.data.NODE_ENV === 'production' && result.data.PAYMENTS_PROVIDER !== 'wompi') {
     throw new Error('Configuración inválida: en producción PAYMENTS_PROVIDER debe ser wompi');

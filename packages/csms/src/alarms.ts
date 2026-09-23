@@ -68,14 +68,18 @@ export async function listAlarms(
   filter: {
     tenantId: string;
     chargePointId?: string | undefined;
+    /** Alcance por sedes (SITE_OWNER); undefined = todas. */
+    siteIds?: readonly string[] | undefined;
     includeResolved?: boolean | undefined;
     limit?: number | undefined;
   },
 ): Promise<AlarmRow[]> {
+  const scope = filter.siteIds ? [...filter.siteIds] : null;
   return sql<AlarmRow[]>`
     SELECT * FROM ops.alarm
     WHERE tenant_id = ${filter.tenantId}
       AND (${filter.chargePointId ?? null}::uuid IS NULL OR charge_point_id = ${filter.chargePointId ?? null})
+      AND (${scope}::uuid[] IS NULL OR site_id = ANY(${scope}::uuid[]))
       AND (${filter.includeResolved ?? false} OR status <> 'RESOLVED')
     ORDER BY last_seen_at DESC LIMIT ${filter.limit ?? 100}`;
 }

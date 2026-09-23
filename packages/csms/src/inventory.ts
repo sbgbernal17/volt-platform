@@ -57,8 +57,16 @@ export async function createSite(sql: Sql, input: CreateSiteInput): Promise<Site
   return rows[0] as SiteRow;
 }
 
-export async function listSites(sql: Sql, tenantId: string): Promise<SiteRow[]> {
-  return sql<SiteRow[]>`SELECT * FROM assets.site WHERE tenant_id = ${tenantId} ORDER BY code`;
+export async function listSites(
+  sql: Sql,
+  tenantId: string,
+  siteIds?: readonly string[] | undefined,
+): Promise<SiteRow[]> {
+  const scope = siteIds ? [...siteIds] : null;
+  return sql<SiteRow[]>`
+    SELECT * FROM assets.site
+    WHERE tenant_id = ${tenantId} AND (${scope}::uuid[] IS NULL OR id = ANY(${scope}::uuid[]))
+    ORDER BY code`;
 }
 
 export async function getSite(sql: Sql, id: string): Promise<SiteRow> {
@@ -319,6 +327,8 @@ export async function assignTemplate(
 export interface ChargePointFilter {
   tenantId: string;
   siteId?: string | undefined;
+  /** Alcance por sedes (SITE_OWNER); undefined = todas. */
+  siteIds?: readonly string[] | undefined;
   lifecycle?: LifecycleState | undefined;
 }
 
@@ -326,10 +336,12 @@ export async function listChargePoints(
   sql: Sql,
   filter: ChargePointFilter,
 ): Promise<ChargePointRow[]> {
+  const scope = filter.siteIds ? [...filter.siteIds] : null;
   return sql<ChargePointRow[]>`
     SELECT * FROM assets.charge_point
     WHERE tenant_id = ${filter.tenantId}
       AND (${filter.siteId ?? null}::uuid IS NULL OR site_id = ${filter.siteId ?? null})
+      AND (${scope}::uuid[] IS NULL OR site_id = ANY(${scope}::uuid[]))
       AND (${filter.lifecycle ?? null}::text IS NULL OR lifecycle_status = ${filter.lifecycle ?? null})
     ORDER BY charge_box_id`;
 }

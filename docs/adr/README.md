@@ -42,3 +42,4 @@ Opción, ventajas, desventajas.
 Qué cambia, qué riesgos se asumen, qué se debe revisar después.
 ```
 | [0020](0020-cobro-con-wompi-reintentos-deuda-y-conciliacion.md) | Cobro con Wompi al liquidar: fuente de pago tokenizada, reintentos, deuda con enlace de pago, webhooks idempotentes, devoluciones, conciliación y recibos |
+| [0021](0021-identidad-del-personal-rbac-auditoria-y-back-office.md) | Identidad del personal con Identity Platform, RBAC con política central por ruta, MFA TOTP, auditoría inmutable con cadena de hashes y back-office como SPA servida por nginx |

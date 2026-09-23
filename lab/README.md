@@ -112,6 +112,17 @@ curl -s -X POST $API/billing/reconcile -H "$H" -H 'content-type: application/jso
 
 El webhook de Wompi se registra en su panel apuntando a `https://api.supercargadores.co/v1/webhooks/wompi` (en local, un túnel como `ngrok`); cada evento se verifica con el secreto de eventos y se guarda en `billing.webhook_inbox` (`GET $API/billing/webhooks`). La prueba `apps/api/src/payments.e2e.test.ts` recorre el flujo completo con el emulador y `apps/api/src/wompi.sandbox.test.ts` contrasta el adaptador con el sandbox real cuando existen las llaves de prueba.
 
+## Back-office (iteración 6)
+
+```bash
+pnpm dev:api          # con API_ADMIN_TOKEN en .env (y PAYMENTS_PROVIDER=fake para ver pagos)
+pnpm dev:backoffice   # http://localhost:5173
+```
+
+Entra con el token de administración (sección "Laboratorio" de la pantalla de entrada; el actor que declares queda en la auditoría). Recorrido sugerido: Sedes → nueva sede; Cargadores → nuevo cargador con sus conectores → Emitir credencial (se muestra una sola vez) → pestañas Configuración, Comandos (con confirmación y motivo en los sensibles) y Bitácora; Tarifas → crear la tarifa base de Volt → Simulador; Personal → invitar; Auditoría → verificar cadena. Con el simulador embebido (`pnpm --filter @volt/api ...` de las secciones anteriores) los cargadores aparecen conectados y el resumen "Ahora" se refresca cada 10 s.
+
+Para probar la entrada real con Identity Platform: `IDENTITY_PLATFORM_PROJECT_ID`, `IDENTITY_PLATFORM_API_KEY` y `API_STAFF_BOOTSTRAP_EMAIL` en `.env` (ver `.env.example`), un usuario con ese correo en Identity Platform (correo verificado) y, para ADMIN u OPERATIONS, el segundo factor TOTP que la pantalla te guía a activar. `apps/api/src/staff.e2e.test.ts` cubre la verificación de tokens, el RBAC por rol y la auditoría con secretos redactados.
+
 ## Simuladores de cargador externos
 
 `docker-compose.lab.yml` construye desde el código fuente dos simuladores que interpretan la especificación de forma distinta, lo que hace aflorar errores del servidor (HW §4.2):

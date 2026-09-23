@@ -1,0 +1,31 @@
+{
+  "name": "@volt/backoffice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Back-office web del operador (React + Vite): operación, tarifas, pagos, alarmas, auditoría y personal",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "firebase": "catalog:",
+    "leaflet": "catalog:",
+    "qrcode": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@types/leaflet": "catalog:",
+    "@types/qrcode": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}
