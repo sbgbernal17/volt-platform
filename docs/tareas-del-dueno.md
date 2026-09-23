@@ -22,6 +22,7 @@ Lista de lo que solo tú puedes conseguir o decidir, ordenada por la iteración 
 - [x] 2026-09-23: manual de marca entregado (sistema de diseño VOLT); copiado a `docs/marca/` y aplicado al back-office (colores, tipografía, logotipo). La app lo toma en la iteración 7.
 - [x] 2026-09-23: correo remitente de recibos y avisos: `notificaciones@supercargadores.co` (ADR 0019, adición).
 - [x] 2026-09-23: textos para el conductor propuestos en `docs/textos-app-conductor.md` (pendiente tu visto bueno; se ajustan cuando quieras).
+- [x] 2026-09-23: iteración 7 entregada (ADR 0022): app Volt en `apps/mobile`, identidad del conductor con Identity Platform, consentimientos, notificaciones push. Los textos propuestos ya están dentro de la app y de los avisos.
 
 ## Pendiente ahora: lo que más me ayuda que entregues (iteraciones 6 a 8)
 
@@ -30,7 +31,10 @@ Ordenado por urgencia. Ninguno bloquea el desarrollo.
 | # | Qué necesito | Para qué | Cómo entregarlo |
 |---|---|---|---|
 | 0 | **Habilitar MFA TOTP en Identity Platform** (dev, staging y prod). El flujo de verificación del 23-09-2026 muestra `mfa: DISABLED` en los tres. Dos formas: (a) en la consola, Identity Platform → **Configuración** → pestaña **Autenticación multifactor** → "Código de verificación por app de autenticación (TOTP)" → habilitar → Guardar; o (b) en GitHub → Actions → *Verificación de Google Cloud* → **Run workflow** → marcar **enable_totp** → Run: lo activa (y deja correo y contraseña obligatorios) en los ambientes indicados | Sin TOTP los roles ADMIN y OPERATIONS no pueden entrar al back-office (SEG §3.1) | Corre el flujo o dime que lo haga yo y lo dejo listo en el siguiente push |
-| 0b | **Cuentas de desarrollador de Apple y Google Play** a nombre de la empresa (lo anunciaste para el próximo turno) | Compilaciones de prueba de la app Volt (iteración 7) | Acceso para mí en App Store Connect y Google Play Console; nombre "Volt", identificador `co.supercargadores.volt` (propuesta) |
+| 0b | **Cuentas de desarrollador de Apple y Google Play** a nombre de la empresa (lo anunciaste para el próximo turno) | Compilaciones de prueba de la app Volt (iteración 7): TestFlight e Internal testing | Acceso para mí en App Store Connect y Google Play Console; nombre "Volt", identificador `co.supercargadores.volt` (ya configurado en `apps/mobile/app.json`) |
+| 0c | **Cuenta de Expo (EAS)** a nombre de la empresa en <https://expo.dev> con acceso para mí (o dime que la cree yo) | Compilar la app con EAS Build y obtener el `projectId` que necesitan los avisos push (Expo Go no admite push desde el SDK 53) | Organización en expo.dev y acceso para mí; yo dejo `eas.json` y el `projectId` en `app.json` en el siguiente push |
+| 0d | **Textos legales de la app**: términos y condiciones y política de tratamiento de datos (Ley 1581) publicados en `supercargadores.co/legal/terminos` y `/legal/privacidad` (o dime otras URL) | La app los enlaza en la pantalla de consentimientos y en Cuenta; sin ellos no debe salir el piloto | Páginas publicadas (Netlify sirve para esto) y, si cambian las URL, las variables `APP_TERMS_URL` y `APP_PRIVACY_URL` |
+| 0e | **Clave de Google Maps para Android** (Consola de Google Cloud del proyecto dev → APIs y servicios → Credenciales → clave restringida a Android, paquete `co.supercargadores.volt`, API "Maps SDK for Android") o dime que la cree yo en la iteración 8 con Terraform | El mapa de estaciones en Android (iOS usa Apple Maps sin clave) | La clave en `android.config.googleMaps.apiKey` de `app.json` (no es secreta: va restringida al paquete y a la firma) |
 | 1 | **Nota escrita del contador** confirmando que el servicio de carga está excluido de IVA y qué retenciones aplican a los cobros por Wompi (retención en la fuente 1,5 %, ICA 0,2 % y retención de IVA 15 % con tarjeta según el documento de Wompi) | Cerrar impuestos, recibos y la conciliación de pagos (iteración 5) sin rehacer la facturación electrónica después. Mientras tanto el sistema ya opera sin IVA (ADR 0018) | Nota o correo del contador en `docs/legal/` sin datos sensibles |
 | 2 | **Preguntas abiertas a tu ejecutivo de Wompi** (sección 6 de `docs/proveedor/wompi.md`): qué procesador queda asignado (¿RBM?) y en qué modelo (Agregador o Gateway), responsabilidad por contracargo con y sin 3RI, plazo máximo real de reembolsos y si hay costo por reembolso o contracargo; y pedir al equipo de fraude la **activación de 3DS en fuentes de pago** para producción | Definir el flujo de cobro al final de la carga (iteración 5) y evitar sorpresas en tasa de aprobación y contracargos | Sus respuestas añadidas al final de `docs/proveedor/wompi.md` |
 
@@ -98,6 +102,14 @@ No hace falta hardware. En tu máquina, con Docker, Node 22 y pnpm:
 3. Roles: invita un segundo correo como READ_ONLY y comprueba que solo ve; como SUPPORT, que solo puede enviar RemoteStop, desbloqueo y TriggerMessage y que una devolución por encima de `billing.support_refund_limit_minor` (200.000 COP) se rechaza.
 4. Lo que aún no verás: Identity-Aware Proxy delante del back-office, exportación de la auditoría a un bucket con retención bloqueada y el despliegue en `admin.supercargadores.co` (iteración 8); las pantallas de reportes y exportación CSV (fase 2).
 
+## Qué probar de la iteración 7 (app Volt)
+
+1. `pnpm lint && pnpm typecheck && DATABASE_URL=postgres://volt:volt@localhost:5432/volt REDIS_URL=redis://localhost:6379 pnpm test`: pasan `apps/api/src/driver-identity.e2e.test.ts` (alta automática, tenant, correo verificado, consentimientos, vinculación segura, dispositivos, bandeja, borrado), `apps/worker/src/jobs/push.test.ts` (avisos de inicio, ocupación, liquidación y cobro en el idioma de cada dispositivo, token inválido, clases por parámetro, reintento) y las pruebas puras de la app (`apps/mobile`: formatos, QR, cliente de Wompi, catálogos). `pnpm --filter @volt/mobile export:web` construye el bundle web.
+2. En tu computador con la API en marcha (`pnpm dev:api` con `API_DEV_DRIVER_AUTH=true` y `PAYMENTS_PROVIDER=fake`): `pnpm dev:mobile` y sigue "App Volt (iteración 7)" en `lab/README.md`, en Expo Go (instálalo en tu teléfono; misma red Wi-Fi) o en el navegador (`w`). Recorrido: entrar con el id de un conductor creado en el back-office → consentimientos → lista de estaciones → conector con el precio desagregado → agregar la tarjeta 4242 → iniciar carga → progreso en vivo → detener → liquidar y cobrar desde el back-office → recibo en Historial. Cambia el idioma en Cuenta.
+3. Con Identity Platform (mismas variables del back-office en `.env`): crea la cuenta desde la app con tu correo y contraseña; recibirás el correo de verificación de Google; hasta verificarlo puedes mirar el mapa pero no pagar ni cargar. Si el correo ya existía como conductor creado por el personal, la app entra en esa cuenta solo después de verificarlo.
+4. Con el sandbox de Wompi en la API (`PAYMENTS_PROVIDER=wompi` y las llaves de prueba): la tarjeta se tokeniza directo contra Wompi desde la app (el número nunca pasa por la API) y Nequi pide aprobar en la app Nequi (en sandbox, cualquier celular y se aprueba sola).
+5. Lo que aún no verás: avisos push en el teléfono (necesitan una compilación de desarrollo con EAS: tareas 0b y 0c), el mapa en el navegador (se muestra la lista), enlaces universales verificados y `app.supercargadores.co` (iteración 8), inicio de sesión con Google o Apple (después del piloto).
+
 ## Qué probar de la iteración 5 (cobros con Wompi)
 
 1. `pnpm lint && pnpm typecheck && DATABASE_URL=postgres://volt:volt@localhost:5432/volt REDIS_URL=redis://localhost:6379 pnpm test`: pasan las pruebas del paquete de pagos (`packages/payments`), las de cobro sobre la base de datos (`packages/csms/src/billing/billing.test.ts`) y la aceptación por la API con el emulador (`apps/api/src/payments.e2e.test.ts`: sin tarjeta no se carga, alta de tarjeta, cobro aprobado con recibo, cobro rechazado con deuda y bloqueo, enlace de pago y webhook que desbloquea, devolución y conciliación).
@@ -111,8 +123,8 @@ No hace falta hardware. En tu máquina, con Docker, Node 22 y pnpm:
 ## Para las iteraciones 5 a 7 (pagos y app)
 
 - [ ] **Contador.** Tratamiento de IVA del servicio de carga, retenciones, documento electrónico por cobro (factura electrónica de venta o documento equivalente), numeración y resolución de facturación. Elegir el proveedor tecnológico de facturación electrónica con API y cargar sus credenciales de prueba como secretos de GitHub (te diré los nombres).
-- [ ] **Apple y Google Play.** Cuentas de desarrollador a nombre de la empresa con acceso para mí; nombre "Volt" e identificador de paquete (por ejemplo `co.volt.app`).
-- [ ] **Identidad visual** de la app (logo, colores, tipografía, pantallas) para la iteración 7.
+- [ ] **Apple y Google Play.** Cuentas de desarrollador a nombre de la empresa con acceso para mí; nombre "Volt" e identificador de paquete `co.supercargadores.volt` (ver 0b y 0c en "Pendiente ahora").
+- [x] 2026-09-23: **Identidad visual** de la app entregada (manual de marca) y aplicada.
 
 ## Legal y regulatorio (antes de salir a producción)
 

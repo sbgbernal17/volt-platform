@@ -1,4 +1,5 @@
-import { type FormEvent, useState } from 'react';
+import QRCode from 'qrcode';
+import { type FormEvent, useEffect, useState } from 'react';
 import { useApi, useAuth } from '../auth/auth.tsx';
 import { ConfirmDialog } from '../components/confirm-dialog.tsx';
 import { DataTable } from '../components/data-table.tsx';
@@ -337,6 +338,7 @@ export function ChargePointDetailPage({ id }: { id: string }) {
               columns={[
                 { key: 'n', header: '#', render: (c) => c.ocpp_connector_id },
                 { key: 'evse', header: 'EVSE', render: (c) => <code>{c.evse_code}</code> },
+                { key: 'qr', header: t('cp.qr'), render: (c) => <EvseQr evseCode={c.evse_code} /> },
                 {
                   key: 'std',
                   header: t('cp.standard'),
@@ -900,4 +902,30 @@ function summaryOf(entry: TimelineEntry): string {
     default:
       return `${String(d.direction ?? '')} ${d.errorCode ? `· ${String(d.errorCode)}` : ''}`;
   }
+}
+
+/** URL universal que se imprime en el QR de cada conector (ADR 0022): abre la app Volt en ese conector. */
+export function evseQrUrl(evseCode: string): string {
+  return `https://app.supercargadores.co/evse/${encodeURIComponent(evseCode)}`;
+}
+
+function EvseQr({ evseCode }: { evseCode: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(evseQrUrl(evseCode), { margin: 1, width: 96 })
+      .then((url) => {
+        if (active) setSrc(url);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [evseCode]);
+  if (!src) return null;
+  return (
+    <a href={src} download={`qr-${evseCode}.png`} title={evseQrUrl(evseCode)}>
+      <img src={src} alt={`QR ${evseCode}`} width={48} height={48} />
+    </a>
+  );
 }

@@ -22,6 +22,7 @@ import { dailyAt, runConfigDriftCheck } from './jobs/config-drift.ts';
 import { LogEventPublisher, RedisEventPublisher, relayOutbox } from './jobs/outbox-relay.ts';
 import { ensureMonthlyPartitions } from './jobs/partitions.ts';
 import { activateTariffs, enforceSessionLimits, settleSessions } from './jobs/pricing.ts';
+import { deliverPushNotifications, ExpoPushSender, LogPushSender } from './jobs/push.ts';
 import { closeOrphanTransactions, expireSessionStarts } from './jobs/sessions.ts';
 import { type Job, Scheduler } from './scheduler.ts';
 
@@ -92,6 +93,26 @@ if (sql) {
     },
   );
   await ensureMonthlyPartitions(sql, { logger });
+  // Notificaciones push al conductor (iteración 7): a partir del outbox, con bandeja idempotente.
+  if (config.PUSH_PROVIDER !== 'none') {
+    const sender =
+      config.PUSH_PROVIDER === 'expo'
+        ? new ExpoPushSender({ accessToken: config.EXPO_ACCESS_TOKEN })
+        : new LogPushSender(logger);
+    jobs.push({
+      name: 'push-notifications',
+      intervalMs: config.WORKER_PUSH_POLL_MS,
+      run: async () => {
+        await deliverPushNotifications(sql, sender, {
+          batch: config.WORKER_PUSH_BATCH,
+          lookbackH: config.WORKER_PUSH_LOOKBACK_H,
+          logger,
+        });
+      },
+    });
+  } else {
+    logger.warn('notificaciones push deshabilitadas (PUSH_PROVIDER=none)');
+  }
   // Cobros: solo con la pasarela real; el emulador (`fake`) vive en el proceso de la API y se ejecuta
   // desde POST /admin/v1/billing/jobs/run (laboratorio y pruebas).
   if (config.PAYMENTS_PROVIDER === 'wompi') {

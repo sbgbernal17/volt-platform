@@ -22,6 +22,16 @@ const schema = z.object({
   IDENTITY_PLATFORM_AUTH_DOMAIN: z.string().min(4).optional(),
   /** Solo pruebas: URL alternativa de las claves públicas (JWKS). */
   IDENTITY_PLATFORM_JWKS_URL: z.string().url().optional(),
+  /**
+   * Iteración 7: tenant de Identity Platform reservado a los conductores de la app (`firebase.tenant`
+   * del ID token). Sin él, los conductores viven en el pool de usuarios del proyecto y el personal
+   * comparte ese pool (los roles siguen viviendo en la base de datos).
+   */
+  IDENTITY_PLATFORM_DRIVER_TENANT_ID: z.string().min(4).max(64).optional(),
+  /** Enlaces legales y soporte que muestra la app (GET /v1/config). */
+  APP_TERMS_URL: z.string().url().default('https://supercargadores.co/legal/terminos'),
+  APP_PRIVACY_URL: z.string().url().default('https://supercargadores.co/legal/privacidad'),
+  APP_SUPPORT_EMAIL: z.string().email().optional(),
   /** Correo del primer administrador: se invita al arrancar si no hay personal registrado. */
   API_STAFF_BOOTSTRAP_EMAIL: z.string().email().optional(),
   /** Orígenes (esquema://host[:puerto]) del back-office y la app web autorizados por CORS, separados por coma. */

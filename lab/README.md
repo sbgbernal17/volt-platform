@@ -123,6 +123,17 @@ Entra con el token de administración (sección "Laboratorio" de la pantalla de 
 
 Para probar la entrada real con Identity Platform: `IDENTITY_PLATFORM_PROJECT_ID`, `IDENTITY_PLATFORM_API_KEY` y `API_STAFF_BOOTSTRAP_EMAIL` en `.env` (ver `.env.example`), un usuario con ese correo en Identity Platform (correo verificado) y, para ADMIN u OPERATIONS, el segundo factor TOTP que la pantalla te guía a activar. `apps/api/src/staff.e2e.test.ts` cubre la verificación de tokens, el RBAC por rol y la auditoría con secretos redactados.
 
+## App Volt (iteración 7)
+
+```bash
+pnpm dev:api          # con API_DEV_DRIVER_AUTH=true y PAYMENTS_PROVIDER=fake en .env
+pnpm dev:mobile       # Expo: escanea el QR con Expo Go o pulsa `w` para el navegador
+```
+
+Sin `EXPO_PUBLIC_API_URL`, en Expo Go la app usa la máquina que sirve el bundle en el puerto 8080 (la API debe escuchar en todas las interfaces, `API_HOST=0.0.0.0`, y el teléfono estar en la misma red). Recorrido sugerido con el simulador embebido de las secciones anteriores (sede, cargador operativo y tarifa base publicados): en el back-office crea un conductor (Conductores → nuevo) y copia su id; en la app entra con ese id en la tarjeta "Laboratorio" (identidad de desarrollo), acepta los consentimientos, mira la lista de estaciones con el estado en vivo y el precio desagregado del conector, intenta cargar (te pedirá un medio de pago), agrega la tarjeta de prueba `4242 4242 4242 4242` (con el emulador la app la tokeniza contra la API; con Wompi real, contra Wompi con la llave pública), inicia la carga y observa energía, potencia y costo cada 2 s; detén la carga y, si el worker no corre, liquida y cobra desde el back-office (Sesiones → liquidar; Pagos → ejecutar cobros) para ver el recibo en la app. Entra con correo y contraseña real configurando `IDENTITY_PLATFORM_*` en la API (misma configuración del back-office): la app crea la cuenta sola, pide verificar el correo antes de pagar o cargar y muestra los consentimientos en su versión vigente (`auth.driver_consent_version`).
+
+Avisos push: con `PUSH_PROVIDER=log` el worker escribe en su log lo que enviaría; con `expo` envía por Expo Push a los dispositivos registrados (hace falta una compilación de desarrollo con EAS, no Expo Go). La bandeja de avisos de la app (Cuenta → Avisos) muestra lo enviado aunque el teléfono no reciba push. `apps/worker/src/jobs/push.test.ts` recorre inicio, ocupación, liquidación y cobro; `apps/api/src/driver-identity.e2e.test.ts`, la identidad, los consentimientos, los dispositivos y el borrado de la cuenta.
+
 ## Simuladores de cargador externos
 
 `docker-compose.lab.yml` construye desde el código fuente dos simuladores que interpretan la especificación de forma distinta, lo que hace aflorar errores del servidor (HW §4.2):

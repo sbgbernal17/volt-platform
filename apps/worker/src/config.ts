@@ -42,6 +42,17 @@ const schema = z.object({
   WOMPI_EVENTS_SECRET: z.string().min(8).optional(),
   WORKER_BILLING_POLL_MS: z.coerce.number().int().min(1000).max(600_000).default(10_000),
   WORKER_RECONCILIATION_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(8),
+  /**
+   * Notificaciones push al conductor (iteración 7, ADR 0022): `expo` envía por Expo Push, `log` solo
+   * registra (desarrollo) y `none` desactiva el trabajo. En producción es obligatorio `expo`.
+   */
+  PUSH_PROVIDER: z.enum(['expo', 'log', 'none']).default('log'),
+  /** Token de acceso de Expo (opcional; solo si el proyecto exige "enhanced push security"). */
+  EXPO_ACCESS_TOKEN: z.string().min(8).optional(),
+  WORKER_PUSH_POLL_MS: z.coerce.number().int().min(500).max(600_000).default(2_000),
+  WORKER_PUSH_BATCH: z.coerce.number().int().min(1).max(500).default(100),
+  /** Ventana hacia atrás del outbox que revisa el trabajo de notificaciones (horas). */
+  WORKER_PUSH_LOOKBACK_H: z.coerce.number().int().min(1).max(168).default(24),
 });
 
 export type WorkerConfig = z.infer<typeof schema>;
@@ -55,6 +66,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
   }
   if (result.data.NODE_ENV === 'production' && result.data.PAYMENTS_PROVIDER !== 'wompi') {
     throw new Error('Configuración inválida: en producción PAYMENTS_PROVIDER debe ser wompi');
+  }
+  if (result.data.NODE_ENV === 'production' && result.data.PUSH_PROVIDER !== 'expo') {
+    throw new Error('Configuración inválida: en producción PUSH_PROVIDER debe ser expo');
   }
   if (result.data.PAYMENTS_PROVIDER === 'wompi') {
     for (const key of [

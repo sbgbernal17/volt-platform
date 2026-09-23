@@ -113,6 +113,10 @@ export class StaffAuthenticator {
 
   private async identityPrincipal(claims: IdTokenClaims): Promise<StaffPrincipal> {
     const { sql } = this.options;
+    // El personal vive en el pool del proyecto; un token de un tenant (conductores, iteración 7) no entra.
+    if (claims.firebase?.tenant) {
+      throw new UnauthorizedError('El token no es del personal', 'WRONG_TENANT');
+    }
     const staff = await bindStaffIdentity(sql, {
       subject: claims.sub,
       email: claims.email,

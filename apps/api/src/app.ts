@@ -14,7 +14,7 @@ import {
   RedisConnectionDirectory,
   StaticConnectionDirectory,
 } from '@volt/gateway-client';
-import { FakeGateway, type PaymentGateway, WompiGateway } from '@volt/payments';
+import { FakeGateway, type PaymentGateway, WOMPI_BASE_URLS, WompiGateway } from '@volt/payments';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Redis } from 'ioredis';
 import { ZodError } from 'zod';
@@ -24,7 +24,9 @@ import { StaffAuthenticator } from './admin/staff-auth.ts';
 import { type AuthConfig, authConfigRoute } from './admin/staff-routes.ts';
 import type { ApiConfig } from './config.ts';
 import { registerCors } from './cors.ts';
-import { DevDriverVerifier } from './public/auth.ts';
+import { CompositeDriverVerifier, DevDriverVerifier } from './public/auth.ts';
+import { DriverIdentityVerifier } from './public/identity.ts';
+import type { AppConfigStatic } from './public/me-routes.ts';
 import { publicRoutes } from './public/routes.ts';
 
 export interface AppDependencies {
@@ -33,7 +35,7 @@ export interface AppDependencies {
   gateway?: PaymentGateway | undefined;
 }
 
-export const API_VERSION = '0.5.0';
+export const API_VERSION = '0.6.0';
 
 /**
  * Construye la aplicación Fastify: salud, preparación, versión y, con base de datos y token de
@@ -172,11 +174,62 @@ export function buildApp({ config, gateway: injectedGateway }: AppDependencies):
           ...(authorizer ? { paymentAuthorizer: authorizer } : {}),
         })
       : undefined;
-    const verifier = config.API_DEV_DRIVER_AUTH ? new DevDriverVerifier(sql) : undefined;
-    if (verifier) app.log.warn('API_DEV_DRIVER_AUTH activo: identidad de conductor de desarrollo');
+    const staffVerifier = config.IDENTITY_PLATFORM_PROJECT_ID
+      ? new IdentityPlatformVerifier({
+          projectId: config.IDENTITY_PLATFORM_PROJECT_ID,
+          jwksUrl: config.IDENTITY_PLATFORM_JWKS_URL,
+        })
+      : undefined;
+    // Identidad del conductor (iteración 7): Identity Platform y, en local, el token de desarrollo.
+    const devVerifier = config.API_DEV_DRIVER_AUTH ? new DevDriverVerifier(sql) : undefined;
+    if (devVerifier)
+      app.log.warn('API_DEV_DRIVER_AUTH activo: identidad de conductor de desarrollo');
+    const driverIdentity = staffVerifier
+      ? new DriverIdentityVerifier({
+          sql,
+          tenantId: VOLT_TENANT_ID,
+          verifier: staffVerifier,
+          driverTenantId: config.IDENTITY_PLATFORM_DRIVER_TENANT_ID,
+        })
+      : undefined;
+    const driverVerifiers = [devVerifier, driverIdentity].filter(
+      (v): v is NonNullable<typeof v> => v !== undefined,
+    );
+    const verifier = driverVerifiers.length
+      ? new CompositeDriverVerifier(driverVerifiers)
+      : undefined;
+    if (!verifier)
+      app.log.warn('sin identidad de conductor: las rutas privadas de /v1 responderán 401');
+    const appConfig: AppConfigStatic = {
+      auth: {
+        provider: driverIdentity ? 'identity-platform' : devVerifier ? 'dev' : 'none',
+        projectId: config.IDENTITY_PLATFORM_PROJECT_ID ?? null,
+        apiKey: driverIdentity ? (config.IDENTITY_PLATFORM_API_KEY ?? null) : null,
+        authDomain: driverIdentity
+          ? (config.IDENTITY_PLATFORM_AUTH_DOMAIN ??
+            `${config.IDENTITY_PLATFORM_PROJECT_ID}.firebaseapp.com`)
+          : null,
+        tenantId: config.IDENTITY_PLATFORM_DRIVER_TENANT_ID ?? null,
+        devLogin: Boolean(devVerifier),
+      },
+      payments: {
+        provider: payments ? config.PAYMENTS_PROVIDER : 'none',
+        environment: payments?.environment ?? 'none',
+        publicKey: config.PAYMENTS_PROVIDER === 'wompi' ? (config.WOMPI_PUBLIC_KEY ?? null) : null,
+        apiBaseUrl:
+          config.PAYMENTS_PROVIDER === 'wompi' ? WOMPI_BASE_URLS[config.WOMPI_ENVIRONMENT] : null,
+      },
+      legal: {
+        termsUrl: config.APP_TERMS_URL,
+        privacyUrl: config.APP_PRIVACY_URL,
+        supportEmail: config.APP_SUPPORT_EMAIL ?? null,
+      },
+    };
     void app.register(publicRoutes, {
       prefix: '/v1',
       sql,
+      version: API_VERSION,
+      appConfig,
       verifier,
       sessions,
       ssePollMs: config.API_SSE_POLL_MS,
@@ -185,12 +238,6 @@ export function buildApp({ config, gateway: injectedGateway }: AppDependencies):
       authorizer,
       paymentsRedirectUrl: config.PAYMENTS_REDIRECT_URL,
     });
-    const staffVerifier = config.IDENTITY_PLATFORM_PROJECT_ID
-      ? new IdentityPlatformVerifier({
-          projectId: config.IDENTITY_PLATFORM_PROJECT_ID,
-          jwksUrl: config.IDENTITY_PLATFORM_JWKS_URL,
-        })
-      : undefined;
     const authConfig: AuthConfig = {
       provider: staffVerifier ? 'identity-platform' : config.API_ADMIN_TOKEN ? 'token' : 'none',
       projectId: config.IDENTITY_PLATFORM_PROJECT_ID ?? null,

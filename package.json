@@ -19,6 +19,7 @@
     "dev:api": "pnpm --filter @volt/api dev",
     "dev:worker": "pnpm --filter @volt/worker dev",
     "dev:backoffice": "pnpm --filter @volt/backoffice dev",
+    "dev:mobile": "pnpm --filter @volt/mobile start",
     "db:migrate": "pnpm --filter @volt/db migrate:up",
     "db:reset": "pnpm --filter @volt/db migrate:reset",
     "services:up": "docker compose up -d postgres redis",

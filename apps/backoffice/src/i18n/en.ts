@@ -123,6 +123,7 @@ export const en: Record<MessageKey, string> = {
   'cp.disconnected': 'Disconnected',
   'cp.lastSeen': 'Last seen',
   'cp.connectors': 'Connectors',
+  'cp.qr': 'QR',
   'cp.connector': 'Connector',
   'cp.standard': 'Standard',
   'cp.powerType': 'Type',

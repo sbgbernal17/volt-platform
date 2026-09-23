@@ -15,13 +15,17 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
-import { type DriverVerifier, driverAuthHook } from './auth.ts';
+import { type DriverVerifier, driverAuthHook, driverOf } from './auth.ts';
 import { billingPrivateRoutes, billingWebhookRoutes } from './billing-routes.ts';
+import { type AppConfigStatic, appConfigRoute, meRoutes } from './me-routes.ts';
+import { assertDriverReady } from './readiness.ts';
 import { isSessionFinished, toPublicSession } from './sessions-view.ts';
 import { streamSessionEvents } from './sse.ts';
 
 export interface PublicRoutesOptions {
   sql: Sql;
+  version: string;
+  appConfig: AppConfigStatic;
   verifier?: DriverVerifier | undefined;
   sessions?: SessionService | undefined;
   ssePollMs: number;
@@ -118,9 +122,16 @@ export async function publicRoutes(
   });
 
   await billingWebhookRoutes(app, { billing: options.billing });
+  await appConfigRoute(app, {
+    sql,
+    tenantId,
+    appConfig: options.appConfig,
+    version: options.version,
+  });
 
   await app.register(async (privateApp) => {
     privateApp.addHook('preHandler', driverAuthHook(options.verifier));
+    await meRoutes(privateApp, { sql, tenantId });
     await billingPrivateRoutes(privateApp, {
       sql,
       billing: options.billing,
@@ -130,8 +141,9 @@ export async function publicRoutes(
     });
 
     privateApp.post('/sessions', async (request, reply) => {
-      const driver = request.driver as NonNullable<FastifyRequest['driver']>;
+      const driver = driverOf(request);
       const body = startBody.parse(request.body);
+      await assertDriverReady(sql, driver);
       const session = await requireSessions().requestStart({
         tenantId,
         evseCode: body.evseId,
@@ -157,7 +169,7 @@ export async function publicRoutes(
     });
 
     privateApp.get('/sessions', async (request) => {
-      const driver = request.driver as NonNullable<FastifyRequest['driver']>;
+      const driver = driverOf(request);
       const query = z
         .object({ limit: z.coerce.number().int().min(1).max(200).optional() })
         .parse(request.query ?? {});
@@ -170,7 +182,7 @@ export async function publicRoutes(
     });
 
     const ownSession = async (request: FastifyRequest) => {
-      const driver = request.driver as NonNullable<FastifyRequest['driver']>;
+      const driver = driverOf(request);
       const { id } = params.parse(request.params);
       const view = await getSessionView(sql, id);
       if (view.driver_id !== driver.driverId)
@@ -181,7 +193,7 @@ export async function publicRoutes(
     privateApp.get('/sessions/:id', async (request) => toPublicSession(await ownSession(request)));
 
     privateApp.post('/sessions/:id/stop', async (request, reply) => {
-      const driver = request.driver as NonNullable<FastifyRequest['driver']>;
+      const driver = driverOf(request);
       const view = await ownSession(request);
       await requireSessions().requestStop(view.id, `driver:${driver.driverId}`);
       reply.code(202);
@@ -189,7 +201,7 @@ export async function publicRoutes(
     });
 
     privateApp.post('/sessions/:id/cancel', async (request) => {
-      const driver = request.driver as NonNullable<FastifyRequest['driver']>;
+      const driver = driverOf(request);
       const view = await ownSession(request);
       await requireSessions().cancel(view.id, `driver:${driver.driverId}`);
       return toPublicSession(await getSessionView(sql, view.id));

@@ -1,5 +1,7 @@
 # Textos para el conductor (propuesta)
 
+> Estado 23-09-2026: estos textos ya viven en la app (`apps/mobile/src/i18n/es.ts` y `en.ts`) y en las notificaciones push (`packages/csms/src/drivers/push-texts.ts`, con pruebas). Cualquier ajuste del dueño se aplica ahí; este documento queda como referencia de la voz y de los ejemplos.
+
 Propuesta para la app Volt y las notificaciones (iteración 7), escrita con la voz del manual de marca: trato de usted, frases cortas, sin exclamaciones, cifras en formato colombiano. El dueño ajusta lo que quiera; después viven en los archivos de recursos de la app (español e inglés) y nunca en código. Las cifras salen de los parámetros y de la tarifa vigente: aquí van los valores actuales (ADR 0018) como ejemplo.
 
 ## Nombre comercial de la tarifa

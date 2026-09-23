@@ -4,16 +4,21 @@ import type { ISql } from 'postgres';
 export interface DriverIdentity {
   driverId: string;
   tenantId: string;
+  /** Origen de la identidad: Identity Platform (iteración 7) o el token de desarrollo. */
+  source: 'identity-platform' | 'dev';
+  emailVerified: boolean;
+  status: 'ACTIVE' | 'BLOCKED';
 }
 
-/** Puerto de identidad del conductor. En la iteración 7 lo implementa Identity Platform (JWT). */
+/** Puerto de identidad del conductor. Lo implementa Identity Platform (JWT) y, en local, el token de desarrollo. */
 export interface DriverVerifier {
   verify(token: string): Promise<DriverIdentity | undefined>;
 }
 
 /**
  * Verificador de desarrollo: `Authorization: Bearer dev:<driverId>`. Solo se activa con
- * API_DEV_DRIVER_AUTH=true y nunca en producción (lo impide la configuración).
+ * API_DEV_DRIVER_AUTH=true y nunca en producción (lo impide la configuración). Se considera el correo
+ * verificado y los consentimientos aceptados (son cuentas creadas por el personal en laboratorio).
  */
 export class DevDriverVerifier implements DriverVerifier {
   constructor(private readonly sql: ISql) {}
@@ -25,7 +30,28 @@ export class DevDriverVerifier implements DriverVerifier {
     const rows = await this.sql<{ id: string; tenant_id: string }[]>`
       SELECT id, tenant_id FROM auth.driver WHERE id = ${driverId} AND status = 'ACTIVE' AND anonymized_at IS NULL`;
     const row = rows[0];
-    return row ? { driverId: row.id, tenantId: row.tenant_id } : undefined;
+    return row
+      ? {
+          driverId: row.id,
+          tenantId: row.tenant_id,
+          source: 'dev',
+          emailVerified: true,
+          status: 'ACTIVE',
+        }
+      : undefined;
+  }
+}
+
+/** Prueba cada verificador en orden (token de desarrollo y luego Identity Platform). */
+export class CompositeDriverVerifier implements DriverVerifier {
+  constructor(private readonly verifiers: readonly DriverVerifier[]) {}
+
+  async verify(token: string): Promise<DriverIdentity | undefined> {
+    for (const verifier of this.verifiers) {
+      const identity = await verifier.verify(token);
+      if (identity) return identity;
+    }
+    return undefined;
   }
 }
 
@@ -53,3 +79,6 @@ export function driverAuthHook(verifier: DriverVerifier | undefined) {
     request.driver = identity;
   };
 }
+
+export const driverOf = (request: FastifyRequest): DriverIdentity =>
+  request.driver as NonNullable<FastifyRequest['driver']>;

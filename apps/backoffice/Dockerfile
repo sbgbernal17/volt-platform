@@ -3,7 +3,7 @@ FROM node:22-alpine AS build
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 WORKDIR /repo
 COPY . .
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --filter "@volt/backoffice..."
 RUN pnpm --filter @volt/backoffice build
 
 FROM nginx:1.27-alpine AS runtime

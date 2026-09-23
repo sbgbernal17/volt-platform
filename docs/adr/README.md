@@ -23,6 +23,9 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0017](0017-precios-al-consumidor-snapshot-y-tope-de-exposicion.md) | Precios al consumidor con IVA incluido, semántica OCPI del motor (ocupación por hora), snapshot fail-closed, ocupación y tope de exposición |
 | [0018](0018-precios-iniciales-servicio-excluido-de-iva-y-ocupacion-sin-tope.md) | Precios iniciales de Volt (1.350 y 1.200 COP/kWh), servicio excluido de IVA, ocupación sin tope de tiempo y carga máxima de 4 horas |
 | [0019](0019-dominio-supercargadores-co-y-nombres-de-host.md) | Dominio `supercargadores.co` (zona en Netlify DNS) y nombres de host `ocpp.`, `api.`, `admin.` y `app.` |
+| [0020](0020-cobro-con-wompi-reintentos-deuda-y-conciliacion.md) | Cobro con Wompi al liquidar: fuente de pago tokenizada, reintentos, deuda con enlace de pago, webhooks idempotentes, devoluciones, conciliación y recibos |
+| [0021](0021-identidad-del-personal-rbac-auditoria-y-back-office.md) | Identidad del personal con Identity Platform, RBAC con política central por ruta, MFA TOTP, auditoría inmutable con cadena de hashes y back-office como SPA servida por nginx |
+| [0022](0022-app-volt-identidad-del-conductor-y-notificaciones.md) | App Volt: identidad del conductor con Identity Platform, consentimientos, tokenización en la app y notificaciones push |
 
 ```markdown
 # NNNN. Título de la decisión
@@ -41,5 +44,3 @@ Opción, ventajas, desventajas.
 ## Consecuencias
 Qué cambia, qué riesgos se asumen, qué se debe revisar después.
 ```
-| [0020](0020-cobro-con-wompi-reintentos-deuda-y-conciliacion.md) | Cobro con Wompi al liquidar: fuente de pago tokenizada, reintentos, deuda con enlace de pago, webhooks idempotentes, devoluciones, conciliación y recibos |
-| [0021](0021-identidad-del-personal-rbac-auditoria-y-back-office.md) | Identidad del personal con Identity Platform, RBAC con política central por ruta, MFA TOTP, auditoría inmutable con cadena de hashes y back-office como SPA servida por nginx |

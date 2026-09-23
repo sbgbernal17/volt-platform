@@ -17,7 +17,15 @@ export interface DriverRow {
   billing_status: 'OK' | 'BLOCKED_DEBT' | 'BLOCKED_MANUAL';
   blocked_reason: string | null;
   blocked_at: Date | null;
+  /** Consentimientos aceptados (términos, datos personales, mercadeo) con versión y fecha (iteración 7). */
+  consents: Record<string, unknown>;
+  anonymized_at: Date | null;
+  /** Iteración 7: identidad en Identity Platform (ADR 0022). */
+  email_verified: boolean;
+  idp_provider: string | null;
+  last_login_at: Date | null;
   created_at: Date;
+  updated_at: Date;
 }
 
 export interface CreateDriverInput {

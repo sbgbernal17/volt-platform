@@ -121,6 +121,7 @@ export const es = {
   'cp.disconnected': 'Desconectado',
   'cp.lastSeen': 'Última señal',
   'cp.connectors': 'Conectores',
+  'cp.qr': 'QR',
   'cp.connector': 'Conector',
   'cp.standard': 'Estándar',
   'cp.powerType': 'Tipo',

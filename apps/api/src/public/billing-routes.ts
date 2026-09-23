@@ -19,9 +19,12 @@ import {
   setDefaultPaymentMethod,
 } from '@volt/csms';
 import { formatScaled } from '@volt/domain';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FakeGateway } from '@volt/payments';
+import type { FastifyInstance } from 'fastify';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
+import { driverOf } from './auth.ts';
+import { assertDriverReady } from './readiness.ts';
 
 export interface BillingPublicOptions {
   sql: Sql;
@@ -55,9 +58,6 @@ export function toPublicPaymentMethod(row: PaymentMethodRow, defaultId: string |
     createdAt: row.created_at.toISOString(),
   };
 }
-
-const driverOf = (request: FastifyRequest) =>
-  request.driver as NonNullable<FastifyRequest['driver']>;
 
 /** Rutas privadas (se registran dentro del ámbito autenticado de /v1). */
 export async function billingPrivateRoutes(
@@ -103,8 +103,35 @@ export async function billingPrivateRoutes(
     };
   });
 
+  /**
+   * Solo con el emulador (PAYMENTS_PROVIDER=fake): la app "tokeniza" la tarjeta de prueba contra la
+   * API en lugar del widget de Wompi. Con Wompi real el número de tarjeta nunca pasa por la API.
+   */
+  app.post('/payment-methods/tokens', async (request, reply) => {
+    const gateway = requireBilling().gateway as FakeGateway;
+    if (gateway.environment !== 'fake' || typeof gateway.tokenizeCard !== 'function') {
+      throw new CsmsError(
+        'La tokenización en la API solo existe con el emulador de pagos',
+        404,
+        'NOT_FOUND',
+      );
+    }
+    const body = z
+      .object({
+        number: z.string().regex(/^[0-9 ]{13,23}$/),
+        expMonth: z.string().regex(/^(0[1-9]|1[0-2])$/),
+        expYear: z.string().regex(/^[0-9]{2}$/),
+        cvc: z.string().regex(/^[0-9]{3,4}$/),
+        cardHolder: z.string().trim().min(2).max(80),
+      })
+      .parse(request.body);
+    reply.code(201);
+    return { token: gateway.tokenizeCard(body) };
+  });
+
   app.post('/payment-methods', async (request, reply) => {
     const driver = driverOf(request);
+    await assertDriverReady(sql, driver);
     const body = registerBody.parse(request.body);
     const row = await registerPaymentMethod(sql, requireBilling().gateway, {
       tenantId,
