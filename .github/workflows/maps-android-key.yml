@@ -1,0 +1,130 @@
+# Clave de Google Maps para la app Volt en Android (iteración 7, ADR 0022). Se crea (o actualiza) en el
+# proyecto de Google Cloud con la identidad federada de GitHub, restringida al paquete de la app, a las
+# huellas SHA-1 indicadas y a la API "Maps SDK for Android", y se guarda como variable sensible del
+# proyecto de EAS (GOOGLE_MAPS_ANDROID_API_KEY) para que app.config.ts la inyecte al compilar. La clave
+# nunca se imprime ni se escribe en el repositorio. Se lanza a mano (Run workflow) o al cambiar este archivo.
+name: Clave de Google Maps (Android)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Proyecto de Google Cloud donde vive la clave'
+        type: choice
+        default: prod
+        options: [dev, staging, prod]
+      fingerprints:
+        description: 'Huellas SHA-1 permitidas (separadas por coma): keystore de EAS y firma de Google Play'
+        type: string
+        default: 'C2:D1:69:78:AA:4E:7E:74:03:EB:07:48:AD:AE:E8:A8:DE:1D:F1:92'
+      eas_environments:
+        description: 'Ambientes de EAS que reciben la variable'
+        type: string
+        default: 'development,preview,production'
+  push:
+    branches: [main, 'claude/**']
+    paths: ['.github/workflows/maps-android-key.yml']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  key:
+    name: Clave restringida en Google Cloud y variable en EAS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ENVIRONMENT: ${{ inputs.environment || 'prod' }}
+      FINGERPRINTS: ${{ inputs.fingerprints || 'C2:D1:69:78:AA:4E:7E:74:03:EB:07:48:AD:AE:E8:A8:DE:1D:F1:92' }}
+      EAS_ENVIRONMENTS: ${{ inputs.eas_environments || 'development,preview,production' }}
+      PACKAGE_NAME: co.supercargadores.volt
+      DISPLAY_NAME: Volt app Android (Maps SDK)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Variables del ambiente
+        id: vars
+        env:
+          SUFFIX: ${{ inputs.environment == 'dev' && 'DEV' || inputs.environment == 'staging' && 'STAGING' || 'PROD' }}
+        run: |
+          echo "suffix=$SUFFIX" >> "$GITHUB_OUTPUT"
+      - name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', steps.vars.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Crear o actualizar la clave restringida
+        id: key
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+        run: |
+          set -euo pipefail
+          gcloud services enable apikeys.googleapis.com maps-android-backend.googleapis.com --project "$PROJECT_ID" >/dev/null
+          apps=()
+          IFS=',' read -ra list <<< "$FINGERPRINTS"
+          for raw in "${list[@]}"; do
+            fp=$(echo "$raw" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
+            if ! [[ "$fp" =~ ^[0-9a-f]{40}$ ]]; then echo "::error::Huella SHA-1 inválida: $raw"; exit 1; fi
+            apps+=("--allowed-application=sha1_fingerprint=$fp,package_name=$PACKAGE_NAME")
+            echo "Huella permitida: $fp"
+          done
+          existing=$(gcloud services api-keys list --project "$PROJECT_ID" --filter="displayName='$DISPLAY_NAME'" --format='value(name)' | head -n1)
+          if [ -z "$existing" ]; then
+            # Nada de la creación se imprime: la respuesta incluye la clave.
+            gcloud services api-keys create --project "$PROJECT_ID" --display-name="$DISPLAY_NAME" \
+              "${apps[@]}" --api-target=service=maps-android-backend.googleapis.com --quiet >/dev/null 2>&1
+            existing=$(gcloud services api-keys list --project "$PROJECT_ID" --filter="displayName='$DISPLAY_NAME'" --format='value(name)' | head -n1)
+            echo "Clave creada: $existing"
+          else
+            gcloud services api-keys update "$existing" --project "$PROJECT_ID" --clear-allowed-applications --clear-api-targets \
+              "${apps[@]}" --api-target=service=maps-android-backend.googleapis.com --quiet >/dev/null 2>&1
+            echo "Clave actualizada: $existing"
+          fi
+          key=$(gcloud services api-keys get-key-string "$existing" --project "$PROJECT_ID" --format='value(keyString)')
+          echo "::add-mask::$key"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "name=$existing" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter "@volt/mobile..."
+      - name: Guardar la clave como variable sensible del proyecto de EAS
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          MAPS_KEY: ${{ steps.key.outputs.key }}
+          CI: '1'
+          EXPO_NO_TELEMETRY: '1'
+        run: |
+          set -euo pipefail
+          if [ -z "$EXPO_TOKEN" ]; then echo "::error::Falta el secreto EXPO_TOKEN"; exit 1; fi
+          IFS=',' read -ra envs <<< "$EAS_ENVIRONMENTS"
+          for env in "${envs[@]}"; do
+            env=$(echo "$env" | tr -d ' ')
+            if npx eas-cli@latest env:create --scope project --environment "$env" --name GOOGLE_MAPS_ANDROID_API_KEY \
+                 --value "$MAPS_KEY" --visibility sensitive --type string --non-interactive --force >/dev/null 2>&1; then
+              echo "EAS ($env): variable creada"
+            else
+              npx eas-cli@latest env:update --scope project --variable-environment "$env" --variable-name GOOGLE_MAPS_ANDROID_API_KEY \
+                --value "$MAPS_KEY" --visibility sensitive --non-interactive >/dev/null 2>&1
+              echo "EAS ($env): variable actualizada"
+            fi
+          done
+      - name: Resumen
+        run: |
+          {
+            echo "## Clave de Google Maps (Android)"
+            echo ""
+            echo "| Dato | Valor |"
+            echo "|---|---|"
+            echo "| Proyecto | ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }} |"
+            echo "| Recurso | ${{ steps.key.outputs.name }} |"
+            echo "| Paquete | $PACKAGE_NAME |"
+            echo "| Huellas SHA-1 | $FINGERPRINTS |"
+            echo "| API | Maps SDK for Android |"
+            echo "| Variable en EAS | GOOGLE_MAPS_ANDROID_API_KEY ($EAS_ENVIRONMENTS), visibilidad sensible |"
+          } >> "$GITHUB_STEP_SUMMARY"

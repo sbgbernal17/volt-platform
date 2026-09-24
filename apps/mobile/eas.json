@@ -10,7 +10,8 @@
       "channel": "development",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api-dev.supercargadores.co"
-      }
+      },
+      "environment": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -23,7 +24,8 @@
       },
       "android": {
         "buildType": "apk"
-      }
+      },
+      "environment": "preview"
     },
     "production": {
       "autoIncrement": true,
@@ -33,7 +35,8 @@
       },
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "environment": "production"
     }
   },
   "submit": {
