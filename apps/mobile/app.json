@@ -12,10 +12,7 @@
     "ios": {
       "bundleIdentifier": "co.supercargadores.volt",
       "supportsTablet": false,
-      "associatedDomains": [
-        "applinks:app.supercargadores.co",
-        "applinks:app.supercargadores.co"
-      ],
+      "associatedDomains": ["applinks:app.supercargadores.co"],
       "infoPlist": {
         "NSCameraUsageDescription": "Volt usa la cámara para leer el código QR del conector.",
         "ITSAppUsesNonExemptEncryption": false
@@ -27,14 +24,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0B0B"
       },
-      "permissions": [
-        "CAMERA",
-        "POST_NOTIFICATIONS",
-        "CAMERA",
-        "POST_NOTIFICATIONS",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ],
+      "permissions": ["CAMERA", "POST_NOTIFICATIONS"],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -46,25 +36,7 @@
               "pathPrefix": "/evse"
             }
           ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
-        },
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "https",
-              "host": "app.supercargadores.co",
-              "pathPrefix": "/evse"
-            }
-          ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
     },
@@ -87,7 +59,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Volt usa la cámara para leer el código QR del conector."
+          "cameraPermission": "Volt usa la cámara para leer el código QR del conector.",
+          "recordAudioAndroid": false
         }
       ],
       [
