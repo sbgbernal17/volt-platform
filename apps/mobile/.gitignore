@@ -7,3 +7,4 @@ web-build/
 *.p12
 *.key
 *.mobileprovision
+google-play-service-account.json

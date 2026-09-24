@@ -24,6 +24,15 @@ pnpm --filter @volt/mobile export:web  # bundle web con Metro (lo corre CI)
 - `src/api`: tipos de `/v1`, cliente y consultas con sondeo. `src/auth`: Identity Platform (SDK de Firebase con persistencia en AsyncStorage) y estado de la cuenta. `src/lib`: formatos de marca, lectura del QR, tokenización en Wompi y avisos push. `src/i18n`: catálogos es/en. `src/theme`: tokens de marca y componentes.
 - `assets/`: iconos y logotipo generados desde `docs/marca/volt-logo-blanco.svg`.
 
-## Compilaciones para las tiendas
+## Compilaciones con EAS
 
-Con las cuentas de Apple y Google Play (tarea del dueño): `npx eas build --profile preview` para TestFlight e Internal testing; `eas.json` y el `projectId` de EAS se añaden cuando existan las cuentas. Android con Google Maps necesita `android.config.googleMaps.apiKey` en `app.json` (clave restringida al paquete `co.supercargadores.volt`).
+El proyecto de EAS ya está enlazado (`extra.eas.projectId` en `app.json`, id `6c086f3f-…`) y `eas.json` trae tres perfiles: `development` (cliente de desarrollo, con avisos push), `preview` (APK e IPA internos para Internal testing y TestFlight, contra staging) y `production` (AAB y IPA para las tiendas). Desde `apps/mobile`, con sesión en Expo (`npx eas-cli login`):
+
+```bash
+npx eas-cli build --profile development --platform android   # primera vez: EAS crea y guarda el keystore
+npx eas-cli build --profile preview --platform all
+npx eas-cli credentials                                       # huellas SHA-1 del keystore (clave de Maps)
+npx eas-cli submit --profile production --platform android    # Internal testing (cuenta de servicio de Play)
+```
+
+Credenciales de las tiendas: nunca en el repositorio. Para iOS, una clave de API de App Store Connect (rol App Manager) que EAS guarda cifrada (`eas credentials` → iOS → App Store Connect API Key); para Android, la cuenta de servicio de Google Play (JSON) en `google-play-service-account.json` (ignorado por git) o como secreto de EAS. La clave de Google Maps para Android se inyecta en tiempo de compilación con la variable `GOOGLE_MAPS_ANDROID_API_KEY` (variable de entorno del proyecto en EAS), restringida al paquete `co.supercargadores.volt` y a las huellas SHA-1 del keystore de EAS y de la firma de Google Play.

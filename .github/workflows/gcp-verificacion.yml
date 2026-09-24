@@ -1,6 +1,7 @@
 # Verificación manual de Google Cloud desde GitHub Actions con Workload Identity Federation
 # (sin claves). Hoy comprueba Identity Platform por ambiente; nunca imprime llaves ni secretos:
 # de la configuración solo se muestran proveedores, MFA, dominios autorizados y el número de usuarios.
+# Última verificación pedida: 2026-09-24 (TOTP activado por el dueño).
 name: Verificación de Google Cloud
 
 on:

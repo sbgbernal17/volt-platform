@@ -30,7 +30,7 @@ const schema = z.object({
   IDENTITY_PLATFORM_DRIVER_TENANT_ID: z.string().min(4).max(64).optional(),
   /** Enlaces legales y soporte que muestra la app (GET /v1/config). */
   APP_TERMS_URL: z.string().url().default('https://supercargadores.co/legal/terminos'),
-  APP_PRIVACY_URL: z.string().url().default('https://supercargadores.co/legal/privacidad'),
+  APP_PRIVACY_URL: z.string().url().default('https://supercargadores.co/politica-de-datos'),
   APP_SUPPORT_EMAIL: z.string().email().optional(),
   /** Correo del primer administrador: se invita al arrancar si no hay personal registrado. */
   API_STAFF_BOOTSTRAP_EMAIL: z.string().email().optional(),

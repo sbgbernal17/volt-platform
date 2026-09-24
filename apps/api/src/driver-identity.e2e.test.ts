@@ -138,7 +138,7 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
       payments: { provider: 'fake', environment: 'fake', publicKey: null, apiBaseUrl: null },
       legal: {
         termsUrl: 'https://supercargadores.co/legal/terminos',
-        privacyUrl: 'https://supercargadores.co/legal/privacidad',
+        privacyUrl: 'https://supercargadores.co/politica-de-datos',
         supportEmail: 'soporte@supercargadores.co',
       },
       consentVersion: '2026-09',
