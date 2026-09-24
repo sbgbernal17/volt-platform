@@ -81,17 +81,21 @@ jobs:
           for extra in "${found[@]:1}"; do
             gcloud services api-keys delete "$extra" --project "$PROJECT_ID" --quiet >/dev/null 2>&1 && echo "Clave duplicada eliminada: $extra"
           done
+          # La salida de create/update no se imprime por precaución; si fallan, se muestra el error con
+          # cualquier valor con forma de clave enmascarado.
+          report() { sed -E 's/AIza[0-9A-Za-z_-]{35}/[clave]/g' gcloud-error.log; exit 1; }
           if [ -z "$existing" ]; then
-            # Nada de la creación se imprime: la respuesta incluye la clave.
             gcloud services api-keys create --project "$PROJECT_ID" --display-name="$DISPLAY_NAME" \
-              "${apps[@]}" --api-target=service=maps-android-backend.googleapis.com --quiet >/dev/null 2>&1
+              "${apps[@]}" --api-target=service=maps-android-backend.googleapis.com --quiet >/dev/null 2>gcloud-error.log || report
             existing=$(gcloud services api-keys list --project "$PROJECT_ID" --filter="displayName='$DISPLAY_NAME'" --format='value(name)' | head -n1)
             echo "Clave creada: $existing"
           else
-            gcloud services api-keys update "$existing" --project "$PROJECT_ID" --clear-allowed-applications --clear-api-targets \
-              "${apps[@]}" --api-target=service=maps-android-backend.googleapis.com --quiet >/dev/null 2>&1
+            # En update, --allowed-application y --api-target reemplazan las listas anteriores.
+            gcloud services api-keys update "$existing" --project "$PROJECT_ID" \
+              "${apps[@]}" --api-target=service=maps-android-backend.googleapis.com --quiet >/dev/null 2>gcloud-error.log || report
             echo "Clave actualizada: $existing"
           fi
+          rm -f gcloud-error.log
           key=$(gcloud services api-keys get-key-string "$existing" --project "$PROJECT_ID" --format='value(keyString)')
           echo "::add-mask::$key"
           echo "key=$key" >> "$GITHUB_OUTPUT"
