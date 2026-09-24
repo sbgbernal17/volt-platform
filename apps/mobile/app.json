@@ -12,7 +12,10 @@
     "ios": {
       "bundleIdentifier": "co.supercargadores.volt",
       "supportsTablet": false,
-      "associatedDomains": ["applinks:app.supercargadores.co"],
+      "associatedDomains": [
+        "applinks:app.supercargadores.co",
+        "applinks:app.supercargadores.co"
+      ],
       "infoPlist": {
         "NSCameraUsageDescription": "Volt usa la cámara para leer el código QR del conector.",
         "ITSAppUsesNonExemptEncryption": false
@@ -24,13 +27,44 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0B0B"
       },
-      "permissions": ["CAMERA", "POST_NOTIFICATIONS"],
+      "permissions": [
+        "CAMERA",
+        "POST_NOTIFICATIONS",
+        "CAMERA",
+        "POST_NOTIFICATIONS",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
           "autoVerify": true,
-          "data": [{ "scheme": "https", "host": "app.supercargadores.co", "pathPrefix": "/evse" }],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "data": [
+            {
+              "scheme": "https",
+              "host": "app.supercargadores.co",
+              "pathPrefix": "/evse"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        },
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "app.supercargadores.co",
+              "pathPrefix": "/evse"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -52,17 +86,35 @@
       ],
       [
         "expo-camera",
-        { "cameraPermission": "Volt usa la cámara para leer el código QR del conector." }
+        {
+          "cameraPermission": "Volt usa la cámara para leer el código QR del conector."
+        }
       ],
-      ["expo-notifications", { "icon": "./assets/notification-icon.png", "color": "#DC2626" }],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#DC2626"
+        }
+      ],
       "expo-localization",
       "expo-web-browser",
       "expo-font"
     ],
-    "experiments": { "typedRoutes": false },
+    "experiments": {
+      "typedRoutes": false
+    },
     "extra": {
       "router": {},
-      "eas": { "projectId": "6c086f3f-1a0f-4b7f-b663-16787a2f8180" }
+      "eas": {
+        "projectId": "6c086f3f-1a0f-4b7f-b663-16787a2f8180"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6c086f3f-1a0f-4b7f-b663-16787a2f8180"
     }
   }
 }
