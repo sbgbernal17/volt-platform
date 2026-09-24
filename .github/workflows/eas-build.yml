@@ -1,0 +1,58 @@
+# Compilación de la app Volt con EAS Build desde GitHub Actions (iteración 7, ADR 0022). Se lanza a
+# mano (Run workflow) con el perfil y la plataforma; necesita el secreto EXPO_TOKEN (token de acceso de
+# la cuenta de Expo). Las credenciales de las tiendas viven cifradas en EAS, nunca aquí.
+name: Compilación de la app (EAS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Perfil de eas.json'
+        type: choice
+        default: preview
+        options: [development, preview, production]
+      platform:
+        description: 'Plataforma'
+        type: choice
+        default: android
+        options: [android, ios, all]
+      submit:
+        description: 'Enviar a la tienda al terminar (Internal testing / TestFlight; solo con production)'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: EAS Build (${{ inputs.profile }}, ${{ inputs.platform }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Comprobar el token de Expo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Falta el secreto EXPO_TOKEN (expo.dev → Access tokens)."
+            exit 1
+          fi
+      - run: pnpm install --frozen-lockfile --filter "@volt/mobile..."
+      - name: Lanzar la compilación en EAS
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          CI: '1'
+          EXPO_NO_TELEMETRY: '1'
+        run: |
+          extra=""
+          if [ "${{ inputs.submit }}" = "true" ] && [ "${{ inputs.profile }}" = "production" ]; then
+            extra="--auto-submit"
+          fi
+          npx eas-cli@latest build --non-interactive --no-wait \
+            --profile "${{ inputs.profile }}" --platform "${{ inputs.platform }}" $extra
+          echo "La compilación sigue en https://expo.dev (proyecto Volt → Builds)." >> "$GITHUB_STEP_SUMMARY"

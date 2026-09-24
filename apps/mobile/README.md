@@ -26,6 +26,8 @@ pnpm --filter @volt/mobile export:web  # bundle web con Metro (lo corre CI)
 
 ## Compilaciones con EAS
 
+Desde GitHub también: Actions → *Compilación de la app (EAS)* → Run workflow (perfil, plataforma y envío opcional a la tienda); necesita el secreto `EXPO_TOKEN` del repositorio.
+
 El proyecto de EAS ya está enlazado (`extra.eas.projectId` en `app.json`, id `6c086f3f-…`) y `eas.json` trae tres perfiles: `development` (cliente de desarrollo, con avisos push), `preview` (APK e IPA internos para Internal testing y TestFlight, contra staging) y `production` (AAB y IPA para las tiendas). Desde `apps/mobile`, con sesión en Expo (`npx eas-cli login`):
 
 ```bash
