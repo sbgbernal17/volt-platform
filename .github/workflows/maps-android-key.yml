@@ -22,8 +22,13 @@ on:
         type: string
         default: 'development,preview,production'
   push:
-    branches: [main, 'claude/**']
+    branches: [main]
     paths: ['.github/workflows/maps-android-key.yml']
+
+# Una sola ejecución a la vez: dos en paralelo crearían dos claves.
+concurrency:
+  group: maps-android-key
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -70,7 +75,12 @@ jobs:
             apps+=("--allowed-application=sha1_fingerprint=$fp,package_name=$PACKAGE_NAME")
             echo "Huella permitida: $fp"
           done
-          existing=$(gcloud services api-keys list --project "$PROJECT_ID" --filter="displayName='$DISPLAY_NAME'" --format='value(name)' | head -n1)
+          mapfile -t found < <(gcloud services api-keys list --project "$PROJECT_ID" --filter="displayName='$DISPLAY_NAME'" --format='value(name)')
+          existing="${found[0]:-}"
+          # Si alguna vez quedaron duplicadas (ejecuciones simultáneas), se conserva la primera y se borran las demás.
+          for extra in "${found[@]:1}"; do
+            gcloud services api-keys delete "$extra" --project "$PROJECT_ID" --quiet >/dev/null 2>&1 && echo "Clave duplicada eliminada: $extra"
+          done
           if [ -z "$existing" ]; then
             # Nada de la creación se imprime: la respuesta incluye la clave.
             gcloud services api-keys create --project "$PROJECT_ID" --display-name="$DISPLAY_NAME" \

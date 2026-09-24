@@ -165,6 +165,13 @@ describe.skipIf(!baseUrl)('gateway con registro y persistencia en PostgreSQL', (
     expect(credential[0]?.bootstrap).toBe(false);
     expect(credential[0]?.first_used_at).toBeInstanceOf(Date);
     expect(credential[0]?.expires_at.getTime()).toBeGreaterThan(Date.now() + 80 * 24 * 3600 * 1000);
+    // La conexión se persiste en segundo plano (lote de logFlushMs): se espera a que exista.
+    await until(
+      async () =>
+        (
+          await sql`SELECT 1 FROM ops.charge_point_connection WHERE charge_point_id = ${chargePointId}`
+        ).length === 1,
+    );
     const connections = await sql<
       { pod: string; generation: bigint; disconnected_at: Date | null }[]
     >`
