@@ -1,0 +1,42 @@
+# Diagnóstico de una compilación de EAS: imprime estado, fase y mensaje de error de un build por su id
+# (no expone secretos; los registros completos siguen en expo.dev). Se lanza a mano.
+name: Diagnóstico de compilación (EAS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'Id de la compilación en EAS'
+        type: string
+        required: true
+
+jobs:
+  view:
+    name: Estado de la compilación
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter "@volt/mobile..."
+      - name: Consultar la compilación
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          CI: '1'
+          EXPO_NO_TELEMETRY: '1'
+        run: |
+          set -euo pipefail
+          npx eas-cli@latest build:view "${{ inputs.build_id }}" --json --non-interactive > build.json
+          {
+            echo "## Compilación ${{ inputs.build_id }}"
+            echo ""
+            echo '```json'
+            jq '{status, platform, buildProfile, appVersion, appBuildVersion, sdkVersion, runtimeVersion, error, logFiles, createdAt, completedAt}' build.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq '{status, platform, buildProfile, error}' build.json

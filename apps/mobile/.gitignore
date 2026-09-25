@@ -8,3 +8,5 @@ web-build/
 *.key
 *.mobileprovision
 google-play-service-account.json
+android/
+ios/
