@@ -1,14 +1,15 @@
 # Diagnóstico de una compilación de EAS: imprime estado, fase y mensaje de error de un build por su id
-# (no expone secretos; los registros completos siguen en expo.dev). Se lanza a mano.
+# y el final de sus registros (con las claves enmascaradas). Se lanza a mano; no expone secretos.
 name: Diagnóstico de compilación (EAS)
 
 on:
   workflow_dispatch:
     inputs:
       build_id:
-        description: 'Id de la compilación en EAS'
+        description: 'Id de la compilación en EAS (vacío: la más reciente de Android)'
         type: string
-        required: true
+        required: false
+        default: ''
 
 jobs:
   view:
@@ -29,14 +30,43 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           CI: '1'
           EXPO_NO_TELEMETRY: '1'
+          BUILD_ID: ${{ inputs.build_id }}
         run: |
           set -euo pipefail
-          npx eas-cli@latest build:view "${{ inputs.build_id }}" --json --non-interactive > build.json
+          # build:view solo acepta --json (no --non-interactive); build:list acepta ambos.
+          if [ -n "$BUILD_ID" ]; then
+            npx eas-cli@latest build:view "$BUILD_ID" --json > build.json
+          else
+            npx eas-cli@latest build:list --platform android --limit 1 --json --non-interactive | jq '.[0]' > build.json
+          fi
+          resumen="$(jq '{id, status, platform, buildProfile, appVersion, appBuildVersion, sdkVersion, runtimeVersion, error, createdAt, completedAt}' build.json)"
           {
-            echo "## Compilación ${{ inputs.build_id }}"
+            echo "## Compilación $(jq -r '.id' build.json)"
             echo ""
             echo '```json'
-            jq '{status, platform, buildProfile, appVersion, appBuildVersion, sdkVersion, runtimeVersion, error, logFiles, createdAt, completedAt}' build.json
+            echo "$resumen"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          jq '{status, platform, buildProfile, error}' build.json
+          echo "$resumen"
+      - name: Final de los registros de la compilación
+        working-directory: apps/mobile
+        run: |
+          set -uo pipefail
+          mapfile -t urls < <(jq -r '.logFiles[]? // empty' build.json)
+          if [ "${#urls[@]}" -eq 0 ]; then
+            echo "La compilación no expone archivos de registro."
+            exit 0
+          fi
+          for url in "${urls[@]}"; do
+            if ! curl -sSfL --max-time 60 "$url" -o log.txt; then
+              echo "No fue posible descargar un archivo de registro (se omite)."
+              continue
+            fi
+            {
+              echo "### Registro ($(wc -l < log.txt) líneas): últimas 200"
+              echo ""
+              echo '```'
+              tail -n 200 log.txt | sed -E 's/AIza[0-9A-Za-z_-]{35}/[clave]/g; s/(EXPO_TOKEN|GOOGLE_MAPS_ANDROID_API_KEY)=[^ ]+/\1=[oculto]/g'
+              echo '```'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+          done
