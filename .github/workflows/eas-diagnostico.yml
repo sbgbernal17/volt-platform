@@ -113,3 +113,7 @@ jobs:
             } | tee -a "$GITHUB_STEP_SUMMARY"
           done
           exit 0
+      - name: Estado final
+        working-directory: apps/mobile
+        run: |
+          echo "ESTADO: $(jq -r '"\(.status) | perfil \(.buildProfile) | versionCode \(.appBuildVersion) | error \(.error.errorCode // "ninguno") | creado \(.createdAt) | terminado \(.completedAt // "-")"' build.json)"
