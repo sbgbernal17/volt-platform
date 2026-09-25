@@ -52,21 +52,38 @@ jobs:
         working-directory: apps/mobile
         run: |
           set -uo pipefail
+          mask() { sed -E 's/AIza[0-9A-Za-z_-]{35}/[clave]/g; s/(EXPO_TOKEN|GOOGLE_MAPS_ANDROID_API_KEY)=[^ ]+/\1=[oculto]/g'; }
           mapfile -t urls < <(jq -r '.logFiles[]? // empty' build.json)
           if [ "${#urls[@]}" -eq 0 ]; then
             echo "La compilación no expone archivos de registro."
             exit 0
           fi
+          n=0
           for url in "${urls[@]}"; do
-            if ! curl -sSfL --max-time 60 "$url" -o log.txt; then
-              echo "No fue posible descargar un archivo de registro (se omite)."
+            n=$((n + 1))
+            if ! curl -sSfL --max-time 60 "$url" -o "log-$n.raw"; then
+              echo "No fue posible descargar el archivo de registro $n (se omite)."
               continue
             fi
+            # Los archivos vienen comprimidos (gzip) y en líneas JSON; se pasan a texto plano.
+            if gzip -t "log-$n.raw" 2>/dev/null; then gzip -dc "log-$n.raw" > "log-$n.txt"; else cp "log-$n.raw" "log-$n.txt"; fi
+            if head -c 1 "log-$n.txt" | grep -q '{'; then
+              jq -R -r 'fromjson? | select(. != null) | "[\(.buildStepDisplayName // .phase // "-")] \(.msg // .message // "")"' "log-$n.txt" > "log-$n.plain"
+            else
+              cp "log-$n.txt" "log-$n.plain"
+            fi
+            total=$(wc -l < "log-$n.plain")
             {
-              echo "### Registro ($(wc -l < log.txt) líneas): últimas 200"
+              echo "### Registro $n ($total líneas)"
               echo ""
+              echo "Líneas con indicios de error (máximo 150):"
               echo '```'
-              tail -n 200 log.txt | sed -E 's/AIza[0-9A-Za-z_-]{35}/[clave]/g; s/(EXPO_TOKEN|GOOGLE_MAPS_ANDROID_API_KEY)=[^ ]+/\1=[oculto]/g'
+              grep -n -E 'What went wrong|FAILED|BUILD FAILED|error:|Error:|Exception|Could not|OutOfMemory|ENOENT|not found|Unresolved|does not exist' "log-$n.plain" | tail -n 150 | mask
+              echo '```'
+              echo ""
+              echo "Últimas 150 líneas:"
+              echo '```'
+              tail -n 150 "log-$n.plain" | mask
               echo '```'
             } | tee -a "$GITHUB_STEP_SUMMARY"
           done
