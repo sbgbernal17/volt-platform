@@ -2,6 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+# Dependencias cuyos scripts de instalación se permiten (pnpm 10 ignora el campo "pnpm" de package.json).
+onlyBuiltDependencies:
+  - esbuild
+
 catalog:
   '@biomejs/biome': ^2.5.14
   '@types/node': ^22.15.0

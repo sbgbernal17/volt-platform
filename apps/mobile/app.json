@@ -8,7 +8,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#000000",
-    "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "co.supercargadores.volt",
       "supportsTablet": false,

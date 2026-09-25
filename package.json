@@ -32,10 +32,5 @@
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }
