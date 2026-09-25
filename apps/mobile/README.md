@@ -23,10 +23,13 @@ pnpm --filter @volt/mobile export:web  # bundle web con Metro (lo corre CI)
 - `app/`: rutas de Expo Router. `_layout.tsx` monta los proveedores y las guardas (sin sesión → `(auth)`; consentimientos pendientes → `consents`; con sesión → `(tabs)` y detalles).
 - `src/api`: tipos de `/v1`, cliente y consultas con sondeo. `src/auth`: Identity Platform (SDK de Firebase con persistencia en AsyncStorage) y estado de la cuenta. `src/lib`: formatos de marca, lectura del QR, tokenización en Wompi y avisos push. `src/i18n`: catálogos es/en. `src/theme`: tokens de marca y componentes.
 - `assets/`: iconos y logotipo generados desde `docs/marca/volt-logo-blanco.svg`.
+- No hay `babel.config.js` a propósito: Expo aplica su preset por defecto (`babel-preset-expo`) resuelto desde sus propios paquetes. Con el `node_modules` aislado de pnpm, un `babel.config.js` que nombre el preset hace fallar el empaquetado de Android en EAS (`Cannot find module 'babel-preset-expo'`), aunque en local funcione. Si algún día hace falta configurar Babel, hay que añadir `babel-preset-expo` como dependencia de desarrollo de la app.
 
 ## Compilaciones con EAS
 
 Desde GitHub también: Actions → *Compilación de la app (EAS)* → Run workflow (perfil, plataforma y envío opcional a la tienda); necesita el secreto `EXPO_TOKEN` del repositorio.
+
+Si una compilación falla, Actions → *Diagnóstico de compilación (EAS)* → Run workflow con el id del build (o vacío para el último de Android) imprime el estado, el mensaje de error y las líneas relevantes de sus registros (fases elegibles; sin secretos) en el resumen del trabajo, sin entrar a expo.dev.
 
 El proyecto de EAS ya está enlazado (`extra.eas.projectId` en `app.json`, id `6c086f3f-…`) y `eas.json` trae tres perfiles: `development` (cliente de desarrollo, con avisos push), `preview` (APK e IPA internos para Internal testing y TestFlight, contra staging) y `production` (AAB y IPA para las tiendas). Desde `apps/mobile`, con sesión en Expo (`npx eas-cli login`):
 
