@@ -14,9 +14,9 @@ on:
         default: prod
         options: [dev, staging, prod]
       fingerprints:
-        description: 'Huellas SHA-1 permitidas (separadas por coma): keystore de EAS y firma de Google Play'
+        description: 'Huellas SHA-1 permitidas (separadas por coma): keystore de EAS y certificados de firma de Google Play'
         type: string
-        default: 'C2:D1:69:78:AA:4E:7E:74:03:EB:07:48:AD:AE:E8:A8:DE:1D:F1:92'
+        default: 'C2:D1:69:78:AA:4E:7E:74:03:EB:07:48:AD:AE:E8:A8:DE:1D:F1:92,8A:37:7D:27:7D:F9:F8:96:4C:97:F9:EF:B8:89:B3:5B:67:85:7E:48,19:0D:A4:37:88:70:26:99:9B:7C:12:3B:48:67:B3:02:A5:63:3D:9B,35:B8:3F:74:B4:6B:C3:EE:76:2D:45:32:E3:A4:16:60:5C:9B:90:88'
       eas_environments:
         description: 'Ambientes de EAS que reciben la variable'
         type: string
@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 15
     env:
       ENVIRONMENT: ${{ inputs.environment || 'prod' }}
-      FINGERPRINTS: ${{ inputs.fingerprints || 'C2:D1:69:78:AA:4E:7E:74:03:EB:07:48:AD:AE:E8:A8:DE:1D:F1:92' }}
+      FINGERPRINTS: ${{ inputs.fingerprints || 'C2:D1:69:78:AA:4E:7E:74:03:EB:07:48:AD:AE:E8:A8:DE:1D:F1:92,8A:37:7D:27:7D:F9:F8:96:4C:97:F9:EF:B8:89:B3:5B:67:85:7E:48,19:0D:A4:37:88:70:26:99:9B:7C:12:3B:48:67:B3:02:A5:63:3D:9B,35:B8:3F:74:B4:6B:C3:EE:76:2D:45:32:E3:A4:16:60:5C:9B:90:88' }}
       EAS_ENVIRONMENTS: ${{ inputs.eas_environments || 'development,preview,production' }}
       PACKAGE_NAME: co.supercargadores.volt
       DISPLAY_NAME: Volt app Android (Maps SDK)
