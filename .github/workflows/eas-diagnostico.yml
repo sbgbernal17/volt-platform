@@ -50,25 +50,31 @@ jobs:
           echo "$resumen"
       - name: Final de los registros de la compilación
         working-directory: apps/mobile
+        shell: bash {0}
         run: |
-          set -uo pipefail
-          mask() { sed -E 's/AIza[0-9A-Za-z_-]{35}/[clave]/g; s/(EXPO_TOKEN|GOOGLE_MAPS_ANDROID_API_KEY)=[^ ]+/\1=[oculto]/g'; }
+          set +e
+          mask() { sed -E 's/AIza[0-9A-Za-z_-]{35}/[clave]/g; s/(EXPO_TOKEN|GOOGLE_MAPS_ANDROID_API_KEY)=[^ ]+/\1=[oculto]/g' | cut -c1-600; }
           mapfile -t urls < <(jq -r '.logFiles[]? // empty' build.json)
+          echo "Archivos de registro expuestos: ${#urls[@]}"
           if [ "${#urls[@]}" -eq 0 ]; then
-            echo "La compilación no expone archivos de registro."
             exit 0
           fi
           n=0
           for url in "${urls[@]}"; do
             n=$((n + 1))
-            if ! curl -sSfL --max-time 60 "$url" -o "log-$n.raw"; then
+            if ! curl -sSfL --compressed --max-time 60 "$url" -o "log-$n.raw"; then
               echo "No fue posible descargar el archivo de registro $n (se omite)."
               continue
             fi
-            # Los archivos vienen comprimidos (gzip) y en líneas JSON; se pasan a texto plano.
+            echo "Archivo $n: $(file -b "log-$n.raw" | cut -c1-120); $(wc -c < "log-$n.raw") bytes"
+            # Los archivos pueden venir comprimidos (gzip) y en líneas JSON; se pasan a texto plano.
             if gzip -t "log-$n.raw" 2>/dev/null; then gzip -dc "log-$n.raw" > "log-$n.txt"; else cp "log-$n.raw" "log-$n.txt"; fi
+            echo "Descomprimido: $(file -b "log-$n.txt" | cut -c1-120); $(wc -l < "log-$n.txt") líneas"
             if head -c 1 "log-$n.txt" | grep -q '{'; then
-              jq -R -r 'fromjson? | select(. != null) | "[\(.buildStepDisplayName // .phase // "-")] \(.msg // .message // "")"' "log-$n.txt" > "log-$n.plain"
+              echo "Claves de la primera línea JSON: $(head -n 1 "log-$n.txt" | jq -r 'keys | join(",")' 2>/dev/null)"
+              echo "Fases (líneas por fase):"
+              jq -R -r 'fromjson? | select(. != null) | (.buildStepDisplayName // .phase // .buildPhase // "-")' "log-$n.txt" | uniq -c
+              jq -R -r 'fromjson? | select(. != null) | "[\(.buildStepDisplayName // .phase // .buildPhase // "-")] \(.msg // .message // .text // "")"' "log-$n.txt" > "log-$n.plain"
             else
               cp "log-$n.txt" "log-$n.plain"
             fi
@@ -76,14 +82,20 @@ jobs:
             {
               echo "### Registro $n ($total líneas)"
               echo ""
-              echo "Líneas con indicios de error (máximo 150):"
+              echo "Primeras 5 líneas:"
               echo '```'
-              grep -n -E 'What went wrong|FAILED|BUILD FAILED|error:|Error:|Exception|Could not|OutOfMemory|ENOENT|not found|Unresolved|does not exist' "log-$n.plain" | tail -n 150 | mask
+              head -n 5 "log-$n.plain" | mask
               echo '```'
               echo ""
-              echo "Últimas 150 líneas:"
+              echo "Líneas con indicios de error (máximo 150):"
               echo '```'
-              tail -n 150 "log-$n.plain" | mask
+              grep -a -n -E 'What went wrong|FAILED|BUILD FAILED|error:|Error:|Exception|Could not|OutOfMemory|ENOENT|not found|Unresolved|does not exist' "log-$n.plain" | tail -n 150 | mask
+              echo '```'
+              echo ""
+              echo "Últimas 200 líneas:"
+              echo '```'
+              tail -n 200 "log-$n.plain" | mask
               echo '```'
             } | tee -a "$GITHUB_STEP_SUMMARY"
           done
+          exit 0
