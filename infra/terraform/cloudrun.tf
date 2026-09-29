@@ -275,7 +275,8 @@ resource "google_cloud_run_v2_service" "synthetic" {
       }
       egress = "PRIVATE_RANGES_ONLY"
     }
-    max_instance_request_concurrency = 10
+    # Con menos de 1 vCPU Cloud Run exige concurrencia 1 (solo atiende /healthz).
+    max_instance_request_concurrency = 1
     timeout                          = "300s"
 
     containers {
@@ -382,12 +383,15 @@ resource "google_cloud_run_v2_job" "migrate" {
 }
 
 # Los servicios públicos reciben tráfico anónimo (siempre a través del balanceador salvo en dev).
+# La política de organización iam.allowedPolicyMemberDomains (activa por defecto en organizaciones
+# nuevas) rechaza allUsers hasta que el dueño la exceptúe en el proyecto; mientras tanto el
+# balanceador responde 403 y la variable queda en false (ADR 0023).
 resource "google_cloud_run_v2_service_iam_member" "public" {
-  for_each = {
+  for_each = var.allow_unauthenticated_invoker ? {
     api        = google_cloud_run_v2_service.api.name
     backoffice = google_cloud_run_v2_service.backoffice.name
     app_web    = google_cloud_run_v2_service.app_web.name
-  }
+  } : {}
   location = var.region
   name     = each.value
   role     = "roles/run.invoker"

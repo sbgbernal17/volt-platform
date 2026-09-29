@@ -76,6 +76,12 @@ variable "api_public_ingress" {
   default     = false
 }
 
+variable "allow_unauthenticated_invoker" {
+  description = "Concede roles/run.invoker a allUsers en api, backoffice y app-web (tráfico anónimo por el balanceador). Exige que la política de organización iam.allowedPolicyMemberDomains admita allUsers en el proyecto."
+  type        = bool
+  default     = false
+}
+
 variable "worker_min_instances" {
   type    = number
   default = 1

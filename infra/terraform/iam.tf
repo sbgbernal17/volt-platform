@@ -41,22 +41,25 @@ resource "google_project_iam_member" "trace_agents" {
 }
 
 resource "google_pubsub_topic_iam_member" "worker_publisher" {
-  topic  = google_pubsub_topic.domain_events.name
-  role   = "roles/pubsub.publisher"
-  member = google_service_account.svc["worker"].member
+  topic      = google_pubsub_topic.domain_events.name
+  role       = "roles/pubsub.publisher"
+  member     = google_service_account.svc["worker"].member
+  depends_on = [time_sleep.deployer_roles]
 }
 
-# El pod del gateway (KSA volt/ocpp-gateway) actúa como su cuenta de servicio de Google.
+# El pod del gateway (KSA volt/ocpp-gateway) actúa como su cuenta de servicio de Google. El pool
+# de identidades <proyecto>.svc.id.goog existe solo desde que hay un clúster.
 resource "google_service_account_iam_member" "gateway_workload_identity" {
   service_account_id = google_service_account.svc["gateway"].name
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.project_id}.svc.id.goog[${local.gke_namespace}/${local.gke_ksa}]"
+  depends_on         = [google_container_cluster.gateway]
 }
 
 # Roles que el despliegue desde GitHub Actions necesita además de los de la guía de configuración
-# (Cloud Run, GKE, Artifact Registry, claves de API, IAP y peering de servicios).
-resource "google_project_iam_member" "deployer" {
-  for_each = toset([
+# (Cloud Run, GKE, Artifact Registry, claves de API, IAP, peering de servicios, Pub/Sub, logs).
+locals {
+  deployer_roles = [
     "roles/run.admin",
     "roles/container.developer",
     "roles/artifactregistry.writer",
@@ -67,8 +70,24 @@ resource "google_project_iam_member" "deployer" {
     "roles/monitoring.admin",
     "roles/logging.admin",
     "roles/certificatemanager.editor",
-  ])
-  project = var.project_id
-  role    = each.value
-  member  = "serviceAccount:${var.deployer_service_account}"
+    "roles/pubsub.admin",
+  ]
+}
+
+resource "google_project_iam_member" "deployer" {
+  for_each = toset(local.deployer_roles)
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${var.deployer_service_account}"
+}
+
+# Un rol recién concedido tarda hasta un par de minutos en surtir efecto: los recursos que lo
+# necesitan en el mismo apply (IAM de Pub/Sub, bucket de logs) esperan aquí. Se repite si cambia la
+# lista de roles.
+resource "time_sleep" "deployer_roles" {
+  depends_on      = [google_project_iam_member.deployer]
+  create_duration = "120s"
+  triggers = {
+    roles = join(",", local.deployer_roles)
+  }
 }

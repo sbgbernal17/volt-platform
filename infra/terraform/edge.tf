@@ -92,8 +92,8 @@ resource "google_compute_backend_service" "run" {
   protocol              = "HTTPS"
   port_name             = "http"
   load_balancing_scheme = "EXTERNAL_MANAGED"
-  # SSE de la API: conexiones de minutos; el resto son peticiones cortas.
-  timeout_sec     = each.key == "api" ? 3600 : 60
+  # Sin timeout_sec: no se admite con NEG serverless; el tiempo de espera lo fija el servicio de
+  # Cloud Run (3600 s en la API para el SSE, 300 s en el resto).
   security_policy = var.cloud_armor_enabled ? google_compute_security_policy.web[0].id : null
 
   backend {

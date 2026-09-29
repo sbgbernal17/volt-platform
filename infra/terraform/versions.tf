@@ -14,6 +14,11 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    # Espera a la propagación de IAM (time_sleep en iam.tf).
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.13"
+    }
   }
 
   # Bucket y prefijo por ambiente: `terraform init -backend-config=envs/<env>.backend.hcl`.

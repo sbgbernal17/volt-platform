@@ -54,7 +54,16 @@ Con `DATABASE_URL` el gateway autentica contra el inventario (`assets.charge_poi
 | `packages/payments` | Puerto `PaymentGateway`, adaptador de Wompi (sandbox y producción), firma de integridad, checksum de eventos y emulador para pruebas (ADR 0020) |
 | `packages/gateway-client` | Directorio cargador → pod (Redis) y cliente de la API interna del gateway (ADR 0013) |
 | `packages/ocpp-sim` | Cargador OCPP 1.6J simulado para pruebas y laboratorio |
-| `infra/terraform`, `lab/` | Infraestructura de Google Cloud y laboratorio de simuladores |
+| `apps/synthetic-charger` | Cargador sintético: cargador simulado siempre conectado al gateway de cada ambiente; mide la disponibilidad de extremo a extremo (ADR 0023) |
+| `packages/logging` | Logger pino con el formato que indexa Cloud Logging (`severity`, `message`) y lectura de secretos montados como archivos |
+| `infra/terraform` | Infraestructura de Google Cloud con Terraform: tres ambientes (dev, staging, prod), red privada, Cloud SQL, Redis, Pub/Sub, Secret Manager, GKE Autopilot, Cloud Run, borde y observabilidad (ADR 0023) |
+| `infra/k8s/ocpp-gateway` | Manifiestos del gateway en GKE (Gateway API, despliegue sin cortes) |
+| `docs/runbooks` | Runbooks enlazados desde las alertas de Cloud Monitoring |
+| `lab/` | Laboratorio de simuladores |
+
+## Despliegue en Google Cloud
+
+Flujos de GitHub Actions (sin claves, con Workload Identity Federation): *Infraestructura (Terraform)* hace `plan` en cada cambio y `apply` a mano por ambiente; *Despliegue* construye las imágenes, aplica migraciones y actualiza Cloud Run y GKE (dev en cada push a `main`, staging y prod a mano). Detalles en `infra/terraform/README.md`, `infra/k8s/ocpp-gateway/README.md` y el ADR 0023.
 
 ## Próximos pasos
 

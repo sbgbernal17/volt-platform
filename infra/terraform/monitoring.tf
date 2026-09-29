@@ -422,8 +422,9 @@ resource "google_monitoring_slo" "gateway_availability" {
   rolling_period_days = 30
   request_based_sli {
     good_total_ratio {
-      good_service_filter  = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.synthetic_cycle.name}\" metric.label.\"result\"=\"ok\""
-      total_service_filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.synthetic_cycle.name}\""
+      # El cargador sintético corre en Cloud Run; un SLO exige un único tipo de recurso.
+      good_service_filter  = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.synthetic_cycle.name}\" resource.type=\"cloud_run_revision\" metric.label.\"result\"=\"ok\""
+      total_service_filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.synthetic_cycle.name}\" resource.type=\"cloud_run_revision\""
     }
   }
 }
@@ -671,6 +672,7 @@ resource "google_logging_project_bucket_config" "audit" {
   retention_days = 400
   locked         = var.audit_bucket_locked
   description    = "Cloud Audit Logs con retención de 400 días"
+  depends_on     = [time_sleep.deployer_roles]
 }
 
 resource "google_logging_project_sink" "audit" {

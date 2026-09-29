@@ -227,12 +227,36 @@ jobs:
           kubectl rollout status deployment/ocpp-gateway -n volt --timeout=900s
           kubectl get gateway ocpp -n volt -o wide || true
 
+      - name: URL de la API
+        id: api
+        run: echo "url=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(status.url)')" >> "$GITHUB_OUTPUT"
+
+      # La cuenta de despliegue invoca la API con un token de identidad: la prueba de humo funciona
+      # aunque el servicio no admita tráfico anónimo (política de organización; ADR 0023).
+      - name: Token de identidad para la prueba de humo
+        if: env.ENVIRONMENT == 'dev'
+        id: idtoken
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', needs.prepare.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', needs.prepare.outputs.suffix)] }}
+          project_id: ${{ env.PROJECT_ID }}
+          token_format: id_token
+          id_token_audience: ${{ steps.api.outputs.url }}
+          id_token_include_email: true
+
       - name: Comprobación
+        env:
+          API_URL: ${{ steps.api.outputs.url }}
+          ID_TOKEN: ${{ steps.idtoken.outputs.id_token }}
         run: |
           set -euo pipefail
-          api_url=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(status.url)')
+          api_url="$API_URL"
           if [ "$ENVIRONMENT" = "dev" ]; then
-            curl -sSf --max-time 20 "$api_url/healthz" | head -c 300; echo
+            code=$(curl -sS -o "$RUNNER_TEMP/healthz.json" -w '%{http_code}' --max-time 20 \
+              -H "Authorization: Bearer $ID_TOKEN" "$api_url/healthz")
+            echo "GET /healthz -> $code"; head -c 300 "$RUNNER_TEMP/healthz.json"; echo
+            [ "$code" = "200" ]
           fi
           {
             echo "## Despliegue ${ENVIRONMENT} (${TAG})"

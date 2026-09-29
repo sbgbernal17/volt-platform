@@ -62,7 +62,7 @@ resource "google_pubsub_topic_iam_member" "dlq_publisher" {
   topic      = google_pubsub_topic.domain_events_dlq.name
   role       = "roles/pubsub.publisher"
   member     = local.pubsub_agent
-  depends_on = [google_project_service_identity.pubsub]
+  depends_on = [google_project_service_identity.pubsub, time_sleep.deployer_roles]
 }
 
 resource "google_pubsub_subscription" "domain_events_bigquery" {
