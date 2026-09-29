@@ -91,6 +91,15 @@ jobs:
             | jq -c '{uri, urls, ingress, defaultUriDisabled, iapEnabled, invokerIamDisabled, launchStage, reconciling, terminalCondition: .terminalCondition.type, terminalState: .terminalCondition.state}')
           echo "::notice title=Servicio api (API v2)::${v2:-sin respuesta}"
           echo "$v2"
+          # Certificados de los dos balanceadores (se emiten cuando el DNS apunta a las IP).
+          web=$(gcloud certificate-manager certificates describe "volt-${ENVIRONMENT}-web" --location global --project "$PROJECT_ID" --format 'value(managed.state,managed.domains)' 2>&1 | tr '\t' ' ' | head -c 300)
+          ocpp=$(gcloud compute ssl-certificates describe "volt-${ENVIRONMENT}-ocpp" --global --project "$PROJECT_ID" --format 'value(managed.status,managed.domainStatus)' 2>&1 | tr '\t' ' ' | head -c 300)
+          echo "::notice title=Certificados::web=${web:-?} | ocpp=${ocpp:-?}"
+          for h in api admin app ocpp; do
+            if [ "$ENVIRONMENT" = "prod" ]; then host="$h.$DOMAIN"; else host="$h-$ENVIRONMENT.$DOMAIN"; fi
+            ip=$(getent hosts "$host" | awk '{print $1}' | head -1)
+            echo "DNS $host -> ${ip:-sin resolver}"
+          done
       - name: Token para la URL heredada
         id: tok_legacy
         uses: google-github-actions/auth@v2
