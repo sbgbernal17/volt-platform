@@ -95,7 +95,8 @@ jobs:
             code=$(curl -sS -o "$RUNNER_TEMP/resp.json" -w '%{http_code}' -X PATCH -H "Authorization: Bearer $token" \
               -H "Content-Type: application/json" --data @"$2" "$base?updateMask=$3")
             if [ "$code" != "200" ]; then
-              echo "::error title=$1::HTTP $code $(jq -c '.error // .' "$RUNNER_TEMP/resp.json" 2>/dev/null | head -c 700)"
+              msg=$(jq -r '.error.message // .message // (. | tostring)' "$RUNNER_TEMP/resp.json" 2>/dev/null | head -c 700)
+              if [ "$msg" = "EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED" ]; then echo "$1: la API no lo permite ($msg)"; else echo "::error title=$1::HTTP $code $msg"; fi
               return 1
             fi
             cp "$RUNNER_TEMP/resp.json" "$RUNNER_TEMP/after.json"
@@ -124,8 +125,15 @@ jobs:
               # La API tampoco admite remitente ni asunto por esta vía: solo la página de acción. Remitente y
               # asuntos se cambian en la consola de Firebase (tarea del dueño 9b).
               jq '{notification: {sendEmail: {callbackUri: .notification.sendEmail.callbackUri}}}' "$RUNNER_TEMP/body.json" > "$RUNNER_TEMP/body-callback.json"
-              patch "Página de acción" "$RUNNER_TEMP/body-callback.json" notification.sendEmail.callbackUri
-              echo "::warning title=Plantillas no personalizables por la API::Identity Platform rechazó remitente, asuntos y cuerpo (EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED). Quedó aplicada la página de acción propia; remitente y asuntos se cambian en la consola de Firebase (Authentication → Templates)."
+              if patch "Página de acción" "$RUNNER_TEMP/body-callback.json" notification.sendEmail.callbackUri; then
+                echo "::warning title=Plantillas no personalizables por la API::Identity Platform rechazó remitente, asuntos y cuerpo (EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED). Quedó aplicada la página de acción propia; remitente y asuntos se cambian en la consola de Firebase (Authentication → Templates)."
+              else
+                # Google no admite ningún cambio de estas plantillas por la API en este proyecto: se hace en la
+                # consola de Firebase (Authentication → Templates: nombre del remitente, asunto y URL de acción).
+                cp "$RUNNER_TEMP/current.json" "$RUNNER_TEMP/after.json"
+                callback=$(jq -r '.body.notification.sendEmail.callbackUri' "$RUNNER_TEMP/config.json")
+                echo "::warning title=Plantillas solo desde la consola de Firebase::Identity Platform respondió EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED a todos los cambios (cuerpo, remitente, asunto y URL de acción). En la consola de Firebase del proyecto ${PROJECT_ID} → Authentication → Templates: nombre del remitente VOLT, asuntos de infra/identity/config.json y URL de acción ${callback}. Los dominios autorizados sí quedaron al día."
+              fi
             fi
           fi
           echo "## Resultado (${ENVIRONMENT})" >> "$GITHUB_STEP_SUMMARY"
