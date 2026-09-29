@@ -57,6 +57,12 @@ jobs:
           ann=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(metadata.annotations)' | tr ';' ' ' | cut -c1-900)
           echo "::notice title=Anotaciones del servicio::${ann:-ninguna}"
           gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'yaml(metadata.annotations,spec.template.metadata.annotations,status.url,status.address)'
+          # Campos de la API v2 que la vista v1 no muestra (URL por defecto deshabilitada, IAP, invoker IAM).
+          v2=$(curl -sS --max-time 20 -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+            "https://run.googleapis.com/v2/projects/$PROJECT_ID/locations/$REGION/services/api" \
+            | jq -c '{uri, urls, ingress, defaultUriDisabled, iapEnabled, invokerIamDisabled, launchStage, reconciling, terminalCondition: .terminalCondition.type, terminalState: .terminalCondition.state}')
+          echo "::notice title=Servicio api (API v2)::${v2:-sin respuesta}"
+          echo "$v2"
       - name: Token para la URL heredada
         id: tok_legacy
         uses: google-github-actions/auth@v2
