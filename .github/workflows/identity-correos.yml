@@ -83,25 +83,40 @@ jobs:
           jq '{callbackUri: .notification.sendEmail.callbackUri, method: .notification.sendEmail.method, dnsInfo: .notification.sendEmail.dnsInfo, authorizedDomains, templates: (.notification.sendEmail | with_entries(select(.value | type == "object" and has("subject"))) | map_values({subject, senderDisplayName, customized, bodyFormat}))}' \
             "$RUNNER_TEMP/current.json" | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: Aplicar plantillas y dominios autorizados
+      - name: Aplicar dominios autorizados, plantillas y página de acción
         if: ${{ !inputs.dry_run }}
         env:
           PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
         run: |
           set -euo pipefail
           token=$(gcloud auth print-access-token)
-          mask=$(jq -r '.updateMask' "$RUNNER_TEMP/config.json")
-          jq '.body' "$RUNNER_TEMP/config.json" > "$RUNNER_TEMP/body.json"
-          curl -sS -f -X PATCH -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
-            --data @"$RUNNER_TEMP/body.json" \
-            "https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT_ID}/config?updateMask=${mask}" > "$RUNNER_TEMP/after.json"
-          # Dominios autorizados: la página de acción y el back-office deben estar en la lista.
+          base="https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT_ID}/config"
+          patch() { # título archivo updateMask
+            code=$(curl -sS -o "$RUNNER_TEMP/resp.json" -w '%{http_code}' -X PATCH -H "Authorization: Bearer $token" \
+              -H "Content-Type: application/json" --data @"$2" "$base?updateMask=$3")
+            if [ "$code" != "200" ]; then
+              echo "::error title=$1::HTTP $code $(jq -c '.error // .' "$RUNNER_TEMP/resp.json" 2>/dev/null | head -c 700)"
+              return 1
+            fi
+            cp "$RUNNER_TEMP/resp.json" "$RUNNER_TEMP/after.json"
+            echo "$1: aplicado"
+          }
+          # 1. Dominios autorizados primero: la página de acción debe vivir en un dominio autorizado.
           jq -n --slurpfile current "$RUNNER_TEMP/current.json" --slurpfile wanted "$RUNNER_TEMP/config.json" \
             '{authorizedDomains: (($current[0].authorizedDomains // []) + $wanted[0].authorizedDomains | unique)}' > "$RUNNER_TEMP/domains.json"
-          if ! jq -e --slurpfile current "$RUNNER_TEMP/current.json" '.authorizedDomains == (($current[0].authorizedDomains // []) | unique)' "$RUNNER_TEMP/domains.json" >/dev/null; then
-            curl -sS -f -X PATCH -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
-              --data @"$RUNNER_TEMP/domains.json" \
-              "https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT_ID}/config?updateMask=authorizedDomains" > "$RUNNER_TEMP/after.json"
+          if jq -e --slurpfile current "$RUNNER_TEMP/current.json" '.authorizedDomains == (($current[0].authorizedDomains // []) | unique)' "$RUNNER_TEMP/domains.json" >/dev/null; then
+            echo "Dominios autorizados: al día"
+          else
+            patch "Dominios autorizados" "$RUNNER_TEMP/domains.json" authorizedDomains
+          fi
+          # 2. Plantillas y página de acción; si la página se rechaza, al menos quedan las plantillas.
+          mask=$(jq -r '.updateMask' "$RUNNER_TEMP/config.json")
+          jq '.body' "$RUNNER_TEMP/config.json" > "$RUNNER_TEMP/body.json"
+          if ! patch "Plantillas y página de acción" "$RUNNER_TEMP/body.json" "$mask"; then
+            jq 'del(.notification.sendEmail.callbackUri)' "$RUNNER_TEMP/body.json" > "$RUNNER_TEMP/body-sin-callback.json"
+            mask2=$(echo "$mask" | sed 's/notification\.sendEmail\.callbackUri,//')
+            patch "Plantillas sin página de acción" "$RUNNER_TEMP/body-sin-callback.json" "$mask2"
+            echo "::warning title=Página de acción no aplicada::Las plantillas quedaron aplicadas; el callbackUri fue rechazado (ver el error anterior)."
           fi
           echo "## Resultado (${ENVIRONMENT})" >> "$GITHUB_STEP_SUMMARY"
           jq '{callbackUri: .notification.sendEmail.callbackUri, authorizedDomains, templates: (.notification.sendEmail | with_entries(select(.value | type == "object" and has("subject"))) | map_values({subject, senderDisplayName, customized}))}' \
