@@ -252,7 +252,14 @@ jobs:
         run: |
           set -euo pipefail
           api_url="$API_URL"
-          if [ "$ENVIRONMENT" = "dev" ]; then
+          # Estado del servicio según Cloud Run (revisión lista y entrada efectiva).
+          ready=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" \
+            --format 'value(status.conditions[0].type,status.conditions[0].status)' | tr '\t' '=')
+          ingress=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" \
+            --format 'value(metadata.annotations."run.googleapis.com/ingress",metadata.annotations."run.googleapis.com/ingress-status")' | tr '\t' '/')
+          echo "::notice title=Servicio api::$ready entrada=$ingress url=$api_url"
+          case "$ready" in *=True) ;; *) echo "::error title=Servicio api::la revisión no está lista ($ready)"; exit 1 ;; esac
+          if [ "$ENVIRONMENT" = "dev" ] && [ "${ingress%%/*}" = "all" ]; then
             code=$(curl -sS -o "$RUNNER_TEMP/healthz.json" -w '%{http_code}' --max-time 20 \
               -H "Authorization: Bearer $ID_TOKEN" "$api_url/healthz" || echo "000")
             body=$(head -c 300 "$RUNNER_TEMP/healthz.json" 2>/dev/null | tr '\n' ' ')
@@ -262,6 +269,8 @@ jobs:
               exit 1
             fi
             echo "::notice title=Comprobación de la API::GET /healthz respondió 200: $body"
+          else
+            echo "::notice title=Comprobación de la API::sin prueba directa (entrada $ingress); la API se alcanza por el balanceador"
           fi
           {
             echo "## Despliegue ${ENVIRONMENT} (${TAG})"
