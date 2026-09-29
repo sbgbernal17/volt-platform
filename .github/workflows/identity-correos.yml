@@ -121,10 +121,11 @@ jobs:
             if patch "Remitente, asuntos y página de acción (sin cuerpo HTML)" "$RUNNER_TEMP/body-sin-html.json" "$mask"; then
               echo "::warning title=Cuerpo de los correos no personalizado::Identity Platform rechazó el cuerpo HTML (EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED). Quedaron aplicados el remitente VOLT, los asuntos en español y la página de acción propia; el cuerpo sigue siendo el de Google."
             else
-              jq 'del(.notification.sendEmail.callbackUri)' "$RUNNER_TEMP/body-sin-html.json" > "$RUNNER_TEMP/body-minimo.json"
-              mask2=$(echo "$mask" | sed 's/notification\.sendEmail\.callbackUri,//')
-              patch "Remitente y asuntos" "$RUNNER_TEMP/body-minimo.json" "$mask2"
-              echo "::warning title=Página de acción no aplicada::El callbackUri fue rechazado (ver el error anterior); quedaron el remitente y los asuntos."
+              # La API tampoco admite remitente ni asunto por esta vía: solo la página de acción. Remitente y
+              # asuntos se cambian en la consola de Firebase (tarea del dueño 9b).
+              jq '{notification: {sendEmail: {callbackUri: .notification.sendEmail.callbackUri}}}' "$RUNNER_TEMP/body.json" > "$RUNNER_TEMP/body-callback.json"
+              patch "Página de acción" "$RUNNER_TEMP/body-callback.json" notification.sendEmail.callbackUri
+              echo "::warning title=Plantillas no personalizables por la API::Identity Platform rechazó remitente, asuntos y cuerpo (EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED). Quedó aplicada la página de acción propia; remitente y asuntos se cambian en la consola de Firebase (Authentication → Templates)."
             fi
           fi
           echo "## Resultado (${ENVIRONMENT})" >> "$GITHUB_STEP_SUMMARY"

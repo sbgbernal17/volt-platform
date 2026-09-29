@@ -8,6 +8,10 @@ Identity Platform envía por sí mismo los correos de verificación de correo, c
 - `templates/*.html`: cuerpos HTML (tema claro del manual de marca, logotipo blanco sobre rojo, botón primario, voz de usted). Marcadores de Identity Platform: `%LINK%` (obligatorio), `%EMAIL%`, `%NEW_EMAIL%`, `%DISPLAY_NAME%`. Marcador propio `{{APP_HOST}}` (host de la app web, de donde se sirve el logotipo `brand/volt-logo-blanco.png`).
 - `build-config.mjs`: arma el cuerpo del `PATCH admin/v2/projects/{proyecto}/config` (Identity Toolkit) con `updateMask` y comprueba que ninguna plantilla se quede sin `%LINK%` ni con marcadores sin sustituir. Solo biblioteca estándar de Node.
 
+## Qué admite Google y qué no
+
+Al aplicar las plantillas, Identity Platform respondió `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED` al cuerpo HTML en dev y staging: Google no permite cambiar el cuerpo de estas plantillas (solo remitente, asunto, respuesta y URL de acción). Por eso el flujo prueba primero la plantilla completa y, si la rechaza, aplica remitente, asuntos y página de acción y deja un aviso. Los cuerpos HTML de `templates/` se conservan para el envío propio (enlaces generados con el Admin SDK y un proveedor de correo transaccional), previsto para la iteración 10 junto con los recibos por correo.
+
 ## Cómo se aplica
 
 Actions → *Correos de identidad (plantillas VOLT)* → Run workflow → ambiente (`dry_run` para ver el estado actual sin cambiar nada). El flujo se autentica con Workload Identity Federation (rol `identityplatform.admin` del desplegador, `infra/terraform/iam.tf`), aplica las plantillas y el `callbackUri`, y añade los hosts de la app y del back-office a los dominios autorizados. No imprime cuerpos ni tokens; deja en el resumen los asuntos y el remitente resultantes.
