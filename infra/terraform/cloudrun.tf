@@ -284,9 +284,10 @@ resource "google_cloud_run_v2_service" "synthetic" {
         container_port = 8080
       }
       resources {
-        limits            = { cpu = "1", memory = "256Mi" }
+        # Medio vCPU siempre asignado: el simulador casi no consume y el proceso vive todo el mes.
+        limits            = { cpu = "0.5", memory = "512Mi" }
         cpu_idle          = false
-        startup_cpu_boost = true
+        startup_cpu_boost = false
       }
 
       dynamic "env" {
