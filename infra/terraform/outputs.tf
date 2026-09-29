@@ -69,6 +69,11 @@ output "gke" {
     ocpp_security_policy = var.cloud_armor_enabled ? google_compute_security_policy.ocpp[0].name : ""
     ocpp_host            = local.hosts.ocpp
     project_id           = var.project_id
+    # Tamaño del despliegue por ambiente (manifiestos de infra/k8s/ocpp-gateway).
+    replicas     = tostring(var.gateway_replicas)
+    max_replicas = tostring(var.gateway_max_replicas)
+    cpu          = var.gateway_cpu
+    memory       = var.gateway_memory
   }
 }
 
