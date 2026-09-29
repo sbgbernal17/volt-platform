@@ -23,6 +23,10 @@ on:
         description: 'hello-probe con la misma red que la API (egreso directo a la VPC)'
         type: boolean
         default: false
+      reset_ingress:
+        description: 'Reaplicar la entrada de la API (internal → all) para forzar el registro de sus URL en el borde'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -99,6 +103,7 @@ jobs:
           TOK_LEGACY: ${{ steps.tok_legacy.outputs.id_token }}
           TOK_DET: ${{ steps.tok_det.outputs.id_token }}
           VIA_LB: ${{ inputs.via_lb }}
+          RESET_INGRESS: ${{ inputs.reset_ingress }}
         run: |
           set +e
           probe() { # nombre url [token]
@@ -128,6 +133,14 @@ jobs:
           done
           gcloud org-policies list --project "$PROJECT_ID" --format 'value(constraint)' 2>&1 | head -20
           echo "::endgroup::"
+          if [ "$RESET_INGRESS" = "true" ]; then
+            echo "::group::Reaplicando la entrada de la API"
+            gcloud run services update api --region "$REGION" --project "$PROJECT_ID" --ingress internal --quiet 2>&1 | tail -2
+            sleep 15
+            gcloud run services update api --region "$REGION" --project "$PROJECT_ID" --ingress all --quiet 2>&1 | tail -2
+            sleep 45
+            echo "::endgroup::"
+          fi
           probe "heredada sin token" "$LEGACY/healthz"
           probe "heredada con token" "$LEGACY/healthz" "$TOK_LEGACY"
           probe "determinista sin token" "$DET/healthz"
