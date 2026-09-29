@@ -10,7 +10,7 @@ Identity Platform envía por sí mismo los correos de verificación de correo, c
 
 ## Qué admite Google y qué no
 
-Al aplicar las plantillas, Identity Platform respondió `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED` al cuerpo HTML en dev y staging: Google no permite cambiar el cuerpo de estas plantillas (solo remitente, asunto, respuesta y URL de acción). Por eso el flujo prueba primero la plantilla completa y, si la rechaza, aplica remitente, asuntos y página de acción y deja un aviso. Los cuerpos HTML de `templates/` se conservan para el envío propio (enlaces generados con el Admin SDK y un proveedor de correo transaccional), previsto para la iteración 10 junto con los recibos por correo.
+Al aplicar las plantillas, Identity Platform respondió `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED` en dev y staging a todo: cuerpo HTML, remitente, asunto y hasta la URL de acción. Por la API de administración esas plantillas no se pueden cambiar en estos proyectos (solo desde la consola de Firebase, y nunca el cuerpo). El flujo lo intenta de más a menos (plantilla completa, remitente y asuntos, solo URL de acción), mantiene los dominios autorizados al día, y cuando todo se rechaza termina en verde con un aviso que trae las instrucciones para la consola. Remitente, asuntos y URL de acción (`https://app-<ambiente>.supercargadores.co/auth/action`) los pone el dueño en la consola (Authentication → Templates) con los textos de `config.json`. Los cuerpos HTML de `templates/` se conservan para el envío propio (enlaces generados con el Admin SDK y un proveedor de correo transaccional), previsto para la iteración 10 junto con los recibos por correo.
 
 ## Cómo se aplica
 
