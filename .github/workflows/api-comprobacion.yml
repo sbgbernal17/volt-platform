@@ -15,6 +15,10 @@ on:
         description: 'Probar también por el balanceador (requiere DNS y certificado)'
         type: boolean
         default: false
+      probe_hello:
+        description: 'Desplegar un servicio de prueba (hello-probe) y comprobar su URL *.run.app; se borra al final'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -122,3 +126,42 @@ jobs:
             if [ "$ENVIRONMENT" = "prod" ]; then host="api.$DOMAIN"; else host="api-$ENVIRONMENT.$DOMAIN"; fi
             probe "balanceador" "https://$host/healthz"
           fi
+      - name: Servicio de prueba hello-probe
+        if: inputs.probe_hello
+        id: hello
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+        run: |
+          set -euo pipefail
+          gcloud run deploy hello-probe --image us-docker.pkg.dev/cloudrun/container/hello --region "$REGION" \
+            --project "$PROJECT_ID" --ingress all --no-allow-unauthenticated --quiet >/dev/null
+          url=$(gcloud run services describe hello-probe --region "$REGION" --project "$PROJECT_ID" --format 'value(status.url)')
+          echo "url=$url" >> "$GITHUB_OUTPUT"; echo "hello-probe: $url"
+      - name: Token para hello-probe
+        if: inputs.probe_hello
+        id: tok_hello
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', steps.vars.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+          token_format: id_token
+          id_token_audience: ${{ steps.hello.outputs.url }}
+          id_token_include_email: true
+      - name: Peticiones a hello-probe
+        if: inputs.probe_hello
+        env:
+          HELLO: ${{ steps.hello.outputs.url }}
+          TOK: ${{ steps.tok_hello.outputs.id_token }}
+        run: |
+          set +e
+          for i in 1 2 3; do
+            c1=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$HELLO/"); c2=$(curl -sS -o /tmp/h -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $TOK" "$HELLO/")
+            echo "::notice title=hello-probe (intento $i)::$HELLO -> sin token $c1, con token $c2 $(head -c 80 /tmp/h | sed 's/<[^>]*>//g' | tr '\n' ' ')"
+            sleep 20
+          done
+      - name: Borrar hello-probe
+        if: always() && inputs.probe_hello
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+        run: gcloud run services delete hello-probe --region "$REGION" --project "$PROJECT_ID" --quiet || true
