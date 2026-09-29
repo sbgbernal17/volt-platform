@@ -17,10 +17,15 @@ Entra con el token de administración (sección "Laboratorio" de la pantalla de 
 - Con Identity Platform, el ID token viaja en `Authorization: Bearer`; la SPA lo renueva con el SDK de Firebase. El primer inicio de sesión vincula la invitación por correo verificado.
 - El token de laboratorio se guarda en `sessionStorage` (solo la pestaña) y nunca en producción.
 
+## Mapas y tarifas (iteración 9, ADR 0024)
+
+- Los mapas (panel, detalle de sede y selector de coordenadas al crear sedes) usan Maps JavaScript API. La clave de navegador es pública por diseño (restringida por dominio y solo a esa API): en el contenedor llega por `GOOGLE_MAPS_BROWSER_KEY` y se escribe en `config.js`; en desarrollo se toma de `VITE_GOOGLE_MAPS_BROWSER_KEY`. Sin clave, el mapa muestra un aviso y las listas hacen el trabajo. La CSP de `nginx.conf` sigue la guía de Google para esa API.
+- El editor de tarifas (`src/lib/tariff-form.ts`) convierte el formulario (precio por kWh con franjas, ocupación, cargos, IVA y topes) en la definición OCPI y de vuelta; lo que el formulario no cubre se edita como JSON. Antes de guardar se valida con la API y se simula un ejemplo fijo.
+
 ## Construcción y despliegue
 
-`pnpm --filter @volt/backoffice build` deja la SPA en `dist/`. El `Dockerfile` la sirve con nginx en el puerto 8080; la variable `API_BASE_URL` del contenedor escribe `config.js` (origen de la API) al arrancar, así la misma imagen sirve para staging y producción (iteración 8).
+`pnpm --filter @volt/backoffice build` deja la SPA en `dist/`. El `Dockerfile` la sirve con nginx en el puerto 8080; las variables `API_BASE_URL` y `GOOGLE_MAPS_BROWSER_KEY` del contenedor escriben `config.js` (origen de la API y clave pública de Google Maps) al arrancar, así la misma imagen sirve para staging y producción (iteración 8).
 
 ## Pruebas
 
-`pnpm --filter @volt/backoffice test` (Vitest, módulos puros: i18n, enrutador, formato, cliente de API) y `typecheck`. La prueba de punta a punta de la API cubre autenticación, RBAC y auditoría (`apps/api/src/staff.e2e.test.ts`).
+`pnpm --filter @volt/backoffice test` (Vitest, módulos puros: i18n, enrutador, formato, cliente de API, editor de tarifas) y `typecheck`. La prueba de punta a punta de la API cubre autenticación, RBAC y auditoría (`apps/api/src/staff.e2e.test.ts`).

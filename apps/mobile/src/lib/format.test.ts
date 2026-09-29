@@ -9,6 +9,8 @@ import {
   formatKwh,
   formatMoney,
   formatPerKwh,
+  formatPowerType,
+  formatStandard,
 } from './format.ts';
 
 describe('formatos del manual de marca', () => {
@@ -20,6 +22,18 @@ describe('formatos del manual de marca', () => {
     expect(formatMoney(48_240n)).toBe('$ 48.240');
     expect(formatMoney(null)).toBe('—');
     expect(formatPerKwh('1350')).toBe('$ 1.350/kWh');
+  });
+
+  it('estándar y corriente del conector con nombre comercial', () => {
+    expect(formatStandard('IEC_62196_T2_COMBO')).toBe('CCS2');
+    expect(formatStandard('IEC_62196_T1_COMBO')).toBe('CCS1');
+    expect(formatStandard('GBT_DC')).toBe('GB/T');
+    expect(formatStandard('IEC_62196_T2')).toBe('Tipo 2');
+    expect(formatStandard('IEC_62196_T2', 'en')).toBe('Type 2');
+    expect(formatStandard(null)).toBe('—');
+    expect(formatPowerType('DC')).toBe('DC');
+    expect(formatPowerType('AC_3_PHASE')).toBe('AC trifásica');
+    expect(formatPowerType('AC_1_PHASE', 'en')).toBe('AC single-phase');
   });
 
   it('energía, potencia, duración y distancia', () => {

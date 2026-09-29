@@ -53,8 +53,14 @@ async function credentials(): Promise<string> {
     const seeded = await ensureSyntheticChargePoint(sql, {
       chargeBoxId: config.SYNTHETIC_CHARGE_BOX_ID,
       siteCode: config.SYNTHETIC_SITE_CODE,
+      visibleInApp: config.SYNTHETIC_VISIBLE_IN_APP,
     });
-    logger.info({ chargePointId: seeded.chargePointId }, 'cargador sintético registrado');
+    logger.info(
+      { chargePointId: seeded.chargePointId, visibleInApp: config.SYNTHETIC_VISIBLE_IN_APP },
+      config.SYNTHETIC_VISIBLE_IN_APP
+        ? 'cargador sintético registrado y publicado en la app como estación de pruebas'
+        : 'cargador sintético registrado',
+    );
     return seeded.authorizationKey;
   }
   return config.SYNTHETIC_PASSWORD as string;

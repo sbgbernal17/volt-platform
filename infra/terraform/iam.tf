@@ -71,6 +71,8 @@ locals {
     "roles/logging.admin",
     "roles/certificatemanager.editor",
     "roles/pubsub.admin",
+    # Iteración 9: plantillas de correo de Identity Platform aplicadas desde el flujo *Correos de identidad*.
+    "roles/identityplatform.admin",
   ]
 }
 

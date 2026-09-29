@@ -47,6 +47,8 @@ export interface AppConfigStatic {
     apiBaseUrl: string | null;
   };
   legal: { termsUrl: string; privacyUrl: string; supportEmail: string | null };
+  /** Clave de navegador de Google Maps para la versión web (null: la web muestra solo la lista). */
+  maps: { browserKey: string | null };
 }
 
 const profilePatch = z.object({

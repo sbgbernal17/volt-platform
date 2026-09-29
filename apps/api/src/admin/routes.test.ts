@@ -204,4 +204,20 @@ describe.skipIf(!baseUrl)('API de administración (sin gateway)', () => {
     expect(badAction.statusCode).toBe(400);
     expect((await call('GET', '/admin/v1/alarms')).json()).toEqual({ items: [] });
   });
+
+  it('la lista de cargadores trae el resumen de conectores (estándar, corriente y potencia)', async () => {
+    const list = await call('GET', '/admin/v1/charge-points');
+    expect(list.statusCode).toBe(200);
+    const items = (list.json() as { items: { id: string; connectors: unknown[] }[] }).items;
+    const created = items.find((cp) => cp.id === chargePointId);
+    expect(created).toBeDefined();
+    expect(created?.connectors.length).toBeGreaterThan(0);
+    expect(created?.connectors[0]).toMatchObject({
+      ocpp_connector_id: 1,
+      standard: expect.any(String),
+      power_type: expect.any(String),
+      evse_code: expect.any(String),
+    });
+    expect(created?.connectors[0]).not.toHaveProperty('charge_point_id');
+  });
 });

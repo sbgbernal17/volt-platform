@@ -21,6 +21,7 @@ import {
   listChargePoints,
   listConfigTemplates,
   listConfiguration,
+  listConnectorSummaries,
   listConnectors,
   listConnectorsLive,
   listDrivers,
@@ -249,9 +250,24 @@ export async function adminRoutes(
     const query = z
       .object({ siteId: uuid.optional(), lifecycle: z.enum(LIFECYCLE_STATES).optional() })
       .parse(request.query ?? {});
+    const chargePoints = await listChargePoints(sql, {
+      tenantId,
+      ...query,
+      siteIds: siteScope(request),
+    });
+    // Conectores resumidos (estándar, corriente, potencia, estado) para listas y tarjetas.
+    const connectors = await listConnectorSummaries(
+      sql,
+      chargePoints.map((cp) => cp.id),
+    );
     return {
       items: serialize(
-        await listChargePoints(sql, { tenantId, ...query, siteIds: siteScope(request) }),
+        chargePoints.map((cp) => ({
+          ...cp,
+          connectors: connectors
+            .filter((c) => c.charge_point_id === cp.id)
+            .map(({ charge_point_id: _chargePointId, ...connector }) => connector),
+        })),
       ),
     };
   });

@@ -23,6 +23,8 @@ resource "google_project_service" "apis" {
     "identitytoolkit.googleapis.com",
     # Lectura de las políticas de organización efectivas desde los flujos de comprobación.
     "orgpolicy.googleapis.com",
+    # Iteración 9: Maps JavaScript API para los mapas del back-office y de la app web.
+    "maps-backend.googleapis.com",
   ])
   service            = each.value
   disable_on_destroy = false

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { duration, energyKwh, money, relativeTime } from './format.ts';
+import {
+  connectorStandard,
+  connectorSummary,
+  duration,
+  energyKwh,
+  money,
+  powerTypeLabel,
+  relativeTime,
+} from './format.ts';
 
 describe('formato', () => {
   it('importes en COP sin decimales y en USD con dos', () => {
@@ -14,5 +22,28 @@ describe('formato', () => {
     expect(
       relativeTime(new Date('2026-09-22T10:00:00Z'), 'en', new Date('2026-09-22T10:00:30Z')),
     ).toBe('30 seconds ago');
+  });
+  it('conectores con nombre comercial, corriente y potencia', () => {
+    expect(connectorStandard('IEC_62196_T2_COMBO')).toBe('CCS2');
+    expect(connectorStandard('IEC_62196_T2', 'en')).toBe('Type 2');
+    expect(connectorStandard('OTRO_X')).toBe('OTRO X');
+    expect(powerTypeLabel('AC_3_PHASE')).toBe('AC trifásica');
+    expect(powerTypeLabel('DC', 'en')).toBe('DC');
+    expect(
+      connectorSummary([
+        { standard: 'IEC_62196_T2_COMBO', max_power_w: 180_000 },
+        { standard: 'IEC_62196_T2_COMBO', max_power_w: 180_000 },
+      ]),
+    ).toBe('2 × CCS2 · 180 kW');
+    expect(
+      connectorSummary(
+        [
+          { standard: 'IEC_62196_T1_COMBO', max_power_w: 90_000 },
+          { standard: 'GBT_DC', max_power_w: null },
+        ],
+        'en',
+      ),
+    ).toBe('CCS1 + GB/T DC · 90 kW');
+    expect(connectorSummary([])).toBe('—');
   });
 });

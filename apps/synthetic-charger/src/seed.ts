@@ -1,6 +1,7 @@
 import {
   createChargePoint,
   createSite,
+  ensureBaseTariff,
   findChargePointByChargeBoxId,
   issueCredential,
   transitionLifecycle,
@@ -13,7 +14,32 @@ export interface SyntheticSeedInput {
   chargeBoxId: string;
   siteCode: string;
   actor?: string;
+  /**
+   * Publica el cargador en la app como estación de pruebas (dev y staging) y garantiza la tarifa
+   * base; por defecto queda oculto.
+   */
+  visibleInApp?: boolean | undefined;
 }
+
+/** Sede del cargador sintético según su modo: oculta (plataforma) o publicada como estación de pruebas. */
+const SITE_PRESETS = {
+  hidden: {
+    name: 'Cargadores sintéticos (plataforma)',
+    address: 'Virtual',
+    city: 'Bogotá',
+    latitude: 4.711,
+    longitude: -74.0721,
+    accessType: 'PRIVATE' as const,
+  },
+  visible: {
+    name: 'Estación de pruebas Volt (virtual)',
+    address: 'Cargador simulado por la plataforma; no existe físicamente',
+    city: 'Itagüí',
+    latitude: 6.1849,
+    longitude: -75.5992,
+    accessType: 'PUBLIC' as const,
+  },
+};
 
 export interface SyntheticCredentials {
   chargePointId: string;
@@ -35,18 +61,21 @@ const PATH_TO_OPERATIONAL: Record<LifecycleState, LifecycleState[]> = {
 };
 
 /**
- * Alta idempotente del cargador sintético: sede privada `SYNTH`, cargador de dos conectores DC,
- * credencial de larga duración y ciclo de vida OPERATIONAL sin pasar por el comisionamiento
- * (es un dispositivo de la plataforma, no un cargador real). Nunca es visible en la app.
+ * Alta idempotente del cargador sintético: sede `SYNTH`, cargador de dos conectores DC, credencial
+ * de larga duración y ciclo de vida OPERATIONAL sin pasar por el comisionamiento (es un dispositivo
+ * de la plataforma, no un cargador real). Oculto en la app salvo que se pida publicarlo como
+ * estación de pruebas (iteración 9: dev y staging), en cuyo caso también garantiza la tarifa base
+ * para que la app muestre precio y permita iniciar una carga.
  */
 export async function ensureSyntheticChargePoint(
   sql: Sql,
   input: SyntheticSeedInput,
 ): Promise<SyntheticCredentials> {
   const actor = input.actor ?? 'system:synthetic-charger';
+  const visible = input.visibleInApp === true;
+  const siteId = await ensureSite(sql, input.siteCode, visible);
   let chargePoint = await findChargePointByChargeBoxId(sql, input.chargeBoxId);
   if (!chargePoint) {
-    const siteId = await ensureSite(sql, input.siteCode);
     chargePoint = await createChargePoint(sql, {
       tenantId: VOLT_TENANT_ID,
       siteId,
@@ -83,8 +112,12 @@ export async function ensureSyntheticChargePoint(
     current = result.to;
   }
   await sql`
-    UPDATE assets.charge_point SET visible_in_app = false, updated_at = now()
-    WHERE id = ${chargePoint.id} AND visible_in_app`;
+    UPDATE assets.charge_point SET visible_in_app = ${visible}, updated_at = now()
+    WHERE id = ${chargePoint.id} AND visible_in_app <> ${visible}`;
+  if (visible) {
+    await sql`UPDATE assets.evse SET visible_in_app = true WHERE charge_point_id = ${chargePoint.id}`;
+    await ensureBaseTariff(sql, { tenantId: VOLT_TENANT_ID, actor });
+  }
   return {
     chargePointId: chargePoint.id,
     chargeBoxId: input.chargeBoxId,
@@ -92,21 +125,34 @@ export async function ensureSyntheticChargePoint(
   };
 }
 
-async function ensureSite(sql: Sql, code: string): Promise<string> {
-  const rows = await sql<{ id: string }[]>`
-    SELECT id FROM assets.site WHERE tenant_id = ${VOLT_TENANT_ID} AND code = ${code}`;
-  if (rows[0]) return rows[0].id;
+async function ensureSite(sql: Sql, code: string, visible: boolean): Promise<string> {
+  const preset = visible ? SITE_PRESETS.visible : SITE_PRESETS.hidden;
+  const rows = await sql<{ id: string; name: string }[]>`
+    SELECT id, name FROM assets.site WHERE tenant_id = ${VOLT_TENANT_ID} AND code = ${code}`;
+  const existing = rows[0];
+  if (existing) {
+    // Cambio de modo (oculto ↔ estación de pruebas): la sede se renombra y se reubica.
+    if (existing.name !== preset.name) {
+      await sql`
+        UPDATE assets.site
+        SET name = ${preset.name}, address = ${preset.address}, city = ${preset.city},
+            latitude = ${preset.latitude}, longitude = ${preset.longitude},
+            access_type = ${preset.accessType}, updated_at = now()
+        WHERE id = ${existing.id}`;
+    }
+    return existing.id;
+  }
   const site = await createSite(sql, {
     tenantId: VOLT_TENANT_ID,
     code,
-    name: 'Cargadores sintéticos (plataforma)',
-    address: 'Virtual',
-    city: 'Bogotá',
+    name: preset.name,
+    address: preset.address,
+    city: preset.city,
     countryCode: 'CO',
-    latitude: 4.711,
-    longitude: -74.0721,
+    latitude: preset.latitude,
+    longitude: preset.longitude,
     timezone: 'America/Bogota',
-    accessType: 'PRIVATE',
+    accessType: preset.accessType,
   });
   return site.id;
 }

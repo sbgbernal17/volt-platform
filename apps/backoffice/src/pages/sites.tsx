@@ -1,12 +1,19 @@
 import { type FormEvent, useState } from 'react';
 import { useApi, useAuth } from '../auth/auth.tsx';
 import { DataTable } from '../components/data-table.tsx';
+import { CoordinatePicker, SiteMarkerMap } from '../components/map.tsx';
 import { Alert, ErrorBox, Field, LifecycleBadge, Loading, PageHeader } from '../components/ui.tsx';
 import { useI18n } from '../i18n/index.tsx';
-import { dateTime } from '../lib/format.ts';
+import { connectorSummary, dateTime, relativeTime } from '../lib/format.ts';
 import { useRouter } from '../lib/router.tsx';
-import type { ChargePoint, Items, Site } from '../lib/types.ts';
+import type { ChargePointListItem, Items, Site } from '../lib/types.ts';
 import { errorMessage, useMutation, useQuery } from '../lib/use-query.ts';
+
+function parseCoordinate(value: string): number | null {
+  if (value.trim() === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
 
 export function SitesPage() {
   const { t, locale } = useI18n();
@@ -116,6 +123,17 @@ export function SitesPage() {
               />
             </Field>
           </div>
+          <CoordinatePicker
+            latitude={parseCoordinate(form.latitude)}
+            longitude={parseCoordinate(form.longitude)}
+            onChange={({ latitude, longitude }) =>
+              setForm((current) => ({
+                ...current,
+                latitude: String(latitude),
+                longitude: String(longitude),
+              }))
+            }
+          />
           <div className="form-actions">
             <button type="button" onClick={() => setCreating(false)}>
               {t('app.cancel')}
@@ -163,7 +181,7 @@ export function SiteDetailPage({ id }: { id: string }) {
   const { navigate } = useRouter();
   const site = useQuery(() => api.get<Site>(`/sites/${id}`), [id]);
   const chargePoints = useQuery(
-    () => api.get<Items<ChargePoint>>('/charge-points', { siteId: id }),
+    () => api.get<Items<ChargePointListItem>>('/charge-points', { siteId: id }),
     [id],
     { refreshMs: 15_000 },
   );
@@ -180,35 +198,44 @@ export function SiteDetailPage({ id }: { id: string }) {
           </button>
         }
       />
-      <div className="card">
-        <div className="grid cols-3">
-          <div>
-            <div className="muted small">{t('sites.address')}</div>
-            {s.address}
-            {s.city ? `, ${s.city}` : ''}
-          </div>
-          <div>
-            <div className="muted small">
-              {t('sites.latitude')} / {t('sites.longitude')}
+      <div className="grid cols-2">
+        <div className="card">
+          <div className="grid cols-2">
+            <div>
+              <div className="muted small">{t('sites.address')}</div>
+              {s.address}
+              {s.city ? `, ${s.city}` : ''}
             </div>
-            {s.latitude}, {s.longitude}
+            <div>
+              <div className="muted small">
+                {t('sites.latitude')} / {t('sites.longitude')}
+              </div>
+              {s.latitude}, {s.longitude}
+            </div>
+            <div>
+              <div className="muted small">{t('sites.timezone')}</div>
+              {s.timezone}
+            </div>
+            <div>
+              <div className="muted small">{t('sites.accessType')}</div>
+              {s.access_type}
+            </div>
+            <div>
+              <div className="muted small">{t('app.status')}</div>
+              {s.status}
+            </div>
+            <div>
+              <div className="muted small">{t('app.created')}</div>
+              {dateTime(s.created_at, locale)}
+            </div>
           </div>
-          <div>
-            <div className="muted small">{t('sites.timezone')}</div>
-            {s.timezone}
-          </div>
-          <div>
-            <div className="muted small">{t('sites.accessType')}</div>
-            {s.access_type}
-          </div>
-          <div>
-            <div className="muted small">{t('app.status')}</div>
-            {s.status}
-          </div>
-          <div>
-            <div className="muted small">{t('app.created')}</div>
-            {dateTime(s.created_at, locale)}
-          </div>
+        </div>
+        <div className="card compact">
+          <SiteMarkerMap
+            latitude={Number(s.latitude)}
+            longitude={Number(s.longitude)}
+            name={s.name}
+          />
         </div>
       </div>
       <div className="card">
@@ -230,6 +257,11 @@ export function SiteDetailPage({ id }: { id: string }) {
               render: (cp) => [cp.vendor, cp.model].filter(Boolean).join(' ') || '—',
             },
             {
+              key: 'connectors',
+              header: t('cp.connectors'),
+              render: (cp) => connectorSummary(cp.connectors, locale),
+            },
+            {
               key: 'lc',
               header: t('cp.lifecycle'),
               render: (cp) => <LifecycleBadge value={cp.lifecycle_status} />,
@@ -237,12 +269,26 @@ export function SiteDetailPage({ id }: { id: string }) {
             {
               key: 'conn',
               header: t('cp.connected'),
-              render: (cp) => (cp.connected ? t('app.yes') : t('app.no')),
+              render: (cp) => (
+                <span>
+                  <span
+                    className="dot"
+                    style={{
+                      background: cp.connected ? 'var(--color-ok)' : 'var(--color-danger)',
+                    }}
+                  />
+                  {cp.connected ? t('app.yes') : t('app.no')}
+                </span>
+              ),
             },
             {
               key: 'seen',
               header: t('cp.lastSeen'),
-              render: (cp) => dateTime(cp.last_seen_at, locale),
+              render: (cp) => (
+                <span title={dateTime(cp.last_seen_at, locale)}>
+                  {relativeTime(cp.last_seen_at, locale)}
+                </span>
+              ),
             },
           ]}
         />

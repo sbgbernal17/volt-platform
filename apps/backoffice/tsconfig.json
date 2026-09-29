@@ -6,7 +6,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "types": ["vite/client"],
+    "types": ["vite/client", "google.maps"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,

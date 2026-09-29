@@ -71,6 +71,7 @@ resource "google_cloud_run_v2_service" "api" {
           WOMPI_ENVIRONMENT             = var.wompi_environment
           PAYMENTS_REDIRECT_URL         = "https://${local.hosts.app}/pagos/retorno"
           API_CORS_ORIGINS              = "https://${local.hosts.admin},https://${local.hosts.app}"
+          GOOGLE_MAPS_BROWSER_KEY       = google_apikeys_key.maps_browser.key_string
         })
         content {
           name  = env.key
@@ -213,6 +214,10 @@ resource "google_cloud_run_v2_service" "backoffice" {
         name  = "API_BASE_URL"
         value = "https://${local.hosts.api}"
       }
+      env {
+        name  = "GOOGLE_MAPS_BROWSER_KEY"
+        value = google_apikeys_key.maps_browser.key_string
+      }
     }
   }
 
@@ -299,6 +304,8 @@ resource "google_cloud_run_v2_service" "synthetic" {
           SYNTHETIC_CHARGE_BOX_ID = "VOLT-SYNTH-${upper(var.env)}"
           SYNTHETIC_API_URL       = "https://${local.hosts.api}"
           SYNTHETIC_CYCLE_MINUTES = "5"
+          # Iteración 9: estación de pruebas visible en la app (dev y staging) con tarifa base.
+          SYNTHETIC_VISIBLE_IN_APP = var.synthetic_visible_in_app ? "true" : "false"
           }, local.api_admin_token_enabled ? {
           # Fuera de prod: una sesión de prueba por hora por la API de administración (carga sintética).
           SYNTHETIC_SESSION_EVERY_CYCLES = "12"
@@ -401,6 +408,29 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   name     = each.value
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+# Clave de navegador de Maps JavaScript API (iteración 9) para el mapa del back-office y de la app
+# web: pública por diseño, restringida a nuestros orígenes y solo a esa API. Se inyecta en el
+# back-office por config.js (GOOGLE_MAPS_BROWSER_KEY) y en la app por GET /v1/config.
+resource "google_apikeys_key" "maps_browser" {
+  name         = "maps-browser"
+  display_name = "Google Maps (navegador, ${var.env})"
+  depends_on   = [google_project_service.apis]
+
+  restrictions {
+    api_targets {
+      service = "maps-backend.googleapis.com"
+    }
+    browser_key_restrictions {
+      allowed_referrers = [
+        "https://${local.hosts.admin}/*",
+        "https://${local.hosts.app}/*",
+        "http://localhost:*/*",
+        "http://localhost/*",
+      ]
+    }
+  }
 }
 
 # Clave de navegador de Identity Platform restringida a nuestros orígenes (back-office y app web).

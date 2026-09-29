@@ -11,7 +11,14 @@ import { useQuery } from '../../src/api/hooks.ts';
 import type { Billing, EvseDetail, Session, SessionStartError } from '../../src/api/types.ts';
 import { useAuth } from '../../src/auth/auth.tsx';
 import { useI18n } from '../../src/i18n/index.tsx';
-import { formatClock, formatKw, formatMoney, formatPerKwh } from '../../src/lib/format.ts';
+import {
+  formatClock,
+  formatKw,
+  formatMoney,
+  formatPerKwh,
+  formatPowerType,
+  formatStandard,
+} from '../../src/lib/format.ts';
 import { connectorTone, spacing } from '../../src/theme/tokens.ts';
 import {
   Badge,
@@ -49,7 +56,7 @@ function bandLabel(start: string | null, end: string | null): string {
 
 export default function EvseScreen() {
   const { evseId } = useLocalSearchParams<{ evseId: string }>();
-  const { t, td } = useI18n();
+  const { t, td, locale } = useI18n();
   const auth = useAuth();
   const router = useRouter();
   const [starting, setStarting] = useState(false);
@@ -139,11 +146,7 @@ export default function EvseScreen() {
     );
   }
   if (!data) return null;
-  const standard = data.standard
-    .replace('IEC_62196_T2_COMBO', 'CCS2')
-    .replace('IEC_62196_T1_COMBO', 'CCS1')
-    .replace('IEC_62196_T2', 'Tipo 2')
-    .replace('GBT_DC', 'GB/T');
+  const standard = `${formatStandard(data.standard, locale)} · ${formatPowerType(data.powerType, locale)}`;
 
   return (
     <Screen>

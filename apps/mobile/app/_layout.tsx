@@ -106,6 +106,8 @@ function Root({ fontsReady }: { fontsReady: boolean }) {
         }}
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
+        {/* Enlaces de los correos de identidad: pública, con o sin sesión (iteración 9). */}
+        <Stack.Screen name="auth/action" options={{ headerShown: false }} />
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         </Stack.Protected>

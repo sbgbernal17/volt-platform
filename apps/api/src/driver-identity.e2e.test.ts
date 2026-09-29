@@ -141,6 +141,7 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
         privacyUrl: 'https://supercargadores.co/politica-de-datos',
         supportEmail: 'soporte@supercargadores.co',
       },
+      maps: { browserKey: null },
       consentVersion: '2026-09',
     });
     expect(JSON.stringify(json(response))).not.toMatch(/prv_|secret/i);

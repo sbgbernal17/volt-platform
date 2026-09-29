@@ -26,6 +26,15 @@ const schema = z.object({
   /** Cada cuántos ciclos se ejecuta una sesión de prueba; 0 la desactiva. */
   SYNTHETIC_SESSION_EVERY_CYCLES: z.coerce.number().int().min(0).max(1000).default(0),
   SYNTHETIC_SESSION_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
+  /**
+   * Iteración 9: publica el cargador sintético en la app como "Estación de pruebas Volt (virtual)"
+   * y garantiza la tarifa base, para que el dueño pueda hacer una carga de prueba de punta a punta
+   * desde la app en dev y staging. Prohibido en prod.
+   */
+  SYNTHETIC_VISIBLE_IN_APP: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 export type SyntheticConfig = z.infer<typeof schema>;
@@ -39,6 +48,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SyntheticConfi
   }
   if (!result.data.DATABASE_URL && !result.data.SYNTHETIC_PASSWORD) {
     throw new Error('Configuración inválida: hace falta DATABASE_URL o SYNTHETIC_PASSWORD');
+  }
+  if (result.data.SYNTHETIC_VISIBLE_IN_APP && result.data.VOLT_ENV === 'prod') {
+    throw new Error(
+      'Configuración inválida: SYNTHETIC_VISIBLE_IN_APP no puede activarse en producción',
+    );
+  }
+  if (result.data.SYNTHETIC_VISIBLE_IN_APP && !result.data.DATABASE_URL) {
+    throw new Error('Configuración inválida: SYNTHETIC_VISIBLE_IN_APP necesita DATABASE_URL');
   }
   return result.data;
 }

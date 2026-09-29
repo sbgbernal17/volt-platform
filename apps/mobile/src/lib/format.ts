@@ -50,6 +50,47 @@ export function formatKw(kw: number | null | undefined): string {
   return tenths % 10 === 0 ? `${tenths / 10} kW` : `${Math.floor(tenths / 10)},${tenths % 10} kW`;
 }
 
+/** Nombre comercial del estándar de conector (OCPI `ConnectorType`): `CCS2`, `CCS1`, `GB/T`, `Tipo 2`. */
+const STANDARD_LABELS: Record<string, string> = {
+  IEC_62196_T2_COMBO: 'CCS2',
+  IEC_62196_T1_COMBO: 'CCS1',
+  CHADEMO: 'CHAdeMO',
+  GBT_DC: 'GB/T',
+  GBT_AC: 'GB/T AC',
+  IEC_62196_T2: 'Tipo 2',
+  IEC_62196_T1: 'Tipo 1',
+  TESLA_S: 'Tesla',
+  DOMESTIC_B: 'Toma doméstica',
+};
+
+export function formatStandard(
+  standard: string | null | undefined,
+  locale: 'es' | 'en' = 'es',
+): string {
+  if (!standard) return '—';
+  const label = STANDARD_LABELS[standard] ?? standard.replace(/_/g, ' ');
+  return locale === 'en'
+    ? label.replace('Tipo', 'Type').replace('Toma doméstica', 'Domestic')
+    : label;
+}
+
+/** Tipo de corriente: `DC`, `AC trifásica`, `AC monofásica`. */
+export function formatPowerType(
+  type: string | null | undefined,
+  locale: 'es' | 'en' = 'es',
+): string {
+  switch (type) {
+    case 'DC':
+      return 'DC';
+    case 'AC_3_PHASE':
+      return locale === 'en' ? 'AC three-phase' : 'AC trifásica';
+    case 'AC_1_PHASE':
+      return locale === 'en' ? 'AC single-phase' : 'AC monofásica';
+    default:
+      return type ? type.replace(/_/g, ' ') : '—';
+  }
+}
+
 /** Precio por kWh de la tarifa: `$ 1.350/kWh`. */
 export function formatPerKwh(price: string | null | undefined, currency = 'COP'): string {
   return price ? `${formatMoney(price, currency)}/kWh` : '—';

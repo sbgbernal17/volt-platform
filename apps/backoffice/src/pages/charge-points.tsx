@@ -3,9 +3,15 @@ import { useApi, useAuth } from '../auth/auth.tsx';
 import { DataTable } from '../components/data-table.tsx';
 import { Alert, ErrorBox, Field, LifecycleBadge, Loading, PageHeader } from '../components/ui.tsx';
 import { useI18n } from '../i18n/index.tsx';
-import { dateTime, relativeTime } from '../lib/format.ts';
+import {
+  connectorStandard,
+  connectorSummary,
+  dateTime,
+  powerTypeLabel,
+  relativeTime,
+} from '../lib/format.ts';
 import { useRouter } from '../lib/router.tsx';
-import type { ChargePoint, Items, Site } from '../lib/types.ts';
+import type { ChargePoint, ChargePointListItem, Items, Site } from '../lib/types.ts';
 import { useMutation, useQuery } from '../lib/use-query.ts';
 
 export const LIFECYCLE_STATES = [
@@ -35,7 +41,8 @@ interface ConnectorForm {
   ocppConnectorId: number;
   standard: string;
   powerType: string;
-  maxPowerW: string;
+  /** Potencia máxima en kW (la API la guarda en W). */
+  maxPowerKw: string;
 }
 
 export function ChargePointsPage() {
@@ -48,7 +55,7 @@ export function ChargePointsPage() {
   const sites = useQuery(() => api.get<Items<Site>>('/sites'), []);
   const chargePoints = useQuery(
     () =>
-      api.get<Items<ChargePoint>>('/charge-points', {
+      api.get<Items<ChargePointListItem>>('/charge-points', {
         siteId: siteFilter || undefined,
         lifecycle: lifecycleFilter || undefined,
       }),
@@ -71,8 +78,8 @@ export function ChargePointsPage() {
     heartbeatIntervalS: '',
   });
   const [connectors, setConnectors] = useState<ConnectorForm[]>([
-    { ocppConnectorId: 1, standard: 'IEC_62196_T2_COMBO', powerType: 'DC', maxPowerW: '180000' },
-    { ocppConnectorId: 2, standard: 'IEC_62196_T2_COMBO', powerType: 'DC', maxPowerW: '180000' },
+    { ocppConnectorId: 1, standard: 'IEC_62196_T2_COMBO', powerType: 'DC', maxPowerKw: '180' },
+    { ocppConnectorId: 2, standard: 'IEC_62196_T2_COMBO', powerType: 'DC', maxPowerKw: '180' },
   ]);
   const siteName = (id: string) =>
     sites.data?.items.find((s) => s.id === id)?.code ?? id.slice(0, 8);
@@ -96,7 +103,7 @@ export function ChargePointsPage() {
               ocppConnectorId: c.ocppConnectorId,
               standard: c.standard,
               powerType: c.powerType,
-              maxPowerW: c.maxPowerW ? Number(c.maxPowerW) : undefined,
+              maxPowerW: c.maxPowerKw ? Math.round(Number(c.maxPowerKw) * 1000) : undefined,
             })),
           }),
         t('cp.created'),
@@ -191,10 +198,12 @@ export function ChargePointsPage() {
             </Field>
           </div>
           <h3>{t('cp.connectors')}</h3>
+          <p className="help">{t('cp.connectorsHelp')}</p>
           {connectors.map((c, index) => (
             <div className="row mb" key={c.ocppConnectorId}>
               <span className="mono">#{c.ocppConnectorId}</span>
               <select
+                aria-label={t('cp.standard')}
                 value={c.standard}
                 onChange={(e) =>
                   setConnectors(
@@ -203,15 +212,16 @@ export function ChargePointsPage() {
                     ),
                   )
                 }
-                style={{ width: 220 }}
+                style={{ width: 270 }}
               >
                 {STANDARDS.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {connectorStandard(s, locale)} ({s})
                   </option>
                 ))}
               </select>
               <select
+                aria-label={t('cp.powerType')}
                 value={c.powerType}
                 onChange={(e) =>
                   setConnectors(
@@ -220,27 +230,32 @@ export function ChargePointsPage() {
                     ),
                   )
                 }
-                style={{ width: 150 }}
+                style={{ width: 170 }}
               >
                 {POWER_TYPES.map((p) => (
                   <option key={p} value={p}>
-                    {p}
+                    {powerTypeLabel(p, locale)}
                   </option>
                 ))}
               </select>
               <input
                 type="number"
-                placeholder="W"
-                value={c.maxPowerW}
+                aria-label={t('cp.maxPowerKw')}
+                placeholder="kW"
+                min={1}
+                max={1000}
+                step="0.1"
+                value={c.maxPowerKw}
                 onChange={(e) =>
                   setConnectors(
                     connectors.map((x, i) =>
-                      i === index ? { ...x, maxPowerW: e.target.value } : x,
+                      i === index ? { ...x, maxPowerKw: e.target.value } : x,
                     ),
                   )
                 }
-                style={{ width: 130 }}
+                style={{ width: 110 }}
               />
+              <span className="muted small">kW</span>
               <button
                 type="button"
                 className="small"
@@ -261,7 +276,7 @@ export function ChargePointsPage() {
                   ocppConnectorId: (connectors.at(-1)?.ocppConnectorId ?? 0) + 1,
                   standard: 'IEC_62196_T2_COMBO',
                   powerType: 'DC',
-                  maxPowerW: '',
+                  maxPowerKw: '',
                 },
               ])
             }
@@ -328,6 +343,11 @@ export function ChargePointsPage() {
                 key: 'model',
                 header: t('cp.model'),
                 render: (cp) => [cp.vendor, cp.model].filter(Boolean).join(' ') || '—',
+              },
+              {
+                key: 'connectors',
+                header: t('cp.connectors'),
+                render: (cp) => connectorSummary(cp.connectors, locale),
               },
               {
                 key: 'lc',

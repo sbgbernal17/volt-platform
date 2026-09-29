@@ -12,13 +12,20 @@ import {
   StatusBadge,
 } from '../components/ui.tsx';
 import { useI18n } from '../i18n/index.tsx';
-import { dateTime, energyKwh, money, relativeTime } from '../lib/format.ts';
+import {
+  connectorStandard,
+  dateTime,
+  energyKwh,
+  money,
+  powerKw,
+  relativeTime,
+} from '../lib/format.ts';
 import { Link, useRouter } from '../lib/router.tsx';
 import type { Overview } from '../lib/types.ts';
 import { useQuery } from '../lib/use-query.ts';
 
 export function DashboardPage() {
-  const { t, locale } = useI18n();
+  const { t, td, locale } = useI18n();
   const api = useApi();
   const { navigate } = useRouter();
   const [view, setView] = useState<'map' | 'list'>('map');
@@ -85,7 +92,7 @@ export function DashboardPage() {
           value={Object.values(data.counts.connectorsByStatus).reduce((a, b) => a + b, 0)}
           sub={
             Object.entries(data.counts.connectorsByStatus)
-              .map(([s, n]) => `${s}: ${n}`)
+              .map(([s, n]) => `${td(`status.${s}`)}: ${n}`)
               .join(' · ') || '—'
           }
         />
@@ -132,8 +139,11 @@ export function DashboardPage() {
                   </div>
                   <div className="row small">
                     {cp.connectors.map((c) => (
-                      <span key={c.id}>
-                        #{c.ocpp_connector_id}{' '}
+                      <span key={c.id} className="connector-chip">
+                        <span className="mono">#{c.ocpp_connector_id}</span>{' '}
+                        <span className="muted">
+                          {connectorStandard(c.standard, locale)} · {powerKw(c.max_power_w, locale)}
+                        </span>{' '}
                         <StatusBadge status={c.status ?? 'Unavailable'} connected={cp.connected} />
                       </span>
                     ))}

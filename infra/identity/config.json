@@ -1,0 +1,24 @@
+{
+  "senderDisplayName": "VOLT",
+  "senderLocalPart": "",
+  "replyTo": "",
+  "callbackPath": "/auth/action",
+  "templates": {
+    "verifyEmailTemplate": {
+      "subject": "Confirme su correo en VOLT",
+      "file": "verify-email.html"
+    },
+    "resetPasswordTemplate": {
+      "subject": "Cree una contraseña nueva en VOLT",
+      "file": "reset-password.html"
+    },
+    "changeEmailTemplate": {
+      "subject": "El correo de su cuenta VOLT cambió",
+      "file": "change-email.html"
+    },
+    "revertSecondFactorAdditionTemplate": {
+      "subject": "Se activó un segundo factor en su cuenta VOLT",
+      "file": "revert-second-factor.html"
+    }
+  }
+}

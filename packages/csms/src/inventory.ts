@@ -362,6 +362,33 @@ export async function findChargePointByChargeBoxId(
   return rows[0];
 }
 
+/** Resumen de conectores para las listas de cargadores (estándar, corriente, potencia y estado). */
+export interface ConnectorSummaryRow {
+  id: string;
+  charge_point_id: string;
+  evse_id: string;
+  evse_code: string;
+  ocpp_connector_id: number;
+  standard: ConnectorStandard;
+  power_type: PowerType;
+  max_power_w: number | null;
+  ocpp_status: string;
+  visible_in_app: boolean;
+}
+
+export async function listConnectorSummaries(
+  sql: Sql,
+  chargePointIds: string[],
+): Promise<ConnectorSummaryRow[]> {
+  if (chargePointIds.length === 0) return [];
+  return sql<ConnectorSummaryRow[]>`
+    SELECT c.id, c.charge_point_id, c.evse_id, e.evse_id AS evse_code, c.ocpp_connector_id, c.standard,
+           c.power_type, c.max_power_w, c.ocpp_status, e.visible_in_app
+    FROM assets.connector c JOIN assets.evse e ON e.id = c.evse_id
+    WHERE c.charge_point_id = ANY(${chargePointIds}::uuid[])
+    ORDER BY c.charge_point_id, c.ocpp_connector_id`;
+}
+
 export async function listConnectors(sql: Sql, chargePointId: string): Promise<ConnectorRow[]> {
   return sql<ConnectorRow[]>`
     SELECT c.id, c.evse_id, e.evse_id AS evse_code, c.charge_point_id, c.ocpp_connector_id, c.standard,

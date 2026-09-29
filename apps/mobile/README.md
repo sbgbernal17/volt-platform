@@ -8,7 +8,9 @@ App del conductor (iteración 7, ADR 0022) con Expo SDK 57 y React Native: regis
 2. `pnpm --filter @volt/mobile start` y abrir en Expo Go (iOS o Android) o en el navegador (`w`). Sin `EXPO_PUBLIC_API_URL`, en Expo Go la app usa la máquina que sirve el bundle en el puerto 8080; con un túnel o un ambiente desplegado: `EXPO_PUBLIC_API_URL=https://api-staging.supercargadores.co pnpm --filter @volt/mobile start`.
 3. En laboratorio: crear un conductor desde el back-office (Conductores → nuevo) y entrar con su id en la tarjeta "Laboratorio" de la pantalla de entrada; agregar la tarjeta de prueba `4242 4242 4242 4242`; escanear o escribir un `evseId` (por ejemplo `VOLT-BOG01-CP01-1`) y cargar con el simulador embebido.
 
-Lo que no funciona en Expo Go ni en el navegador: los avisos push (hace falta una compilación de desarrollo con EAS y `extra.eas.projectId` en `app.json`); en el navegador tampoco el mapa nativo (se muestra la lista) ni la cámara (entrada manual del identificador).
+Lo que no funciona en Expo Go ni en el navegador: los avisos push (hace falta una compilación de desarrollo con EAS y `extra.eas.projectId` en `app.json`); en el navegador tampoco la cámara (entrada manual del identificador). El mapa en el navegador usa Maps JavaScript API con la clave que entrega la API en `GET /v1/config` (`maps.browserKey`, variable `GOOGLE_MAPS_BROWSER_KEY` de la API; en la nube la crea Terraform); sin clave se muestra la lista (iteración 9, ADR 0024).
+
+Rutas públicas de la versión web: `/auth/action` recibe los enlaces de los correos de Identity Platform (verificación, contraseña nueva, restaurar correo, retirar segundo factor) y los aplica con la marca VOLT; las plantillas viven en `infra/identity`. La carpeta `public/` se sirve tal cual en la web (`brand/volt-logo-blanco.png` es el logotipo de esos correos).
 
 ## Comprobaciones
 

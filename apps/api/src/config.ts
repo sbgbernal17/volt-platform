@@ -81,6 +81,12 @@ const schema = z.object({
   WOMPI_EVENTS_SECRET: z.string().min(8).optional(),
   /** URL a la que Wompi devuelve al conductor tras pagar un enlace de deuda (app web, iteración 7). */
   PAYMENTS_REDIRECT_URL: z.string().url().optional(),
+  /**
+   * Iteración 9: clave de navegador de Maps JavaScript API para el mapa de la app web (pública por
+   * diseño: va restringida por referrer y solo a esa API; la crea Terraform por ambiente). Se
+   * expone en `GET /v1/config`; sin ella la app muestra la lista en el navegador.
+   */
+  GOOGLE_MAPS_BROWSER_KEY: z.string().min(8).optional(),
 });
 
 export type ApiConfig = z.infer<typeof schema>;

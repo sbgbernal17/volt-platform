@@ -9,7 +9,7 @@ import { useAuth } from '../../src/auth/auth.tsx';
 // Sin extensión: Metro elige site-map.native.tsx o site-map.web.tsx según la plataforma.
 import { SiteMap } from '../../src/components/site-map';
 import { useI18n } from '../../src/i18n/index.tsx';
-import { formatKw } from '../../src/lib/format.ts';
+import { formatKw, formatStandard } from '../../src/lib/format.ts';
 import { colors, connectorTone, spacing } from '../../src/theme/tokens.ts';
 import {
   Badge,
@@ -26,10 +26,12 @@ import {
 } from '../../src/theme/ui.tsx';
 
 export default function MapScreen() {
-  const { t, td } = useI18n();
+  const { t, td, locale } = useI18n();
   const auth = useAuth();
   const router = useRouter();
-  const [view, setView] = useState<'map' | 'list'>(Platform.OS === 'web' ? 'list' : 'map');
+  // En el navegador hay mapa solo si el ambiente entrega la clave de Google Maps (GET /v1/config).
+  const hasMap = Platform.OS !== 'web' || Boolean(auth.config?.maps.browserKey);
+  const [view, setView] = useState<'map' | 'list'>(hasMap ? 'map' : 'list');
   const [selected, setSelected] = useState<string | null>(null);
   const locations = useQuery(() => auth.api.get<{ items: Location[] }>('/locations'), [], {
     intervalMs: 15_000,
@@ -55,7 +57,7 @@ export default function MapScreen() {
         <Muted>
           {t('map.available')}: {totals.available} {t('map.of')} {totals.total}
         </Muted>
-        {Platform.OS !== 'web' ? (
+        {hasMap ? (
           <Row>
             <Button
               title={t('map.map')}
@@ -111,12 +113,7 @@ export default function MapScreen() {
                 <View style={{ flex: 1 }}>
                   <Body>{evse.evseId}</Body>
                   <Muted>
-                    {evse.standard
-                      .replace('IEC_62196_T2_COMBO', 'CCS2')
-                      .replace('IEC_62196_T1_COMBO', 'CCS1')
-                      .replace('IEC_62196_T2', 'Tipo 2')
-                      .replace('GBT_DC', 'GB/T')}{' '}
-                    · {formatKw(evse.maxPowerKw)}
+                    {formatStandard(evse.standard, locale)} · {formatKw(evse.maxPowerKw)}
                   </Muted>
                 </View>
                 <Badge tone={connectorTone(evse.status)} text={td(`status.${evse.status}`)} />

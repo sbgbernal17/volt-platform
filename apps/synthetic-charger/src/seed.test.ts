@@ -1,4 +1,4 @@
-import { findChargePointByChargeBoxId, VOLT_TENANT_ID } from '@volt/csms';
+import { findChargePointByChargeBoxId, listLocations, quoteEvse, VOLT_TENANT_ID } from '@volt/csms';
 import { createSql } from '@volt/db';
 import { createTemporaryDatabase, type TemporaryDatabase } from '@volt/db/testing';
 import type { Sql } from 'postgres';
@@ -40,5 +40,32 @@ describe.skipIf(!baseUrl)('alta del cargador sintético', () => {
     expect(second.authorizationKey).not.toBe(first.authorizationKey);
     const sites = await sql`SELECT id FROM assets.site WHERE code = 'SYNTH'`;
     expect(sites).toHaveLength(1);
+  });
+
+  it('publicado como estación de pruebas: visible en la app, con tarifa base y precio cotizable', async () => {
+    await ensureSyntheticChargePoint(sql, {
+      chargeBoxId: 'VOLT-SYNTH-TEST',
+      siteCode: 'SYNTH',
+      visibleInApp: true,
+    });
+    const cp = await findChargePointByChargeBoxId(sql, 'VOLT-SYNTH-TEST');
+    expect(cp?.visible_in_app).toBe(true);
+    const locations = await listLocations(sql, VOLT_TENANT_ID);
+    const site = locations.find((l) => l.code === 'SYNTH');
+    expect(site?.name).toBe('Estación de pruebas Volt (virtual)');
+    expect(site?.evses.map((e) => e.evse_code)).toEqual(['VOLT-SYNTH-TEST-1', 'VOLT-SYNTH-TEST-2']);
+    const evse = site?.evses[0];
+    const quote = await quoteEvse(sql, {
+      tenantId: VOLT_TENANT_ID,
+      evseId: evse?.evse_uuid as string,
+      segment: 'PUBLIC',
+    });
+    expect(quote.tariffCode).toBe('VOLT-BASE');
+
+    // Volver al modo oculto: desaparece de la app y la sede recupera su nombre de plataforma.
+    await ensureSyntheticChargePoint(sql, { chargeBoxId: 'VOLT-SYNTH-TEST', siteCode: 'SYNTH' });
+    const hidden = await listLocations(sql, VOLT_TENANT_ID);
+    expect(hidden.find((l) => l.code === 'SYNTH')?.evses).toEqual([]);
+    expect(hidden.find((l) => l.code === 'SYNTH')?.name).toBe('Cargadores sintéticos (plataforma)');
   });
 });

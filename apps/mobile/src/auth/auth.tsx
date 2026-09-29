@@ -7,6 +7,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Auth, User } from 'firebase/auth';
 import {
+  applyActionCode,
+  checkActionCode,
+  confirmPasswordReset,
   createUserWithEmailAndPassword,
   deleteUser,
   signOut as firebaseSignOut,
@@ -15,6 +18,7 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   updateProfile,
+  verifyPasswordResetCode,
 } from 'firebase/auth';
 import {
   createContext,
@@ -58,6 +62,16 @@ export interface AuthState {
   acceptConsents: (keys: ConsentKey[], locale: 'es' | 'en') => Promise<Profile>;
   updateLocale: (locale: 'es' | 'en') => Promise<void>;
   deleteAccount: () => Promise<'deleted' | 'relogin'>;
+  /**
+   * Enlaces de los correos de Identity Platform (verificación, contraseña nueva, restaurar correo,
+   * retirar segundo factor) que abre la página /auth/action de la app web (iteración 9).
+   */
+  emailAction: {
+    check: (code: string) => Promise<{ operation: string; email: string | null }>;
+    apply: (code: string) => Promise<void>;
+    verifyReset: (code: string) => Promise<string>;
+    confirmReset: (code: string, newPassword: string) => Promise<void>;
+  };
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -211,6 +225,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (current) await sendEmailVerification(current);
   }, []);
 
+  const emailAction = useMemo<AuthState['emailAction']>(
+    () => ({
+      check: async (code) => {
+        const info = await checkActionCode(requireAuth(authRef), code);
+        return { operation: info.operation, email: info.data.email ?? null };
+      },
+      apply: (code) => applyActionCode(requireAuth(authRef), code),
+      verifyReset: (code) => verifyPasswordResetCode(requireAuth(authRef), code),
+      confirmReset: (code, newPassword) =>
+        confirmPasswordReset(requireAuth(authRef), code, newPassword),
+    }),
+    [],
+  );
+
   const checkVerification = useCallback(async () => {
     const current = authRef.current?.currentUser;
     if (!current) return false;
@@ -281,6 +309,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       acceptConsents,
       updateLocale,
       deleteAccount,
+      emailAction,
     }),
     [
       status,
@@ -302,6 +331,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       acceptConsents,
       updateLocale,
       deleteAccount,
+      emailAction,
     ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

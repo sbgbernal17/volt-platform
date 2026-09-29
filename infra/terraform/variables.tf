@@ -93,6 +93,12 @@ variable "synthetic_enabled" {
   default     = true
 }
 
+variable "synthetic_visible_in_app" {
+  description = "Publica el cargador sintético en la app como estación de pruebas y garantiza la tarifa base (solo dev y staging; el servicio lo rechaza en prod)."
+  type        = bool
+  default     = false
+}
+
 variable "placeholder_image" {
   description = "Imagen inicial de los servicios; el flujo de despliegue la reemplaza (Terraform ignora cambios de imagen)."
   type        = string

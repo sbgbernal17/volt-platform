@@ -9,6 +9,7 @@ api_public_ingress            = false
 allow_unauthenticated_invoker = true # excepción a Domain restricted sharing aplicada el 29-09-2026
 worker_min_instances          = 1
 synthetic_enabled             = true
+synthetic_visible_in_app      = true # estación de pruebas visible en la app (iteración 9)
 payments_provider             = "wompi"
 wompi_environment             = "sandbox"
 push_provider                 = "expo"

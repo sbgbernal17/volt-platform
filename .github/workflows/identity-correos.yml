@@ -1,0 +1,109 @@
+# Plantillas de correo de Identity Platform con la identidad VOLT (iteración 9, ADR 0024):
+# verificación de correo, contraseña nueva, cambio de correo y segundo factor, con la página propia
+# de la app web (/auth/action) como destino de los enlaces. Se aplica por ambiente con la API de
+# administración de Identity Toolkit; el flujo no imprime cuerpos ni tokens.
+name: Correos de identidad (plantillas VOLT)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente'
+        type: choice
+        default: dev
+        options: [dev, staging, prod]
+      dry_run:
+        description: 'Solo mostrar el estado actual y el cuerpo que se enviaría (sin aplicar)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: identity-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  ENVIRONMENT: ${{ inputs.environment }}
+
+jobs:
+  apply:
+    name: Plantillas (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Variables del ambiente
+        id: vars
+        run: |
+          suffix=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')
+          echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
+          if [ "$ENVIRONMENT" = "prod" ]; then
+            echo "app_host=app.supercargadores.co" >> "$GITHUB_OUTPUT"
+            echo "admin_host=admin.supercargadores.co" >> "$GITHUB_OUTPUT"
+          else
+            echo "app_host=app-${ENVIRONMENT}.supercargadores.co" >> "$GITHUB_OUTPUT"
+            echo "admin_host=admin-${ENVIRONMENT}.supercargadores.co" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', steps.vars.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Construir la configuración
+        env:
+          APP_HOST: ${{ steps.vars.outputs.app_host }}
+          ADMIN_HOST: ${{ steps.vars.outputs.admin_host }}
+        run: |
+          set -euo pipefail
+          node infra/identity/build-config.mjs --app-host "$APP_HOST" --admin-host "$ADMIN_HOST" > "$RUNNER_TEMP/config.json"
+          jq -r '.updateMask' "$RUNNER_TEMP/config.json"
+          jq '.body.notification.sendEmail | with_entries(if (.value | type) == "object" then .value |= {subject, senderDisplayName, bodyFormat, bodyChars: (.body | length)} else . end)' "$RUNNER_TEMP/config.json"
+
+      - name: Estado actual
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+        run: |
+          set -euo pipefail
+          token=$(gcloud auth print-access-token)
+          curl -sS -f -H "Authorization: Bearer $token" \
+            "https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT_ID}/config" > "$RUNNER_TEMP/current.json"
+          echo "## Estado actual (${ENVIRONMENT})" >> "$GITHUB_STEP_SUMMARY"
+          jq '{callbackUri: .notification.sendEmail.callbackUri, method: .notification.sendEmail.method, dnsInfo: .notification.sendEmail.dnsInfo, authorizedDomains, templates: (.notification.sendEmail | with_entries(select(.value | type == "object" and has("subject"))) | map_values({subject, senderDisplayName, customized, bodyFormat}))}' \
+            "$RUNNER_TEMP/current.json" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Aplicar plantillas y dominios autorizados
+        if: ${{ !inputs.dry_run }}
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+        run: |
+          set -euo pipefail
+          token=$(gcloud auth print-access-token)
+          mask=$(jq -r '.updateMask' "$RUNNER_TEMP/config.json")
+          jq '.body' "$RUNNER_TEMP/config.json" > "$RUNNER_TEMP/body.json"
+          curl -sS -f -X PATCH -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+            --data @"$RUNNER_TEMP/body.json" \
+            "https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT_ID}/config?updateMask=${mask}" > "$RUNNER_TEMP/after.json"
+          # Dominios autorizados: la página de acción y el back-office deben estar en la lista.
+          jq -n --slurpfile current "$RUNNER_TEMP/current.json" --slurpfile wanted "$RUNNER_TEMP/config.json" \
+            '{authorizedDomains: (($current[0].authorizedDomains // []) + $wanted[0].authorizedDomains | unique)}' > "$RUNNER_TEMP/domains.json"
+          if ! jq -e --slurpfile current "$RUNNER_TEMP/current.json" '.authorizedDomains == (($current[0].authorizedDomains // []) | unique)' "$RUNNER_TEMP/domains.json" >/dev/null; then
+            curl -sS -f -X PATCH -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+              --data @"$RUNNER_TEMP/domains.json" \
+              "https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT_ID}/config?updateMask=authorizedDomains" > "$RUNNER_TEMP/after.json"
+          fi
+          echo "## Resultado (${ENVIRONMENT})" >> "$GITHUB_STEP_SUMMARY"
+          jq '{callbackUri: .notification.sendEmail.callbackUri, authorizedDomains, templates: (.notification.sendEmail | with_entries(select(.value | type == "object" and has("subject"))) | map_values({subject, senderDisplayName, customized}))}' \
+            "$RUNNER_TEMP/after.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Correos de identidad (${ENVIRONMENT})::$(jq -c '{callbackUri: .notification.sendEmail.callbackUri, subjects: (.notification.sendEmail | with_entries(select(.value | type == "object" and has("subject"))) | map_values(.subject))}' "$RUNNER_TEMP/after.json")"

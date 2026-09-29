@@ -16,6 +16,8 @@ export interface AppConfig {
     apiBaseUrl: string | null;
   };
   legal: { termsUrl: string; privacyUrl: string; supportEmail: string | null };
+  /** Clave de navegador de Google Maps para la versión web (null: la web muestra solo la lista). */
+  maps: { browserKey: string | null };
   consentVersion: string;
 }
 

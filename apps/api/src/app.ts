@@ -231,6 +231,7 @@ export function buildApp({ config, gateway: injectedGateway }: AppDependencies):
         privacyUrl: config.APP_PRIVACY_URL,
         supportEmail: config.APP_SUPPORT_EMAIL ?? null,
       },
+      maps: { browserKey: config.GOOGLE_MAPS_BROWSER_KEY ?? null },
     };
     void app.register(publicRoutes, {
       prefix: '/v1',

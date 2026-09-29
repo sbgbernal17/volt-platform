@@ -20,6 +20,24 @@ export function money(
   }).format(value);
 }
 
+/** Importe en unidades mayores como texto decimal (`"1350"`, `"0.45"`), como llega en las tarifas. */
+export function moneyMajor(
+  value: string | null | undefined,
+  currency = 'COP',
+  locale: Locale = 'es',
+): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return value;
+  const exponent = currency === 'COP' ? 0 : 2;
+  return new Intl.NumberFormat(LOCALE_TAG[locale], {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: Math.max(exponent, value.includes('.') ? 2 : 0),
+    minimumFractionDigits: exponent,
+  }).format(number);
+}
+
 export function energyKwh(
   wh: string | number | bigint | null | undefined,
   locale: Locale = 'es',
@@ -31,6 +49,65 @@ export function energyKwh(
 export function powerKw(w: number | null | undefined, locale: Locale = 'es'): string {
   if (w === null || w === undefined) return '—';
   return `${new Intl.NumberFormat(LOCALE_TAG[locale], { maximumFractionDigits: 1 }).format(w / 1000)} kW`;
+}
+
+/** Nombre comercial del estándar de conector (OCPI `ConnectorType`) tal como lo conoce el conductor. */
+const STANDARD_LABELS: Record<string, string> = {
+  IEC_62196_T2_COMBO: 'CCS2',
+  IEC_62196_T1_COMBO: 'CCS1',
+  CHADEMO: 'CHAdeMO',
+  GBT_DC: 'GB/T DC',
+  GBT_AC: 'GB/T AC',
+  IEC_62196_T2: 'Tipo 2',
+  IEC_62196_T1: 'Tipo 1',
+  TESLA_S: 'Tesla',
+  DOMESTIC_B: 'Toma doméstica',
+};
+
+export function connectorStandard(
+  standard: string | null | undefined,
+  locale: Locale = 'es',
+): string {
+  if (!standard) return '—';
+  const label = STANDARD_LABELS[standard] ?? standard.replace(/_/g, ' ');
+  return locale === 'en'
+    ? label.replace('Tipo', 'Type').replace('Toma doméstica', 'Domestic')
+    : label;
+}
+
+export function powerTypeLabel(type: string | null | undefined, locale: Locale = 'es'): string {
+  switch (type) {
+    case 'DC':
+      return 'DC';
+    case 'AC_3_PHASE':
+      return locale === 'en' ? 'AC three-phase' : 'AC trifásica';
+    case 'AC_1_PHASE':
+      return locale === 'en' ? 'AC single-phase' : 'AC monofásica';
+    default:
+      return type ? type.replace(/_/g, ' ') : '—';
+  }
+}
+
+export interface ConnectorLike {
+  standard: string;
+  power_type?: string | null | undefined;
+  max_power_w: number | null;
+}
+
+/** Resumen de los conectores de un cargador: `2 × CCS2 · 180 kW`, `CCS1 + CCS2 · 90 kW`. */
+export function connectorSummary(
+  connectors: readonly ConnectorLike[] | null | undefined,
+  locale: Locale = 'es',
+): string {
+  if (!connectors || connectors.length === 0) return '—';
+  const counts = new Map<string, number>();
+  for (const connector of connectors) {
+    const label = connectorStandard(connector.standard, locale);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  const parts = [...counts.entries()].map(([label, n]) => (n > 1 ? `${n} × ${label}` : label));
+  const maxW = Math.max(...connectors.map((c) => c.max_power_w ?? 0));
+  return `${parts.join(' + ')}${maxW > 0 ? ` · ${powerKw(maxW, locale)}` : ''}`;
 }
 
 export function dateTime(value: string | Date | null | undefined, locale: Locale = 'es'): string {

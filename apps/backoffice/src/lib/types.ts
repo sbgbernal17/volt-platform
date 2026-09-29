@@ -30,6 +30,19 @@ export interface Connector {
   visible_in_app: boolean;
 }
 
+/** Resumen de un conector en las listas de cargadores (`GET /admin/v1/charge-points`). */
+export interface ConnectorSummary {
+  id: string;
+  evse_id: string;
+  evse_code: string;
+  ocpp_connector_id: number;
+  standard: string;
+  power_type: string;
+  max_power_w: number | null;
+  ocpp_status: string;
+  visible_in_app: boolean;
+}
+
 export interface ChargePoint {
   id: string;
   site_id: string;
@@ -48,6 +61,11 @@ export interface ChargePoint {
   heartbeat_interval_s: number;
   visible_in_app: boolean;
   created_at: string;
+}
+
+/** Fila de `GET /admin/v1/charge-points`: el cargador con el resumen de sus conectores. */
+export interface ChargePointListItem extends ChargePoint {
+  connectors: ConnectorSummary[];
 }
 
 export interface ConfigEntry {
