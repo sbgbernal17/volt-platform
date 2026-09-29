@@ -1,0 +1,99 @@
+# Comprueba la API de un ambiente desde fuera sin entrar a la consola: revisión lista, entrada
+# efectiva y respuesta de /healthz por la URL heredada y la determinista de Cloud Run (con token de
+# identidad de la cuenta de despliegue) y, si se indica, por el balanceador (api-<env>.<dominio>).
+name: Comprobación de la API
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente'
+        type: choice
+        default: dev
+        options: [dev, staging, prod]
+      via_lb:
+        description: 'Probar también por el balanceador (requiere DNS y certificado)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ENVIRONMENT: ${{ inputs.environment }}
+  REGION: us-central1
+  DOMAIN: supercargadores.co
+
+jobs:
+  comprobar:
+    name: Comprobar API (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - id: vars
+        run: echo "suffix=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_OUTPUT"
+      - name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', steps.vars.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: URLs y estado del servicio
+        id: svc
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+        run: |
+          set -euo pipefail
+          number=$(gcloud projects describe "$PROJECT_ID" --format 'value(projectNumber)')
+          legacy=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(status.url)')
+          det="https://api-${number}.${REGION}.run.app"
+          ready=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(status.conditions[0].type,status.conditions[0].status)' | tr '\t' '=')
+          ingress=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(metadata.annotations."run.googleapis.com/ingress",metadata.annotations."run.googleapis.com/ingress-status")' | tr '\t' '/')
+          urls=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(status.address.url)')
+          echo "legacy=$legacy" >> "$GITHUB_OUTPUT"; echo "det=$det" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Servicio api::$ready entrada=$ingress url=$legacy address=$urls determinista=$det"
+      - name: Token para la URL heredada
+        id: tok_legacy
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', steps.vars.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+          token_format: id_token
+          id_token_audience: ${{ steps.svc.outputs.legacy }}
+          id_token_include_email: true
+      - name: Token para la URL determinista
+        id: tok_det
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', steps.vars.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+          token_format: id_token
+          id_token_audience: ${{ steps.svc.outputs.det }}
+          id_token_include_email: true
+      - name: Peticiones a /healthz
+        env:
+          LEGACY: ${{ steps.svc.outputs.legacy }}
+          DET: ${{ steps.svc.outputs.det }}
+          TOK_LEGACY: ${{ steps.tok_legacy.outputs.id_token }}
+          TOK_DET: ${{ steps.tok_det.outputs.id_token }}
+          VIA_LB: ${{ inputs.via_lb }}
+        run: |
+          set +e
+          probe() { # nombre url [token]
+            if [ -n "${3:-}" ]; then code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $3" "$2"); else code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 20 "$2"); fi
+            body=$(head -c 160 /tmp/body 2>/dev/null | sed 's/<[^>]*>//g' | tr '\n' ' ')
+            echo "::notice title=$1::$2 -> $code ${body}"
+            echo "$1: $code"
+          }
+          probe "heredada sin token" "$LEGACY/healthz"
+          probe "heredada con token" "$LEGACY/healthz" "$TOK_LEGACY"
+          probe "determinista sin token" "$DET/healthz"
+          probe "determinista con token" "$DET/healthz" "$TOK_DET"
+          if [ "$VIA_LB" = "true" ]; then
+            if [ "$ENVIRONMENT" = "prod" ]; then host="api.$DOMAIN"; else host="api-$ENVIRONMENT.$DOMAIN"; fi
+            probe "balanceador" "https://$host/healthz"
+          fi
