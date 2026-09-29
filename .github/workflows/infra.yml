@@ -16,6 +16,10 @@ on:
         type: choice
         default: plan
         options: [plan, apply]
+      replace:
+        description: 'Dirección de un recurso a recrear (terraform -replace), por ejemplo google_cloud_run_v2_service.api; vacío: ninguno'
+        type: string
+        default: ''
   pull_request:
     paths: ['infra/terraform/**', '.github/workflows/infra.yml']
   push:
@@ -82,8 +86,11 @@ jobs:
         env:
           PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
           DEPLOYER_SA: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          REPLACE: ${{ inputs.replace }}
         run: |
-          terraform plan -input=false -no-color -out=tfplan \
+          replace_args=()
+          if [ -n "${REPLACE:-}" ]; then replace_args=(-replace="$REPLACE"); echo "Recreando: $REPLACE"; fi
+          terraform plan -input=false -no-color -out=tfplan "${replace_args[@]}" \
             -var-file="envs/${ENVIRONMENT}.tfvars" \
             -var "project_id=${PROJECT_ID}" \
             -var "deployer_service_account=${DEPLOYER_SA}" | tee plan.txt
