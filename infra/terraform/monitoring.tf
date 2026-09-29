@@ -675,15 +675,11 @@ resource "google_logging_project_bucket_config" "audit" {
   depends_on     = [time_sleep.deployer_roles]
 }
 
+# Destino en el mismo proyecto: el sumidero escribe sin identidad propia (writer_identity vacío),
+# no hace falta conceder roles/logging.bucketWriter.
 resource "google_logging_project_sink" "audit" {
   name                   = "audit-to-bucket"
   destination            = "logging.googleapis.com/${google_logging_project_bucket_config.audit.id}"
   filter                 = "logName:\"cloudaudit.googleapis.com\""
   unique_writer_identity = true
-}
-
-resource "google_project_iam_member" "audit_sink_writer" {
-  project = var.project_id
-  role    = "roles/logging.bucketWriter"
-  member  = google_logging_project_sink.audit.writer_identity
 }

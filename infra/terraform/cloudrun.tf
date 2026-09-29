@@ -275,7 +275,7 @@ resource "google_cloud_run_v2_service" "synthetic" {
       }
       egress = "PRIVATE_RANGES_ONLY"
     }
-    # Con menos de 1 vCPU Cloud Run exige concurrencia 1 (solo atiende /healthz).
+    # Solo atiende /healthz.
     max_instance_request_concurrency = 1
     timeout                          = "300s"
 
@@ -285,8 +285,9 @@ resource "google_cloud_run_v2_service" "synthetic" {
         container_port = 8080
       }
       resources {
-        # Medio vCPU siempre asignado: el simulador casi no consume y el proceso vive todo el mes.
-        limits            = { cpu = "0.5", memory = "512Mi" }
+        # El proceso vive todo el mes conectado por WebSocket: CPU siempre asignada, y Cloud Run
+        # no admite menos de 1 vCPU en ese modo (~45 USD/mes por ambiente).
+        limits            = { cpu = "1", memory = "512Mi" }
         cpu_idle          = false
         startup_cpu_boost = false
       }
