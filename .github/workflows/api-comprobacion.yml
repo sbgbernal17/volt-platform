@@ -31,6 +31,10 @@ on:
         description: 'hello-probe con la imagen de la API (sin secretos) en vez de la imagen hello de Google'
         type: boolean
         default: false
+      reset_url:
+        description: 'Deshabilitar y volver a habilitar la URL por defecto de la API para forzar su registro en el borde'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -108,6 +112,7 @@ jobs:
           TOK_DET: ${{ steps.tok_det.outputs.id_token }}
           VIA_LB: ${{ inputs.via_lb }}
           RESET_INGRESS: ${{ inputs.reset_ingress }}
+          RESET_URL: ${{ inputs.reset_url }}
         run: |
           set +e
           probe() { # nombre url [token]
@@ -137,6 +142,14 @@ jobs:
           done
           gcloud org-policies list --project "$PROJECT_ID" --format 'value(constraint)' 2>&1 | head -20
           echo "::endgroup::"
+          if [ "$RESET_URL" = "true" ]; then
+            echo "::group::Reaplicando la URL por defecto de la API"
+            gcloud run services update api --region "$REGION" --project "$PROJECT_ID" --no-default-url --quiet 2>&1 | tail -2
+            sleep 20
+            gcloud run services update api --region "$REGION" --project "$PROJECT_ID" --default-url --quiet 2>&1 | tail -2
+            sleep 45
+            echo "::endgroup::"
+          fi
           if [ "$RESET_INGRESS" = "true" ]; then
             echo "::group::Reaplicando la entrada de la API"
             gcloud run services update api --region "$REGION" --project "$PROJECT_ID" --ingress internal --quiet 2>&1 | tail -2
