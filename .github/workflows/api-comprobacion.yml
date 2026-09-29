@@ -35,6 +35,10 @@ on:
         description: 'Deshabilitar y volver a habilitar la URL por defecto de la API para forzar su registro en el borde'
         type: boolean
         default: false
+      probe_name:
+        description: 'Nombre del servicio de prueba (para comprobar si el nombre afecta al enrutamiento)'
+        type: string
+        default: 'hello-probe'
 
 permissions:
   contents: read
@@ -173,6 +177,7 @@ jobs:
           PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
           PROBE_VPC: ${{ inputs.probe_vpc }}
           PROBE_IMAGE: ${{ inputs.probe_image }}
+          PROBE_NAME: ${{ inputs.probe_name }}
         run: |
           set -euo pipefail
           extra=""
@@ -188,10 +193,10 @@ jobs:
             extra="$extra --set-env-vars NODE_ENV=production,VOLT_ENV=dev,LOG_LEVEL=info,API_PORT=8080,API_HOST=0.0.0.0 --port 8080"
             echo "hello-probe con la imagen de la API: $image"
           fi
-          gcloud run deploy hello-probe --image "$image" --region "$REGION" \
+          gcloud run deploy "$PROBE_NAME" --image "$image" --region "$REGION" \
             --project "$PROJECT_ID" --ingress all --no-allow-unauthenticated --quiet $extra >/dev/null
-          url=$(gcloud run services describe hello-probe --region "$REGION" --project "$PROJECT_ID" --format 'value(status.url)')
-          echo "url=$url" >> "$GITHUB_OUTPUT"; echo "hello-probe: $url"
+          url=$(gcloud run services describe "$PROBE_NAME" --region "$REGION" --project "$PROJECT_ID" --format 'value(status.url)')
+          echo "url=$url" >> "$GITHUB_OUTPUT"; echo "$PROBE_NAME: $url"
       - name: Token para hello-probe
         if: inputs.probe_hello
         id: tok_hello
@@ -219,4 +224,4 @@ jobs:
         if: always() && inputs.probe_hello
         env:
           PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
-        run: gcloud run services delete hello-probe --region "$REGION" --project "$PROJECT_ID" --quiet || true
+        run: gcloud run services delete "${{ inputs.probe_name }}" --region "$REGION" --project "$PROJECT_ID" --quiet || true
