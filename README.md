@@ -63,7 +63,7 @@ Con `DATABASE_URL` el gateway autentica contra el inventario (`assets.charge_poi
 
 ## Despliegue en Google Cloud
 
-Flujos de GitHub Actions (sin claves, con Workload Identity Federation): *Infraestructura (Terraform)* hace `plan` en cada cambio y `apply` a mano por ambiente; *Despliegue* construye las imágenes, aplica migraciones y actualiza Cloud Run y GKE (dev en cada push a `main`, staging y prod a mano); *Diagnóstico de GKE* muestra pods, eventos y registros del gateway de un ambiente. Detalles en `infra/terraform/README.md`, `infra/k8s/ocpp-gateway/README.md` y el ADR 0023.
+Flujos de GitHub Actions (sin claves, con Workload Identity Federation): *Infraestructura (Terraform)* hace `plan` en cada cambio y `apply` a mano por ambiente; *Despliegue* construye las imágenes, aplica migraciones y actualiza Cloud Run y GKE (dev en cada push a `main`, staging y prod a mano); *Diagnóstico de GKE* muestra pods, eventos y registros del gateway de un ambiente; *Comprobación de la API* verifica la revisión, la entrada y `/healthz` de la API (por Cloud Run y, con DNS, por el balanceador). Detalles en `infra/terraform/README.md`, `infra/k8s/ocpp-gateway/README.md` y el ADR 0023.
 
 ## Próximos pasos
 

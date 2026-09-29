@@ -7,3 +7,5 @@
 3. **Cuota y escalado:** instancias en el panel; `api_max_instances` en `envs/<env>.tfvars`. Con Cloud Armor activo, un 429 masivo por IP puede ser un cliente mal comportado o un límite demasiado bajo (`armor.tf`).
 4. **Certificado o DNS:** `curl -sv https://api-<env>.supercargadores.co/healthz`; en Certificate Manager el certificado `volt-<env>-web` debe estar `ACTIVE`.
 5. **Política de presupuesto de error:** si el presupuesto mensual baja del 20 %, se congelan despliegues no correctivos (OPS §2.4).
+
+**Comprobar la API desde fuera:** flujo *Comprobación de la API* (ambiente; marcar "por el balanceador" cuando el DNS resuelva). Muestra la revisión lista, la entrada efectiva, la definición v2 del servicio y el código de `/healthz`. Las URL `*.run.app` de `api` responden 404 en el borde (punto abierto del ADR 0023); la ruta válida es `https://api[-<ambiente>].supercargadores.co`.
