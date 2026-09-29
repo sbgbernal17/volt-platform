@@ -21,6 +21,8 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "identitytoolkit.googleapis.com",
+    # Lectura de las políticas de organización efectivas desde los flujos de comprobación.
+    "orgpolicy.googleapis.com",
   ])
   service            = each.value
   disable_on_destroy = false
