@@ -55,12 +55,24 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
+// Variante sin cuerpo HTML: Identity Platform rechaza cambiar el cuerpo de las plantillas
+// (EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED) en proyectos sin esa capacidad habilitada; remitente,
+// asunto y página de acción sí se aplican.
+const sendEmailHeadersOnly = Object.fromEntries(
+  Object.entries(sendEmail).map(([key, value]) => {
+    if (typeof value !== 'object' || value === null) return [key, value];
+    const { body: _body, bodyFormat: _format, ...rest } = value;
+    return [key, rest];
+  }),
+);
+
 process.stdout.write(
   `${JSON.stringify(
     {
       updateMask: updateMask.join(','),
       authorizedDomains: [appHost, adminHost],
       body: { notification: { sendEmail } },
+      bodyHeadersOnly: { notification: { sendEmail: sendEmailHeadersOnly } },
     },
     null,
     2,

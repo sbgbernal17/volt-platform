@@ -109,14 +109,23 @@ jobs:
           else
             patch "Dominios autorizados" "$RUNNER_TEMP/domains.json" authorizedDomains
           fi
-          # 2. Plantillas y página de acción; si la página se rechaza, al menos quedan las plantillas.
+          # 2. Plantillas completas (cuerpo HTML con la marca), remitente y página de acción.
           mask=$(jq -r '.updateMask' "$RUNNER_TEMP/config.json")
           jq '.body' "$RUNNER_TEMP/config.json" > "$RUNNER_TEMP/body.json"
-          if ! patch "Plantillas y página de acción" "$RUNNER_TEMP/body.json" "$mask"; then
-            jq 'del(.notification.sendEmail.callbackUri)' "$RUNNER_TEMP/body.json" > "$RUNNER_TEMP/body-sin-callback.json"
-            mask2=$(echo "$mask" | sed 's/notification\.sendEmail\.callbackUri,//')
-            patch "Plantillas sin página de acción" "$RUNNER_TEMP/body-sin-callback.json" "$mask2"
-            echo "::warning title=Página de acción no aplicada::Las plantillas quedaron aplicadas; el callbackUri fue rechazado (ver el error anterior)."
+          if patch "Plantillas completas y página de acción" "$RUNNER_TEMP/body.json" "$mask"; then
+            echo "cuerpo=html" >> "$GITHUB_OUTPUT"
+          else
+            # Identity Platform no permite cambiar el cuerpo en este proyecto (EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED):
+            # se aplican remitente, asuntos y página de acción, que sí admite.
+            jq '.bodyHeadersOnly' "$RUNNER_TEMP/config.json" > "$RUNNER_TEMP/body-sin-html.json"
+            if patch "Remitente, asuntos y página de acción (sin cuerpo HTML)" "$RUNNER_TEMP/body-sin-html.json" "$mask"; then
+              echo "::warning title=Cuerpo de los correos no personalizado::Identity Platform rechazó el cuerpo HTML (EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED). Quedaron aplicados el remitente VOLT, los asuntos en español y la página de acción propia; el cuerpo sigue siendo el de Google."
+            else
+              jq 'del(.notification.sendEmail.callbackUri)' "$RUNNER_TEMP/body-sin-html.json" > "$RUNNER_TEMP/body-minimo.json"
+              mask2=$(echo "$mask" | sed 's/notification\.sendEmail\.callbackUri,//')
+              patch "Remitente y asuntos" "$RUNNER_TEMP/body-minimo.json" "$mask2"
+              echo "::warning title=Página de acción no aplicada::El callbackUri fue rechazado (ver el error anterior); quedaron el remitente y los asuntos."
+            fi
           fi
           echo "## Resultado (${ENVIRONMENT})" >> "$GITHUB_STEP_SUMMARY"
           jq '{callbackUri: .notification.sendEmail.callbackUri, authorizedDomains, templates: (.notification.sendEmail | with_entries(select(.value | type == "object" and has("subject"))) | map_values({subject, senderDisplayName, customized}))}' \
