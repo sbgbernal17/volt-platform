@@ -20,6 +20,8 @@ secrets/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+# Variables por ambiente sin secretos (los secretos viven en Secret Manager)
+!infra/terraform/envs/*.tfvars
 crash.log
 
 # Editores y sistema
