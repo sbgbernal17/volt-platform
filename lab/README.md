@@ -158,4 +158,14 @@ Se integran en CI en la iteración 1 contra el gateway. La certificación formal
 
 ## Cargador real
 
-El cargador de laboratorio se apunta a `wss://ocpp.staging.<dominio>/ocpp/<chargeBoxId>` con perfil de seguridad 2 cuando exista staging (iteración 8). Hasta entonces puede apuntarse al gateway local por `ws://` solo dentro de la red del laboratorio.
+El cargador de laboratorio se apunta a `wss://ocpp-staging.supercargadores.co/ocpp/<chargeBoxId>` con perfil de seguridad 2 (Basic Auth sobre TLS; usuario = `chargeBoxId`, contraseña = la credencial emitida por la API) en cuanto el DNS de staging resuelva (iteración 8, tareas del dueño). Hasta entonces puede apuntarse al gateway local por `ws://` solo dentro de la red del laboratorio.
+
+## Ambientes en Google Cloud (iteración 8)
+
+Infraestructura y despliegue en `infra/terraform/README.md` y el ADR 0023. Para probar contra dev (`volt-dev-509415`):
+
+1. **API sin DNS ni acceso anónimo todavía.** Mientras la política de organización no admita `allUsers` (tareas del dueño), la API solo responde a identidades de Google con permiso de invocación (el dueño del proyecto lo tiene): `gcloud run services proxy api --region us-central1 --project volt-dev-509415 --port 8080` y luego `curl http://localhost:8080/healthz`. Cuando existan los registros DNS y la excepción, la URL pública es `https://api-dev.supercargadores.co`.
+2. **Administración en dev.** La API acepta el token estático de administración (`gcloud secrets versions access latest --secret api-admin-token --project volt-dev-509415`; nunca lo pegues en el chat) como `Authorization: Bearer <token>` en `/admin/v1`, igual que en local. Back-office y app web: `https://admin-dev.supercargadores.co` y `https://app-dev.supercargadores.co` con el DNS listo.
+3. **Cargador sintético.** `VOLT-SYNTH-DEV` en la sede privada `SYNTH` se conecta por `wss://ocpp-dev.supercargadores.co/ocpp/...` y registra un ciclo cada 5 minutos (`synthetic.cycle`); se ve en el panel *Volt dev: plataforma* de Cloud Monitoring y en Logs Explorer (`jsonPayload.event="synthetic.cycle"`). Sin DNS los ciclos fallan y se abre la alarma `CHARGER_OFFLINE` del sintético: es la prueba de que la alarma funciona.
+4. **Un simulador externo contra dev:** `wss://ocpp-dev.supercargadores.co/ocpp/<chargeBoxId>` con la credencial que emita la API (misma secuencia que "Cargador real").
+5. **Registros:** Logs Explorer con `resource.type="cloud_run_revision" resource.labels.service_name="api"` (o `worker`, `synthetic-charger`) y `resource.type="k8s_container" resource.labels.container_name="ocpp-gateway"`; las alertas llegan al correo del canal (`alert_emails`) con el enlace al runbook (`docs/runbooks/`).
