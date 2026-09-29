@@ -299,7 +299,11 @@ resource "google_cloud_run_v2_service" "synthetic" {
           SYNTHETIC_CHARGE_BOX_ID = "VOLT-SYNTH-${upper(var.env)}"
           SYNTHETIC_API_URL       = "https://${local.hosts.api}"
           SYNTHETIC_CYCLE_MINUTES = "5"
-        })
+          }, local.api_admin_token_enabled ? {
+          # Fuera de prod: una sesión de prueba por hora por la API de administración (carga sintética).
+          SYNTHETIC_SESSION_EVERY_CYCLES = "12"
+          SYNTHETIC_SESSION_SECONDS      = "60"
+        } : {})
         content {
           name  = env.key
           value = env.value
