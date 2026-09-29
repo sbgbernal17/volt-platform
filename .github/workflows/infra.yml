@@ -131,4 +131,4 @@ jobs:
             echo "registry: $(terraform output -raw registry)"
             echo "cluster: $(terraform output -raw cluster_name) ($(terraform output -raw cluster_location))"
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"

@@ -29,6 +29,9 @@ Desde GitHub Actions, flujo *Infraestructura (Terraform)*: `plan` corre solo en 
 1. El resumen del flujo imprime los registros `A` (dos IP por ambiente); el dueño los añade en Netlify DNS y los certificados se emiten solos. Luego `public_dns_ready = true` en `envs/<env>.tfvars` y otro `apply` activa uptime checks y SLO del gateway.
 2. El flujo *Despliegue* construye las imágenes, aplica migraciones, actualiza Cloud Run y despliega el gateway en GKE (`infra/k8s/ocpp-gateway`), que crea el balanceador de los cargadores.
 3. En staging el propio despliegue copia las llaves de prueba de Wompi a Secret Manager; en prod las escribe el dueño (Consola → Secret Manager → `wompi-*` → nueva versión).
+4. Cuando el dueño exceptúe la política de organización *Domain restricted sharing* (`iam.allowedPolicyMemberDomains`) en el proyecto, `allow_unauthenticated_invoker = true` en `envs/<env>.tfvars` y otro `apply` conceden `roles/run.invoker` a `allUsers` en `api`, `backoffice` y `app-web`; hasta entonces el balanceador web responde 403 (ADR 0023, decisión 16).
+
+Si el primer `apply` de un ambiente falla con un 403 sobre un permiso que el propio `apply` acaba de conceder (propagación de IAM), basta relanzarlo: el `time_sleep` de `iam.tf` ordena los casos conocidos, pero la propagación no tiene plazo garantizado.
 
 En local solo formato y validación (sin credenciales): `terraform init -backend=false && terraform validate`. CI lo comprueba en cada push.
 
