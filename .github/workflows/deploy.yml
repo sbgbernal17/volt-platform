@@ -203,7 +203,7 @@ jobs:
           export PROJECT_NUMBER=$(jq -r '.project_number.value' "$RUNNER_TEMP/outputs.json")
           export IMAGE="$REGISTRY/ocpp-gateway" TAG VOLT_ENV="$ENVIRONMENT"
           export GSA_EMAIL="$gsa_email" OCPP_HOST="$ocpp_host" OCPP_ADDRESS_NAME="$ocpp_address_name"
-          export OCPP_CERTIFICATE_MAP="$ocpp_certificate_map" OCPP_SSL_POLICY="$ocpp_ssl_policy"
+          export OCPP_SSL_CERTIFICATE="$ocpp_ssl_certificate" OCPP_SSL_POLICY="$ocpp_ssl_policy"
           export OCPP_SECURITY_POLICY="$ocpp_security_policy" GATEWAY_REPLICAS="$replicas"
           export GATEWAY_MAX_REPLICAS="$max_replicas" GATEWAY_CPU="$cpu" GATEWAY_MEMORY="$memory"
           out="$RUNNER_TEMP/k8s"; mkdir -p "$out"
