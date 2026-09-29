@@ -254,9 +254,14 @@ jobs:
           api_url="$API_URL"
           if [ "$ENVIRONMENT" = "dev" ]; then
             code=$(curl -sS -o "$RUNNER_TEMP/healthz.json" -w '%{http_code}' --max-time 20 \
-              -H "Authorization: Bearer $ID_TOKEN" "$api_url/healthz")
-            echo "GET /healthz -> $code"; head -c 300 "$RUNNER_TEMP/healthz.json"; echo
-            [ "$code" = "200" ]
+              -H "Authorization: Bearer $ID_TOKEN" "$api_url/healthz" || echo "000")
+            body=$(head -c 300 "$RUNNER_TEMP/healthz.json" 2>/dev/null | tr '\n' ' ')
+            echo "GET /healthz -> $code $body"
+            if [ "$code" != "200" ]; then
+              echo "::error title=Comprobación de la API::GET $api_url/healthz respondió $code: $body"
+              exit 1
+            fi
+            echo "::notice title=Comprobación de la API::GET /healthz respondió 200: $body"
           fi
           {
             echo "## Despliegue ${ENVIRONMENT} (${TAG})"

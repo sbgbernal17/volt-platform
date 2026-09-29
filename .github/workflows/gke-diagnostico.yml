@@ -47,6 +47,22 @@ jobs:
           location: ${{ env.REGION }}
           project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
           use_dns_based_endpoint: true
+      - name: Resumen como anotaciones (legibles por la API de GitHub)
+        run: |
+          set +e
+          pods=$(kubectl get pods -n volt -o jsonpath='{range .items[*]}{.metadata.name} fase={.status.phase} listo={.status.conditions[?(@.type=="Ready")].status} espera={.status.containerStatuses[0].state.waiting.reason} reinicios={.status.containerStatuses[0].restartCount}; {end}')
+          echo "::notice title=Pods::${pods:-sin pods}"
+          gw=$(kubectl get gateway ocpp -n volt -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}: {.message}); {end}' 2>/dev/null | head -c 3500)
+          addr=$(kubectl get gateway ocpp -n volt -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
+          echo "::notice title=Gateway ocpp::direccion=${addr:-sin direccion} condiciones: ${gw:-sin estado}"
+          route=$(kubectl get httproute ocpp -n volt -o jsonpath='{range .status.parents[0].conditions[*]}{.type}={.status} ({.reason}); {end}' 2>/dev/null | head -c 1500)
+          echo "::notice title=HTTPRoute ocpp::${route:-sin estado}"
+          warn=$(kubectl get events -n volt --field-selector type=Warning --sort-by=.lastTimestamp -o jsonpath='{range .items[*]}{.lastTimestamp} {.involvedObject.kind}/{.involvedObject.name}: {.message}{"\n"}{end}' 2>/dev/null | tail -5 | cut -c1-700 | tr '\n' '|')
+          echo "::notice title=Ultimos eventos de aviso::${warn:-ninguno}"
+          for pod in $(kubectl get pods -n volt -o name); do
+            last=$(kubectl logs "$pod" -n volt --tail=8 2>&1 | cut -c1-400 | tr '\n' '|')
+            echo "::notice title=Registro ${pod}::${last:-vacio}"
+          done
       - name: Estado del espacio de nombres volt
         run: |
           set +e
