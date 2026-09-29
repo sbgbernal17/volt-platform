@@ -92,7 +92,7 @@ jobs:
           echo "::notice title=Servicio api (API v2)::${v2:-sin respuesta}"
           echo "$v2"
           # Certificados de los dos balanceadores (se emiten cuando el DNS apunta a las IP).
-          web=$(gcloud certificate-manager certificates describe "volt-${ENVIRONMENT}-web" --location global --project "$PROJECT_ID" --format 'value(managed.state,managed.domains)' 2>&1 | tr '\t' ' ' | head -c 300)
+          web=$(gcloud certificate-manager certificates describe "volt-${ENVIRONMENT}-web" --location global --project "$PROJECT_ID" --format 'value(managed.state,managed.domains,managed.provisioningIssue,managed.authorizationAttemptInfo)' 2>&1 | tr '\t' ' ' | head -c 900)
           ocpp=$(gcloud compute ssl-certificates describe "volt-${ENVIRONMENT}-ocpp" --global --project "$PROJECT_ID" --format 'value(managed.status,managed.domainStatus)' 2>&1 | tr '\t' ' ' | head -c 300)
           echo "::notice title=Certificados::web=${web:-?} | ocpp=${ocpp:-?}"
           for h in api admin app ocpp; do
@@ -180,8 +180,15 @@ jobs:
           probe "determinista sin token" "$DET/healthz"
           probe "determinista con token" "$DET/healthz" "$TOK_DET"
           if [ "$VIA_LB" = "true" ]; then
-            if [ "$ENVIRONMENT" = "prod" ]; then host="api.$DOMAIN"; else host="api-$ENVIRONMENT.$DOMAIN"; fi
-            probe "balanceador" "https://$host/healthz"
+            if [ "$ENVIRONMENT" = "prod" ]; then host="api.$DOMAIN"; ocpp="ocpp.$DOMAIN"; else host="api-$ENVIRONMENT.$DOMAIN"; ocpp="ocpp-$ENVIRONMENT.$DOMAIN"; fi
+            probe "balanceador web (api)" "https://$host/healthz"
+            probe "balanceador ocpp (gateway)" "https://$ocpp/healthz"
+            echo "::group::Cargador sintético y alarmas (últimos 30 min)"
+            gcloud logging read 'jsonPayload.event="synthetic.cycle"' --project "$PROJECT_ID" --freshness=30m --limit 3 --format 'value(timestamp,jsonPayload.result,jsonPayload.message)' || true
+            gcloud logging read 'jsonPayload.event="alarm.raised" OR jsonPayload.event="alarm.resolved"' --project "$PROJECT_ID" --freshness=6h --limit 6 --format 'value(timestamp,jsonPayload.event,jsonPayload.kind,jsonPayload.message)' || true
+            echo "::endgroup::"
+            cyc=$(gcloud logging read 'jsonPayload.event="synthetic.cycle"' --project "$PROJECT_ID" --freshness=30m --limit 3 --format 'value(timestamp,jsonPayload.result)' 2>/dev/null | tr '\t' '=' | tr '\n' ' ')
+            echo "::notice title=Ciclos del cargador sintético::${cyc:-sin ciclos en 30 min}"
           fi
       - name: Servicio de prueba hello-probe
         if: inputs.probe_hello
