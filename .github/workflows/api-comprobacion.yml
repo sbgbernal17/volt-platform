@@ -39,6 +39,10 @@ on:
         description: 'Nombre del servicio de prueba (para comprobar si el nombre afecta al enrutamiento)'
         type: string
         default: 'hello-probe'
+      probe_like_api:
+        description: 'hello-probe con etiquetas, cuenta de servicio, tiempo de espera y escalado iguales a los de la API'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -178,6 +182,7 @@ jobs:
           PROBE_VPC: ${{ inputs.probe_vpc }}
           PROBE_IMAGE: ${{ inputs.probe_image }}
           PROBE_NAME: ${{ inputs.probe_name }}
+          PROBE_LIKE_API: ${{ inputs.probe_like_api }}
         run: |
           set -euo pipefail
           extra=""
@@ -188,6 +193,11 @@ jobs:
             echo "hello-probe con red: $extra"
           fi
           image="us-docker.pkg.dev/cloudrun/container/hello"
+          if [ "$PROBE_LIKE_API" = "true" ]; then
+            sa=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(spec.template.spec.serviceAccountName)')
+            extra="$extra --service-account $sa --timeout 3600 --max-instances 10 --cpu 1 --memory 512Mi --concurrency 80 --labels app=volt,env=$ENVIRONMENT,managed-by=terraform,goog-terraform-provisioned=true"
+            echo "hello-probe como la API: $extra"
+          fi
           if [ "$PROBE_IMAGE" = "true" ]; then
             image=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(spec.template.spec.containers[0].image)')
             extra="$extra --set-env-vars NODE_ENV=production,VOLT_ENV=dev,LOG_LEVEL=info,API_PORT=8080,API_HOST=0.0.0.0 --port 8080"
