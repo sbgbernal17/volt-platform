@@ -54,6 +54,9 @@ jobs:
           urls=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(status.address.url)')
           echo "legacy=$legacy" >> "$GITHUB_OUTPUT"; echo "det=$det" >> "$GITHUB_OUTPUT"
           echo "::notice title=Servicio api::$ready entrada=$ingress url=$legacy address=$urls determinista=$det"
+          ann=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(metadata.annotations)' | tr ';' ' ' | cut -c1-900)
+          echo "::notice title=Anotaciones del servicio::${ann:-ninguna}"
+          gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'yaml(metadata.annotations,spec.template.metadata.annotations,status.url,status.address)'
       - name: Token para la URL heredada
         id: tok_legacy
         uses: google-github-actions/auth@v2

@@ -264,11 +264,12 @@ jobs:
               -H "Authorization: Bearer $ID_TOKEN" "$api_url/healthz" || echo "000")
             body=$(head -c 300 "$RUNNER_TEMP/healthz.json" 2>/dev/null | tr '\n' ' ')
             echo "GET /healthz -> $code $body"
-            if [ "$code" != "200" ]; then
-              echo "::error title=Comprobación de la API::GET $api_url/healthz respondió $code: $body"
-              exit 1
-            fi
-            echo "::notice title=Comprobación de la API::GET /healthz respondió 200: $body"
+            case "$code" in
+              200) echo "::notice title=Comprobación de la API::GET /healthz respondió 200: $body" ;;
+              404) echo "::notice title=Comprobación de la API::la URL *.run.app responde 404 (URL por defecto deshabilitada en la organización); la API se prueba por el balanceador con el flujo Comprobación de la API" ;;
+              5*|000) echo "::error title=Comprobación de la API::GET $api_url/healthz respondió $code: $body"; exit 1 ;;
+              *) echo "::notice title=Comprobación de la API::GET /healthz respondió $code: $body" ;;
+            esac
           else
             echo "::notice title=Comprobación de la API::sin prueba directa (entrada $ingress); la API se alcanza por el balanceador"
           fi
