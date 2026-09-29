@@ -183,6 +183,41 @@ jobs:
             if [ "$ENVIRONMENT" = "prod" ]; then host="api.$DOMAIN"; ocpp="ocpp.$DOMAIN"; else host="api-$ENVIRONMENT.$DOMAIN"; ocpp="ocpp-$ENVIRONMENT.$DOMAIN"; fi
             probe "balanceador web (api)" "https://$host/healthz"
             probe "balanceador ocpp (gateway)" "https://$ocpp/healthz"
+            # Iteración 9: página de acción de los correos y logotipo en la app web, clave de mapas en el
+            # back-office (enmascarada) y estaciones visibles en la app (estación de pruebas virtual).
+            if [ "$ENVIRONMENT" = "prod" ]; then app="app.$DOMAIN"; admin="admin.$DOMAIN"; else app="app-$ENVIRONMENT.$DOMAIN"; admin="admin-$ENVIRONMENT.$DOMAIN"; fi
+            probe "app web (página de acción de correos)" "https://$app/auth/action"
+            probe "app web (logotipo para correos)" "https://$app/brand/volt-logo-blanco.png"
+            cfg=$(curl -sS --max-time 20 "https://$admin/config.js" | sed -E 's/(googleMapsApiKey: ")([A-Za-z0-9_-]{6})[^"]*"/\1\2…"/')
+            echo "::notice title=back-office config.js::${cfg:-sin respuesta}"
+            curl -sS --max-time 20 "https://$host/v1/locations" > /tmp/locations.json || true
+            loc=$(python3 - <<'PY'
+          import json
+          try:
+              items = json.load(open('/tmp/locations.json')).get('items', [])
+              text = '; '.join(
+                  f"{l['name']} ({l.get('city') or '-'}): "
+                  + (', '.join(f"{e['evseId']} {e['status']} {e['maxPowerKw']} kW" for e in l['evses']) or 'sin conectores')
+                  for l in items
+              )
+              print(text or 'sin estaciones visibles')
+          except Exception as error:
+              print(f'error: {error}')
+          PY
+          )
+            echo "::notice title=Estaciones visibles en la app (/v1/locations)::${loc}"
+            curl -sS --max-time 20 "https://$host/v1/config" > /tmp/config.json || true
+            maps=$(python3 - <<'PY'
+          import json
+          try:
+              d = json.load(open('/tmp/config.json'))
+              key = (d.get('maps') or {}).get('browserKey')
+              print(f"clave de Google Maps presente ({key[:6]}…)" if key else 'sin clave de Google Maps')
+          except Exception as error:
+              print(f'error: {error}')
+          PY
+          )
+            echo "::notice title=Config pública de la app (/v1/config)::${maps}"
             echo "::group::Cargador sintético y alarmas (últimos 30 min)"
             gcloud logging read 'jsonPayload.event="synthetic.cycle"' --project "$PROJECT_ID" --freshness=30m --limit 3 --format 'value(timestamp,jsonPayload.result,jsonPayload.message)' || true
             gcloud logging read 'jsonPayload.event="alarm.raised" OR jsonPayload.event="alarm.resolved"' --project "$PROJECT_ID" --freshness=6h --limit 6 --format 'value(timestamp,jsonPayload.event,jsonPayload.kind,jsonPayload.message)' || true

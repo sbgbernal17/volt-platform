@@ -13,7 +13,7 @@ infra/terraform/
   iam.tf         Cuentas de servicio por carga, Workload Identity del gateway, roles del desplegador
   secrets.tf     Secret Manager: generados (base, Redis, tokens) y externos (Wompi, Expo) con versión inicial `unset`
   gke.tf         GKE Autopilot regional privado (endpoint DNS, Gateway API, complemento de Secret Manager)
-  cloudrun.tf    api, worker, backoffice, app-web, synthetic-charger y el Job migrate; clave de navegador de Identity Platform
+  cloudrun.tf    api, worker, backoffice, app-web, synthetic-charger y el Job migrate; claves de navegador de Identity Platform y de Google Maps (iteración 9)
   edge.tf        IP y certificado de los dos balanceadores, políticas SSL, balanceador web (NEG serverless), redirección HTTP→HTTPS, IAP opcional
   armor.tf       Políticas de Cloud Armor (web y ocpp) cuando cloud_armor_enabled
   monitoring.tf  Canal de correo, métricas de logs, alertas con runbook, uptime checks, SLOs, panel, auditoría de acceso a datos
