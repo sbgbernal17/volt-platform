@@ -48,7 +48,16 @@ Ordenado por urgencia. Ninguno bloquea el desarrollo.
 
 Nada de esto bloquea el arranque: la iteración empieza con lo que ya está (proyectos con facturación y presupuesto, APIs, bucket de Terraform, acceso de GitHub Actions sin claves, dominio en Netlify DNS). Te pido cada cosa en el momento en que la infraestructura la necesite.
 
-- [ ] **Registros DNS en Netlify** (a mitad de la iteración). Cuando existan las IP de los balanceadores te doy la lista exacta (host, tipo `A`, valor, TTL 300) para `ocpp`, `api`, `admin`, `app` y sus variantes `-dev` y `-staging` (ADR 0019); los certificados los emite Google solo cuando los registros resuelven. Unos 10 minutos en Netlify → Domains → supercargadores.co → DNS settings.
+- [ ] **Registros DNS en Netlify** (ya hay IP de dev; las de staging llegan en cuanto termine su `apply`). En Netlify → Domains → supercargadores.co → DNS settings → Add new record, un registro `A` por fila, TTL 300 (o el mínimo que ofrezca). Los certificados los emite Google solo cuando los registros resuelven (tarda hasta una hora después de crearlos); hasta entonces `https://` no responde. Cuando estén, dime "DNS de dev listo" y activo los uptime checks (`public_dns_ready = true`).
+
+  | Nombre (host) | Tipo | Valor |
+  |---|---|---|
+  | `ocpp-dev` | A | `136.81.39.119` |
+  | `api-dev` | A | `136.81.53.80` |
+  | `admin-dev` | A | `136.81.53.80` |
+  | `app-dev` | A | `136.81.53.80` |
+  | `ocpp-staging` | A | *(pendiente del apply de staging)* |
+  | `api-staging`, `admin-staging`, `app-staging` | A | *(pendiente del apply de staging)* |
 - [x] 2026-09-29: **a dónde llegan las alarmas**: el canal de correo de Cloud Monitoring de cada ambiente apunta a `santiago.bernal@supercargadores.co` (`alert_emails` en `infra/terraform/envs/<ambiente>.tfvars`; se pueden añadir más correos). Si quieres avisos en el celular, instala la app *Google Cloud* con esa cuenta y dime para añadir el canal móvil.
 - [ ] **Excepción a la política de organización *Domain restricted sharing*** (`iam.allowedPolicyMemberDomains`) en los tres proyectos, cuanto antes: la organización la trae activada y bloquea conceder acceso a `allUsers`, que es lo que necesitan `api`, `admin` y `app` para recibir tráfico anónimo por el balanceador (conductores, personal y webhooks de Wompi no llegan con cuenta de Google); el primer `apply` de dev la detectó. Hasta entonces el balanceador web responde 403 y la infraestructura se crea igual. Cómo (unos 5 minutos por proyecto, con la cuenta de administrador de la organización; si te falta el permiso, concédete el rol *Administrador de políticas de la organización* en IAM a nivel de organización): Consola → **IAM y administración → Políticas de la organización** → arriba elige el proyecto (`volt-dev-509415`) → busca *Domain restricted sharing* → **Administrar política** → *Aplica a:* **Personalizar** → *Aplicación de políticas:* **Reemplazar** → **Agregar regla** → *Valores de política:* **Permitir todo** → **Establecer política**. Repite en `volt-staging-509415` y `volt-prod-509415`. Cuando esté, dime "política lista" y yo pongo `allow_unauthenticated_invoker = true` y aplico. El resto de la organización conserva la restricción.
 - [ ] **Llaves de producción de Wompi en Secret Manager** (al final, cuando exista prod). En Consola → Seguridad → Secret Manager del proyecto `volt-prod-509415`, con los nombres que te daré; nunca en GitHub ni en el chat. Y en el panel de Wompi, la URL de eventos de staging (sandbox) y de prod cuando existan `api-staging.supercargadores.co` y `api.supercargadores.co`.
