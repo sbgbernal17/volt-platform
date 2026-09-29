@@ -18,6 +18,10 @@ spec:
       port: 443
       tls:
         mode: Terminate
+        # El certificado gestionado viene del mapa de Certificate Manager (Terraform); la API de
+        # Gateway exige certificateRefs u options con mode Terminate.
+        options:
+          networking.gke.io/cert-manager-certs: ${OCPP_CERTIFICATE_MAP}
       allowedRoutes:
         namespaces:
           from: Same
