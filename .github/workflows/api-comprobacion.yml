@@ -220,6 +220,20 @@ jobs:
             echo "::notice title=hello-probe (intento $i)::$HELLO -> sin token $c1, con token $c2 $(head -c 80 /tmp/h | sed 's/<[^>]*>//g' | tr '\n' ' ')"
             sleep 20
           done
+      - name: Diferencias entre api y el servicio de prueba (API v2)
+        if: inputs.probe_hello
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+          PROBE_NAME: ${{ inputs.probe_name }}
+        run: |
+          set +e
+          tok=$(gcloud auth print-access-token)
+          norm() { jq -S 'del(.name, .uid, .generation, .createTime, .updateTime, .creator, .lastModifier, .etag, .observedGeneration, .latestReadyRevision, .latestCreatedRevision, .terminalCondition, .conditions, .traffic, .trafficStatuses, .uri, .urls, .template.revision, .template.containers[].image, .template.containers[].env) | walk(if type == "object" then with_entries(select(.value != null)) else . end)'; }
+          curl -sS -H "Authorization: Bearer $tok" "https://run.googleapis.com/v2/projects/$PROJECT_ID/locations/$REGION/services/api" | norm > /tmp/api.json
+          curl -sS -H "Authorization: Bearer $tok" "https://run.googleapis.com/v2/projects/$PROJECT_ID/locations/$REGION/services/$PROBE_NAME" | norm > /tmp/probe.json
+          echo "::group::api (API v2, normalizado)"; cat /tmp/api.json; echo "::endgroup::"
+          echo "::group::$PROBE_NAME (API v2, normalizado)"; cat /tmp/probe.json; echo "::endgroup::"
+          echo "::group::diff api vs $PROBE_NAME"; diff /tmp/api.json /tmp/probe.json; echo "::endgroup::"
       - name: Borrar hello-probe
         if: always() && inputs.probe_hello
         env:
