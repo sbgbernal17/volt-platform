@@ -27,6 +27,10 @@ on:
         description: 'Reaplicar la entrada de la API (internal → all) para forzar el registro de sus URL en el borde'
         type: boolean
         default: false
+      probe_image:
+        description: 'hello-probe con la imagen de la API (sin secretos) en vez de la imagen hello de Google'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -124,8 +128,8 @@ jobs:
           echo "::group::Registros del contenedor de la API (últimas 2 h, avisos y errores)"
           gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="api" AND severity>=WARNING' --project "$PROJECT_ID" --freshness=2h --limit 10 --format 'value(timestamp,severity,textPayload,jsonPayload.message)' || true
           echo "::endgroup::"
-          echo "::group::Registros de peticiones de Cloud Run (últimos 30 min, /healthz)"
-          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="api" AND httpRequest.requestUrl:"healthz"' --project "$PROJECT_ID" --freshness=30m --limit 5 --format 'value(timestamp,httpRequest.status,httpRequest.requestUrl,textPayload)' || true
+          echo "::group::Registros de peticiones de Cloud Run (última hora, cualquier URL)"
+          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="api" AND httpRequest.requestMethod:*' --project "$PROJECT_ID" --freshness=1h --limit 10 --format 'value(timestamp,httpRequest.status,httpRequest.requestUrl,textPayload)' || true
           echo "::endgroup::"
           echo "::group::Políticas de organización efectivas (candidatas)"
           for c in run.allowedIngress run.managed.requireInvokerIam run.allowedVPCEgress run.disableDefaultUrl run.managed.disableDefaultUrl iam.allowedPolicyMemberDomains gcp.restrictServiceUsage compute.restrictLoadBalancerCreationForTypes; do
@@ -155,6 +159,7 @@ jobs:
         env:
           PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
           PROBE_VPC: ${{ inputs.probe_vpc }}
+          PROBE_IMAGE: ${{ inputs.probe_image }}
         run: |
           set -euo pipefail
           extra=""
@@ -164,7 +169,13 @@ jobs:
             extra="--network $network --subnet $subnet --vpc-egress private-ranges-only"
             echo "hello-probe con red: $extra"
           fi
-          gcloud run deploy hello-probe --image us-docker.pkg.dev/cloudrun/container/hello --region "$REGION" \
+          image="us-docker.pkg.dev/cloudrun/container/hello"
+          if [ "$PROBE_IMAGE" = "true" ]; then
+            image=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(spec.template.spec.containers[0].image)')
+            extra="$extra --set-env-vars NODE_ENV=production,VOLT_ENV=dev,LOG_LEVEL=info,API_PORT=8080,API_HOST=0.0.0.0 --port 8080"
+            echo "hello-probe con la imagen de la API: $image"
+          fi
+          gcloud run deploy hello-probe --image "$image" --region "$REGION" \
             --project "$PROJECT_ID" --ingress all --no-allow-unauthenticated --quiet $extra >/dev/null
           url=$(gcloud run services describe hello-probe --region "$REGION" --project "$PROJECT_ID" --format 'value(status.url)')
           echo "url=$url" >> "$GITHUB_OUTPUT"; echo "hello-probe: $url"
