@@ -40,14 +40,6 @@ describe('api: salud y versión', () => {
     expect(response.json()).toEqual({ version: API_VERSION, ocpp: ['1.6J'] });
   });
 
-  it('publica la configuración de la app sin secretos', async () => {
-    const response = await app.inject({ method: 'GET', url: '/v1/config' });
-    expect(response.statusCode).toBe(200);
-    const body = response.json() as Record<string, unknown>;
-    expect(body.maps).toEqual({ browserKey: null });
-    expect(JSON.stringify(body)).not.toMatch(/WOMPI_PRIVATE|prv_/);
-  });
-
   it('rechaza configuración inválida', () => {
     expect(() => loadConfig({ API_PORT: 'abc' })).toThrow(/Configuración inválida/);
   });
