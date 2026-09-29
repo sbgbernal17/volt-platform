@@ -1,8 +1,11 @@
 # Borde (ARQ §3.4, ADR 0019 y 0023): dos balanceadores de aplicación globales por ambiente.
 #  - web: creado aquí; api/admin/app → Cloud Run por NEG serverless; TLS 1.2+ perfil MODERN.
 #  - ocpp: lo crea el Gateway API de GKE a partir de los manifiestos; aquí viven su IP, su
-#    certificado (Certificate Manager), su política SSL y su política de Cloud Armor.
-# Certificados gestionados por Google con autorización por balanceador: basta el registro A.
+#    certificado, su política SSL y su política de Cloud Armor.
+# Certificados gestionados por Google: basta el registro A. El web usa Certificate Manager (mapa en
+# el proxy); el ocpp un certificado clásico gestionado, porque el controlador del Gateway de GKE
+# solo acepta certificados clásicos por `networking.gke.io/pre-shared-certs` (los mapas de
+# Certificate Manager no pasan la validación de la API de Gateway con mode Terminate).
 resource "google_compute_global_address" "web" {
   name       = "${local.name}-web-ip"
   depends_on = [google_project_service.apis]
@@ -46,25 +49,11 @@ resource "google_certificate_manager_certificate_map_entry" "web" {
   matcher      = "PRIMARY"
 }
 
-resource "google_certificate_manager_certificate" "ocpp" {
-  name   = "${local.name}-ocpp"
-  scope  = "DEFAULT"
-  labels = local.labels
+resource "google_compute_managed_ssl_certificate" "ocpp" {
+  name = "${local.name}-ocpp"
   managed {
     domains = [local.hosts.ocpp]
   }
-}
-
-resource "google_certificate_manager_certificate_map" "ocpp" {
-  name   = "${local.name}-ocpp"
-  labels = local.labels
-}
-
-resource "google_certificate_manager_certificate_map_entry" "ocpp" {
-  name         = "${local.name}-ocpp-primary"
-  map          = google_certificate_manager_certificate_map.ocpp.name
-  certificates = [google_certificate_manager_certificate.ocpp.id]
-  matcher      = "PRIMARY"
 }
 
 # --- Backends de Cloud Run ---

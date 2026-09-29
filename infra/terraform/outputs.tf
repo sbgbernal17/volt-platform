@@ -64,7 +64,7 @@ output "gke" {
     service_account      = local.gke_ksa
     gsa_email            = google_service_account.svc["gateway"].email
     ocpp_address_name    = google_compute_global_address.ocpp.name
-    ocpp_certificate_map = google_certificate_manager_certificate_map.ocpp.name
+    ocpp_ssl_certificate = google_compute_managed_ssl_certificate.ocpp.name
     ocpp_ssl_policy      = google_compute_ssl_policy.ocpp.name
     ocpp_security_policy = var.cloud_armor_enabled ? google_compute_security_policy.ocpp[0].name : ""
     ocpp_host            = local.hosts.ocpp
