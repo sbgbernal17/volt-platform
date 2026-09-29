@@ -10,9 +10,10 @@ RUN pnpm --filter @volt/ocpp-gateway build
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
-RUN addgroup -S volt && adduser -S volt -G volt
+# UID y GID fijos: Kubernetes solo verifica runAsNonRoot con un usuario numérico.
+RUN addgroup -S -g 10001 volt && adduser -S -u 10001 -G volt volt
 COPY --from=build /repo/apps/ocpp-gateway/dist/main.mjs ./main.mjs
-USER volt
+USER 10001:10001
 EXPOSE 9220 9221
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1:9221/healthz || exit 1
 CMD ["node", "main.mjs"]

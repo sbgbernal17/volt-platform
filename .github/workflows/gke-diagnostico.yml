@@ -1,0 +1,80 @@
+# Diagnóstico del gateway en GKE sin entrar a la consola: estado de pods, eventos, registros,
+# Gateway API y montaje de secretos. Solo lectura; no imprime valores de secretos (van como archivos).
+name: Diagnóstico de GKE
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente'
+        type: choice
+        default: dev
+        options: [dev, staging, prod]
+      tail:
+        description: 'Líneas de registro por contenedor'
+        type: string
+        default: '150'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ENVIRONMENT: ${{ inputs.environment }}
+  REGION: us-central1
+  TAIL: ${{ inputs.tail }}
+
+jobs:
+  diagnostico:
+    name: Diagnóstico (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - id: vars
+        run: echo "suffix=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_OUTPUT"
+      - name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', steps.vars.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: volt-${{ inputs.environment }}
+          location: ${{ env.REGION }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+          use_dns_based_endpoint: true
+      - name: Estado del espacio de nombres volt
+        run: |
+          set +e
+          echo "::group::Recursos"
+          kubectl get deploy,rs,pods,svc,hpa,pdb -n volt -o wide
+          echo "::endgroup::"
+          echo "::group::Gateway y rutas"
+          kubectl get gateway,httproute -n volt -o wide
+          kubectl describe gateway ocpp -n volt | sed -n '/^Status/,$p' | head -80
+          kubectl get gcpbackendpolicy,gcpgatewaypolicy,healthcheckpolicy -n volt -o wide
+          echo "::endgroup::"
+          echo "::group::Eventos (últimos 60)"
+          kubectl get events -n volt --sort-by=.lastTimestamp | tail -60
+          echo "::endgroup::"
+          for pod in $(kubectl get pods -n volt -o name); do
+            echo "::group::Descripción de $pod"
+            kubectl describe "$pod" -n volt | sed -n '/^Containers:/,$p' | grep -v -i 'token\|password' | head -120
+            echo "::endgroup::"
+            echo "::group::Registros de $pod (actual)"
+            kubectl logs "$pod" -n volt --all-containers --tail="$TAIL"
+            echo "::endgroup::"
+            echo "::group::Registros de $pod (contenedor anterior)"
+            kubectl logs "$pod" -n volt --all-containers --previous --tail="$TAIL" 2>/dev/null || echo "(sin contenedor anterior)"
+            echo "::endgroup::"
+          done
+          echo "::group::Montaje de secretos (CSI)"
+          kubectl get secretproviderclasspodstatuses -n volt -o yaml 2>/dev/null | grep -v 'objects:' | head -60
+          echo "::endgroup::"
+          echo "::group::Nodos"
+          kubectl get nodes -o wide
+          echo "::endgroup::"
