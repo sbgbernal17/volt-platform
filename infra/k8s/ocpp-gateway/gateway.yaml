@@ -1,0 +1,23 @@
+# Balanceador de aplicación global para los cargadores (Gateway API de GKE). IP estática,
+# certificado gestionado (mapa de Certificate Manager) y política SSL vienen de Terraform.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: ocpp
+  namespace: volt
+  annotations:
+    networking.gke.io/certmap: ${OCPP_CERTIFICATE_MAP}
+spec:
+  gatewayClassName: gke-l7-global-external-managed
+  addresses:
+    - type: NamedAddress
+      value: ${OCPP_ADDRESS_NAME}
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+      allowedRoutes:
+        namespaces:
+          from: Same

@@ -2,8 +2,14 @@ import { z } from 'zod';
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /** Ambiente desplegado; las reglas "solo en producción" aplican con `prod` (o NODE_ENV=production si falta). */
+  VOLT_ENV: z.enum(['local', 'dev', 'staging', 'prod']).optional(),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info'),
   DATABASE_URL: z.string().url().optional(),
+  /** CA del servidor de Cloud SQL (PEM) para TLS con verificación (iteración 8). */
+  DATABASE_SSL_CA: z.string().optional(),
+  /** Puerto del endpoint de salud (/healthz); 0 lo desactiva. Cloud Run exige un puerto abierto. */
+  WORKER_HEALTH_PORT: z.coerce.number().int().min(0).max(65535).default(0),
   REDIS_URL: z.string().url().optional(),
   OCPP_GATEWAY_INTERNAL_TOKEN: z.string().min(16).optional(),
   OCPP_GATEWAY_INTERNAL_URL: z.string().url().optional(),
@@ -20,8 +26,18 @@ const schema = z.object({
   /** Relay del outbox (DAT §4.4): sondeo y tamaño de lote. */
   WORKER_OUTBOX_POLL_MS: z.coerce.number().int().min(50).max(60_000).default(200),
   WORKER_OUTBOX_BATCH: z.coerce.number().int().min(1).max(5000).default(500),
-  /** Canal Redis al que se publican los eventos mientras no exista Pub/Sub (iteración 8). */
+  /** Canal Redis al que se publican los eventos (consumidores locales y SSE). */
   WORKER_EVENTS_CHANNEL: z.string().min(1).default('domain-events'),
+  /** Topic de Pub/Sub (`projects/<id>/topics/domain-events`) al que además se publica cada evento (ADR 0023). */
+  OUTBOX_PUBSUB_TOPIC: z
+    .string()
+    .regex(/^projects\/[^/]+\/topics\/[^/]+$/, 'formato projects/<id>/topics/<nombre>')
+    .optional(),
+  /** Vigilancia de conexiones: sondeo y gracia antes de abrir la alarma CHARGER_OFFLINE (OPS §2.3). */
+  WORKER_CONNECTION_WATCH_POLL_MS: z.coerce.number().int().min(1000).max(600_000).default(15_000),
+  WORKER_OFFLINE_GRACE_S: z.coerce.number().int().min(5).max(86_400).default(30),
+  /** Fracción de cargadores de una sede fuera de línea a partir de la cual la alarma es CRITICAL. */
+  WORKER_OFFLINE_SITE_CRITICAL_RATIO: z.coerce.number().min(0.05).max(1).default(0.3),
   /** Sesiones STARTING vencidas: sondeo. */
   WORKER_SESSION_TIMEOUT_POLL_MS: z.coerce.number().int().min(1000).max(600_000).default(10_000),
   /** Transacciones sin StopTransaction con el cargador desconectado (FUN M04 `orphan_timeout_h`). */
@@ -47,8 +63,11 @@ const schema = z.object({
    * registra (desarrollo) y `none` desactiva el trabajo. En producción es obligatorio `expo`.
    */
   PUSH_PROVIDER: z.enum(['expo', 'log', 'none']).default('log'),
-  /** Token de acceso de Expo (opcional; solo si el proyecto exige "enhanced push security"). */
-  EXPO_ACCESS_TOKEN: z.string().min(8).optional(),
+  /** Token de acceso de Expo (opcional; solo si el proyecto exige "enhanced push security"). El marcador `unset` del secreto equivale a ausente. */
+  EXPO_ACCESS_TOKEN: z.preprocess(
+    (value) => (value === '' || value === 'unset' ? undefined : value),
+    z.string().min(8).optional(),
+  ),
   WORKER_PUSH_POLL_MS: z.coerce.number().int().min(500).max(600_000).default(2_000),
   WORKER_PUSH_BATCH: z.coerce.number().int().min(1).max(500).default(100),
   /** Ventana hacia atrás del outbox que revisa el trabajo de notificaciones (horas). */
@@ -64,10 +83,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
       `Configuración inválida: ${result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
     );
   }
-  if (result.data.NODE_ENV === 'production' && result.data.PAYMENTS_PROVIDER !== 'wompi') {
+  const isProd = result.data.VOLT_ENV
+    ? result.data.VOLT_ENV === 'prod'
+    : result.data.NODE_ENV === 'production';
+  if (isProd && result.data.PAYMENTS_PROVIDER !== 'wompi') {
     throw new Error('Configuración inválida: en producción PAYMENTS_PROVIDER debe ser wompi');
   }
-  if (result.data.NODE_ENV === 'production' && result.data.PUSH_PROVIDER !== 'expo') {
+  if (isProd && result.data.PUSH_PROVIDER !== 'expo') {
     throw new Error('Configuración inválida: en producción PUSH_PROVIDER debe ser expo');
   }
   if (result.data.PAYMENTS_PROVIDER === 'wompi') {

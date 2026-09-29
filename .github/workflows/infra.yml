@@ -1,0 +1,134 @@
+# Infraestructura con Terraform (iteración 8, ADR 0023). `plan` en cada cambio de infra/terraform
+# (ambiente dev) y a mano por ambiente; `apply` solo a mano (Run workflow → apply). Autenticación
+# sin claves con Workload Identity Federation; el estado vive en el bucket <proyecto>-tfstate.
+name: Infraestructura (Terraform)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente'
+        type: choice
+        default: dev
+        options: [dev, staging, prod]
+      action:
+        description: 'plan solo muestra los cambios; apply los ejecuta'
+        type: choice
+        default: plan
+        options: [plan, apply]
+  pull_request:
+    paths: ['infra/terraform/**', '.github/workflows/infra.yml']
+  push:
+    branches: [main]
+    paths: ['infra/terraform/**', '.github/workflows/infra.yml']
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: infra-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: '1.16.4'
+  TF_IN_AUTOMATION: '1'
+  ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+  ACTION: ${{ inputs.action || 'plan' }}
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action || 'plan' }} (${{ inputs.environment || 'dev' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Variables del ambiente
+        id: vars
+        run: |
+          suffix=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')
+          echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
+
+      - name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', steps.vars.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Init
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+        run: |
+          terraform init -input=false \
+            -backend-config="envs/${ENVIRONMENT}.backend.hcl" \
+            -backend-config="bucket=${PROJECT_ID}-tfstate"
+
+      - name: Formato y validación
+        run: |
+          terraform fmt -check -recursive
+          terraform validate -no-color
+
+      - name: Plan
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+          DEPLOYER_SA: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+        run: |
+          terraform plan -input=false -no-color -out=tfplan \
+            -var-file="envs/${ENVIRONMENT}.tfvars" \
+            -var "project_id=${PROJECT_ID}" \
+            -var "deployer_service_account=${DEPLOYER_SA}" | tee plan.txt
+          terraform show -json tfplan > plan.json
+          {
+            echo "## Terraform plan (${ENVIRONMENT})"
+            echo ""
+            echo '| Acción | Recursos |'
+            echo '|---|---|'
+            jq -r '[.resource_changes[]? | .change.actions | join(",")] | group_by(.) | map("| \(.[0]) | \(length) |") | .[]' plan.json
+            echo ""
+            echo '<details><summary>Recursos por acción</summary>'
+            echo ""
+            echo '```'
+            jq -r '.resource_changes[]? | select(.change.actions != ["no-op"]) | "\(.change.actions | join(",")): \(.address)"' plan.json
+            echo '```'
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar el plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ env.ENVIRONMENT }}-${{ github.run_id }}
+          path: |
+            infra/terraform/plan.txt
+            infra/terraform/plan.json
+          retention-days: 14
+
+      - name: Apply
+        if: env.ACTION == 'apply' && github.event_name == 'workflow_dispatch'
+        run: terraform apply -input=false -no-color -auto-approve tfplan
+
+      - name: Salidas
+        if: env.ACTION == 'apply' && github.event_name == 'workflow_dispatch'
+        run: |
+          {
+            echo "## Salidas (${ENVIRONMENT})"
+            echo ""
+            echo '| Host | Tipo | Valor |'
+            echo '|---|---|---|'
+            terraform output -json dns_records | jq -r '.[] | "| \(.host) | \(.type) | \(.value) |"'
+            echo ""
+            echo '```'
+            terraform output -json run_services | jq -r 'to_entries[] | "\(.key): \(.value)"'
+            echo "registry: $(terraform output -raw registry)"
+            echo "cluster: $(terraform output -raw cluster_name) ($(terraform output -raw cluster_location))"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

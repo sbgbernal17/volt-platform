@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: volt
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - secretproviderclass.yaml
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+  - hpa.yaml
+  - gateway.yaml
+  - httproute.yaml
+  - policies.yaml
+images:
+  - name: ocpp-gateway
+    newName: ${IMAGE}
+    newTag: "${TAG}"

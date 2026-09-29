@@ -6,6 +6,8 @@ export const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations/', import.met
 
 export interface MigrateOptions {
   databaseUrl: string;
+  /** CA del servidor (PEM) para verificar el certificado de Cloud SQL (modo verify-ca). */
+  sslCa?: string | undefined;
   direction?: 'up' | 'down';
   /** Número de migraciones a aplicar; por defecto todas. */
   count?: number;
@@ -14,8 +16,9 @@ export interface MigrateOptions {
 
 /** Aplica las migraciones SQL de `migrations/` con node-pg-migrate y devuelve sus nombres. */
 export async function runMigrations(options: MigrateOptions): Promise<string[]> {
+  const ssl = sslOptions(options.sslCa);
   const runnerOptions: RunnerOption = {
-    databaseUrl: options.databaseUrl,
+    databaseUrl: ssl ? { connectionString: options.databaseUrl, ssl } : options.databaseUrl,
     dir: MIGRATIONS_DIR,
     direction: options.direction ?? 'up',
     migrationsTable: 'pgmigrations',
@@ -30,12 +33,22 @@ export async function runMigrations(options: MigrateOptions): Promise<string[]> 
 export interface SqlOptions {
   max?: number;
   applicationName?: string;
+  /** CA del servidor (PEM): TLS con verificación de cadena; el nombre no se comprueba porque el certificado de Cloud SQL lleva el nombre de la instancia, no la IP. */
+  sslCa?: string | undefined;
+}
+
+/** Opciones TLS equivalentes a `sslmode=verify-ca`; `undefined` cuando no hay CA (desarrollo local). */
+export function sslOptions(sslCa: string | undefined) {
+  if (!sslCa) return undefined;
+  return { ca: sslCa, rejectUnauthorized: true, checkServerIdentity: () => undefined };
 }
 
 /** Cliente postgres.js para consultas de la aplicación (una instancia por proceso). */
 export function createSql(databaseUrl: string, options: SqlOptions = {}): Sql {
+  const ssl = sslOptions(options.sslCa);
   return postgres(databaseUrl, {
     max: options.max ?? 10,
+    ...(ssl ? { ssl } : {}),
     connection: { application_name: options.applicationName ?? 'volt' },
     // BIGINT como bigint nativo: los importes y contadores nunca pasan por Number.
     types: { bigint: postgres.BigInt },

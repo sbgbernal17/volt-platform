@@ -26,6 +26,7 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0020](0020-cobro-con-wompi-reintentos-deuda-y-conciliacion.md) | Cobro con Wompi al liquidar: fuente de pago tokenizada, reintentos, deuda con enlace de pago, webhooks idempotentes, devoluciones, conciliación y recibos |
 | [0021](0021-identidad-del-personal-rbac-auditoria-y-back-office.md) | Identidad del personal con Identity Platform, RBAC con política central por ruta, MFA TOTP, auditoría inmutable con cadena de hashes y back-office como SPA servida por nginx |
 | [0022](0022-app-volt-identidad-del-conductor-y-notificaciones.md) | App Volt: identidad del conductor con Identity Platform, consentimientos, tokenización en la app y notificaciones push |
+| [0023](0023-infraestructura-en-google-cloud-con-terraform.md) | Infraestructura en Google Cloud con Terraform: tres ambientes, dos balanceadores por ambiente (Gateway API para cargadores, Cloud Run para web), Cloud SQL privado con TLS, Redis, Pub/Sub a BigQuery, secretos, GKE Autopilot con despliegue sin cortes, observabilidad y cargador sintético |
 
 ```markdown
 # NNNN. Título de la decisión

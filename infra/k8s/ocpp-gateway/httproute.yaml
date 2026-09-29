@@ -1,0 +1,26 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ocpp
+  namespace: volt
+spec:
+  parentRefs:
+    - name: ocpp
+      namespace: volt
+  hostnames:
+    - ${OCPP_HOST}
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /healthz
+      backendRefs:
+        - name: ocpp-gateway
+          port: 9221
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /ocpp
+      backendRefs:
+        - name: ocpp-gateway
+          port: 9220

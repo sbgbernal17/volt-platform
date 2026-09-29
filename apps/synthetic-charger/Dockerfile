@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1.7
+FROM node:22-alpine AS build
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+WORKDIR /repo
+COPY . .
+RUN pnpm install --frozen-lockfile --filter "@volt/synthetic-charger..."
+RUN pnpm --filter @volt/synthetic-charger build
+
+FROM node:22-alpine AS runtime
+ENV NODE_ENV=production
+WORKDIR /app
+RUN addgroup -S volt && adduser -S volt -G volt
+COPY --from=build /repo/apps/synthetic-charger/dist/main.mjs ./main.mjs
+USER volt
+EXPOSE 8080
+CMD ["node", "main.mjs"]

@@ -1,0 +1,55 @@
+apiVersion: networking.gke.io/v1
+kind: GCPGatewayPolicy
+metadata:
+  name: ocpp
+  namespace: volt
+spec:
+  default:
+    sslPolicy: ${OCPP_SSL_POLICY}
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: ocpp
+---
+# WebSockets de larga duración: el balanceador cierra por inactividad a las 24 h (ARQ §3.1);
+# el gateway hace ping cada 30 s.
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: ocpp-gateway
+  namespace: volt
+spec:
+  default:
+    timeoutSec: 86400
+    connectionDraining:
+      drainingTimeoutSec: 60
+    logging:
+      enabled: true
+      sampleRate: 1000000
+  targetRef:
+    group: ""
+    kind: Service
+    name: ocpp-gateway
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: ocpp-gateway
+  namespace: volt
+spec:
+  default:
+    checkIntervalSec: 5
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+    logConfig:
+      enabled: false
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: 9221
+        requestPath: /readyz
+  targetRef:
+    group: ""
+    kind: Service
+    name: ocpp-gateway

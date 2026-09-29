@@ -1,0 +1,23 @@
+{
+  "name": "@volt/logging",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Logger pino con el formato que Cloud Logging indexa (severity, message, time) y modo legible en desarrollo",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "pino": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "pino-pretty": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

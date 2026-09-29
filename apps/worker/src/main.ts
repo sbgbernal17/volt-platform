@@ -12,25 +12,43 @@ import {
   RedisConnectionDirectory,
   StaticConnectionDirectory,
 } from '@volt/gateway-client';
+import { createLogger } from '@volt/logging';
 import { WompiGateway } from '@volt/payments';
 import { Redis } from 'ioredis';
-import { pino } from 'pino';
 import { loadConfig } from './config.ts';
+import { startHealthServer } from './health.ts';
 import { runAuditChainCheck } from './jobs/audit.ts';
 import { runBillingCycle, runReconciliation } from './jobs/billing.ts';
 import { dailyAt, runConfigDriftCheck } from './jobs/config-drift.ts';
-import { LogEventPublisher, RedisEventPublisher, relayOutbox } from './jobs/outbox-relay.ts';
+import { watchConnections } from './jobs/connection-watch.ts';
+import {
+  type EventPublisher,
+  LogEventPublisher,
+  RedisEventPublisher,
+  relayOutbox,
+} from './jobs/outbox-relay.ts';
 import { ensureMonthlyPartitions } from './jobs/partitions.ts';
 import { activateTariffs, enforceSessionLimits, settleSessions } from './jobs/pricing.ts';
+import { CompositeEventPublisher, PubSubEventPublisher } from './jobs/pubsub.ts';
 import { deliverPushNotifications, ExpoPushSender, LogPushSender } from './jobs/push.ts';
 import { closeOrphanTransactions, expireSessionStarts } from './jobs/sessions.ts';
 import { type Job, Scheduler } from './scheduler.ts';
 
 const config = loadConfig();
-const logger = pino({ level: config.LOG_LEVEL });
+const logger = createLogger({
+  service: 'worker',
+  level: config.LOG_LEVEL,
+  pretty: config.NODE_ENV === 'development',
+  env: config.VOLT_ENV,
+});
+const startedAt = new Date();
 
 const sql = config.DATABASE_URL
-  ? createSql(config.DATABASE_URL, { max: 3, applicationName: 'volt-worker' })
+  ? createSql(config.DATABASE_URL, {
+      max: 3,
+      applicationName: 'volt-worker',
+      sslCa: config.DATABASE_SSL_CA,
+    })
   : undefined;
 const redis = config.REDIS_URL ? new Redis(config.REDIS_URL, { lazyConnect: true }) : undefined;
 if (redis) await redis.connect();
@@ -46,9 +64,14 @@ const jobs: Job[] = [
 ];
 
 if (sql) {
-  const publisher = redis
-    ? new RedisEventPublisher(redis, config.WORKER_EVENTS_CHANNEL)
-    : new LogEventPublisher(logger);
+  const publishers: EventPublisher[] = redis
+    ? [new RedisEventPublisher(redis, config.WORKER_EVENTS_CHANNEL)]
+    : [new LogEventPublisher(logger)];
+  if (config.OUTBOX_PUBSUB_TOPIC) {
+    publishers.push(new PubSubEventPublisher(config.OUTBOX_PUBSUB_TOPIC));
+    logger.info({ topic: config.OUTBOX_PUBSUB_TOPIC }, 'eventos del outbox también a Pub/Sub');
+  }
+  const publisher = new CompositeEventPublisher(publishers);
   const pricing = new PricingService(sql, { logger });
   const transactions = new TransactionService(sql, { logger, pricing });
   jobs.push(
@@ -71,6 +94,19 @@ if (sql) {
       intervalMs: config.WORKER_ORPHAN_POLL_MS,
       run: async () => {
         await closeOrphanTransactions(transactions, config.WORKER_ORPHAN_TIMEOUT_H, logger);
+      },
+    },
+    {
+      name: 'connection-watch',
+      intervalMs: config.WORKER_CONNECTION_WATCH_POLL_MS,
+      run: async () => {
+        const summary = await watchConnections(sql, {
+          graceS: config.WORKER_OFFLINE_GRACE_S,
+          siteCriticalRatio: config.WORKER_OFFLINE_SITE_CRITICAL_RATIO,
+          logger,
+        });
+        if (summary.raised > 0 || summary.resolved > 0)
+          logger.info(summary, 'vigilancia de conexiones');
       },
     },
     dailyAt('partitions', 1, () => ensureMonthlyPartitions(sql, { logger })),
@@ -181,9 +217,19 @@ if (sql && directory && config.OCPP_GATEWAY_INTERNAL_TOKEN) {
 
 const scheduler = new Scheduler(jobs, logger);
 scheduler.start();
+const health =
+  config.WORKER_HEALTH_PORT > 0
+    ? startHealthServer(config.WORKER_HEALTH_PORT, {
+        service: 'worker',
+        jobs: jobs.map((job) => job.name),
+        startedAt,
+      })
+    : undefined;
+if (health) logger.info({ port: config.WORKER_HEALTH_PORT }, 'endpoint de salud del worker');
 
 const shutdown = async (signal: string) => {
   logger.info({ signal }, 'apagando worker');
+  health?.close();
   await scheduler.stop();
   await sql?.end({ timeout: 5 });
   await redis?.quit().catch(() => undefined);

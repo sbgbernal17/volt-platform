@@ -1,0 +1,47 @@
+# 0023. Infraestructura de la plataforma en Google Cloud con Terraform y observabilidad
+
+- Estado: aceptada (29 de septiembre de 2026)
+- Iteración: 8
+- Relacionados: ADR 0007 (gateway en GKE, resto en Cloud Run), 0013 (API interna y directorio en Redis), 0015 (región), 0019 (dominio y hosts); ARQ §3-§4 y §7; SEG §6; OPS §2 y §4.8
+
+## Contexto
+
+Hasta la iteración 7 todo corría en local y en CI con simuladores. La iteración 8 lleva la plataforma a Google Cloud en tres ambientes (dev, staging, prod) reproducibles con Terraform, con despliegue automatizado y observabilidad suficiente para operar cargadores reales: alarma de cargador fuera de línea en menos de un minuto, SLOs y paneles. El dueño ya creó los proyectos, la facturación con presupuesto, el bucket de estado y el acceso sin claves desde GitHub Actions (`docs/google-cloud-setup.md`); la zona DNS sigue en Netlify (ADR 0019).
+
+## Decisiones
+
+1. **Un solo módulo raíz de Terraform** (`infra/terraform`) con variables por ambiente (`envs/<env>.tfvars`) y estado en el bucket `<proyecto>-tfstate` (`envs/<env>.backend.hcl`). Se prefirió a la estructura de módulos prevista en el README inicial: menos indirección para un solo equipo, y cada ambiente es el mismo código con tamaños distintos. `plan` corre en cada cambio (PR y `main`) y `apply` solo a mano desde el flujo *Infraestructura (Terraform)*, autenticado con Workload Identity Federation.
+
+2. **Dos balanceadores de aplicación globales por ambiente, con dos IP estáticas.** El de los cargadores (`ocpp`) lo crea el Gateway API de GKE (`gke-l7-global-external-managed`) a partir de los manifiestos, con la IP, el mapa de certificados, la política SSL y la política de Cloud Armor que Terraform deja preparados; el web (`api`, `admin`, `app`) lo crea Terraform con NEG serverless a Cloud Run. Motivo: el balanceador nativo de contenedores del gateway necesita los NEG que el clúster crea al desplegar el Service, y montarlo desde Terraform obliga a un `apply` en dos fases con descubrimiento de zonas; separar los dos borde evita esa dependencia y permite políticas distintas para cargadores y personas. Cambia lo dicho en ADR 0019: son **dos** registros `A` por ambiente (`ocpp` → IP del gateway; `api`, `admin`, `app` → IP web). Certificados gestionados por Google con autorización por balanceador: basta el registro `A`, no hay registros de validación.
+
+3. **TLS 1.2 mínimo en ambos borde**: perfil `MODERN` en el web y `COMPATIBLE` en el de cargadores hasta probar el handshake con los cargadores reales (ARQ §3.4); después se endurece. Cloud Armor solo en staging y prod: WAF OWASP preconfigurado a sensibilidad baja y 60 inicios de sesión por minuto y por IP en la API; en el gateway únicamente 600 aperturas de conexión por minuto y por IP (los cargadores comparten NAT de la operadora).
+
+4. **Cloud SQL para PostgreSQL 16 Enterprise** con IP privada (Private Service Access), `ssl_mode = ENCRYPTED_ONLY`, backups diarios y PITR de 7 días; HA regional solo cuando prod tenga cargadores reales (variable `db_ha`). Las apps verifican la CA del servidor (`verify-ca`, la CA de la instancia viaja como secreto `db-server-ca`); el nombre no se comprueba porque el certificado de Cloud SQL lleva el nombre de la instancia y no la IP. Un solo usuario `volt` para migraciones y servicios; usuarios por servicio con privilegios mínimos e IAM database authentication (SEG §6.2) quedan como deuda.
+
+5. **Memorystore for Redis** (Basic 1 GiB en dev y staging, Standard HA en prod) con AUTH, sin TLS en tránsito: solo se alcanza dentro de la VPC. Deuda: habilitar TLS con la CA de Memorystore en los clientes ioredis.
+
+6. **Sin Cloud NAT.** El gateway en GKE solo habla con Cloud SQL, Redis y las APIs de Google (acceso privado a Google); los servicios que salen a internet (Wompi, Expo, JWKS) corren en Cloud Run, cuyo egreso directo a la VPC solo enruta rangos privados y sale a internet por su propia salida. Ahorra 32 USD/mes por ambiente; si algún pod necesitara internet se añade NAT.
+
+7. **Secretos en Secret Manager**: los generados por Terraform (contraseña de la base como `database-url`, `redis-url`, `db-server-ca`, `ocpp-gateway-internal-token`, `api-admin-token` fuera de prod) y los que llena el dueño o el flujo de despliegue (Wompi, Expo) con una versión inicial `unset`. Cloud Run los inyecta como variables; en GKE se montan como archivos con el complemento de Secret Manager y el gateway los lee por `*_FILE`. En staging el flujo de despliegue copia las llaves de prueba de Wompi desde los secretos de GitHub; en prod las escribe el dueño en la consola.
+
+8. **`VOLT_ENV` separa "ambiente" de `NODE_ENV`.** Las imágenes corren siempre con `NODE_ENV=production` (sin `pino-pretty`); las reglas "solo en producción" de api y worker (identidad del personal obligatoria, Wompi real, sin token estático) aplican con `VOLT_ENV=prod`. Así dev usa el emulador de pagos y el token estático de administración para el cargador sintético.
+
+9. **Cloud Run v2** para api, worker, back-office, app web y cargador sintético; migraciones como Cloud Run Job (`migrate`, imagen de la API) ejecutado por el flujo de despliegue antes de actualizar los servicios. Terraform fija cuenta de servicio, red, variables y secretos e **ignora la imagen**, que actualiza el flujo. api y worker salen a la VPC por egreso directo (sin conector). El worker expone `/healthz` porque Cloud Run exige un puerto abierto.
+
+10. **GKE Autopilot regional privado** con endpoint DNS del control plane (sin IP pública; `kubectl` desde GitHub Actions con IAM), Gateway API, complemento de Secret Manager, Workload Identity (`volt/ocpp-gateway` → `volt-gateway@`) y Managed Service for Prometheus. Despliegue sin cortes según OPS §4.8: `RollingUpdate maxUnavailable 0`, `readinessProbe` a `/readyz` (503 al drenar), `preStop` de 10 s, `terminationGracePeriodSeconds 120`, PDB `maxUnavailable 1`, HPA por CPU con reducción lenta y `safe-to-evict: false`.
+
+11. **Eventos de dominio a Pub/Sub** además de Redis: el relay del outbox publica en `domain-events` por la API REST con el token del servidor de metadatos (sin SDK en la imagen); una suscripción de BigQuery escribe la telemetría en `telemetry.domain_events` (particionada por día) y los mensajes rechazados van a `domain-events-dlq`.
+
+12. **Alarma de cargador fuera de línea en menos de un minuto**: nuevo trabajo `connection-watch` del worker (cada 15 s) que abre `CHARGER_OFFLINE` para cada cargador OPERATIONAL sin socket desde hace más de 30 s (CRITICAL si una sede tiene ≥ 30 % caídos), la resuelve al reconectar y deja una línea `alarm.raised`/`alarm.resolved`; una política de alerta por coincidencia de log avisa por correo. La capa de latidos (3 × `HeartbeatInterval`, OPS §2.3) sigue en el gateway, que cierra el socket y cae en la misma ruta.
+
+13. **Observabilidad en Cloud Monitoring con Terraform**: canal de correo, métricas basadas en logs (`alarm_raised`, `gateway_disconnects`, `worker_job_failed`, `synthetic_cycle`), alertas (offline, alarmas críticas, 5xx de la API, CPU y disco de Cloud SQL, memoria de Redis, atraso en Pub/Sub, reinicios del gateway, uptime), SLOs (API sin 5xx 99,9 %, latencia p95 < 500 ms, gateway alcanzable por el cargador sintético 99,9 %) con alerta de consumo del presupuesto de error, panel por ambiente y logs de auditoría de acceso a datos (Secret Manager y Cloud SQL) en un bucket de 400 días (bloqueo de retención solo en prod cuando el dueño lo apruebe). Los uptime checks y sus alertas se activan con `public_dns_ready = true` cuando el DNS apunta a los balanceadores.
+
+14. **Cargador sintético** (`apps/synthetic-charger`) en Cloud Run: un cargador simulado siempre conectado por `wss://` con perfil 2 que se da de alta solo (sede privada `SYNTH`, oculto en la app), registra un ciclo cada 5 minutos (SLI del gateway) y, en dev y staging, puede ejecutar una sesión de prueba por la API de administración.
+
+15. **Identity Platform**: Terraform crea una clave de navegador restringida a Identity Toolkit y a los orígenes del back-office y la app web; la API recibe proyecto, dominio de autenticación y clave. IAP delante de `admin.` queda preparado (`backoffice_iap_enabled`) y se activa cuando el dueño cree la pantalla de consentimiento OAuth interna.
+
+## Consecuencias
+
+- Costo con precios de lista (`us-central1`): el clúster de GKE (73 USD/mes salvo el cubierto por el crédito), Cloud SQL, Redis, dos balanceadores y Cloud Run siempre encendido (worker y cargador sintético) dominan; dev y staging quedan en el orden de 200-300 USD/mes cada uno y prod en 300-450 USD/mes con los tamaños iniciales (ARQ §7). Palancas: apagar dev cuando no se use (`terraform destroy` es seguro: no tiene datos reales), un solo ambiente no productivo, HA de Cloud SQL solo con cargadores reales.
+- El dueño añade ocho registros `A` en Netlify DNS (dos IP × cuatro hosts por ambiente) que el flujo de infraestructura imprime al aplicar; los certificados se emiten solos cuando resuelven.
+- Deuda registrada: usuarios de base de datos por servicio con privilegios mínimos, TLS en Redis, Binary Authorization y CMEK (SEG §6.3), Cloud NAT si algún pod necesita internet, exportación de la auditoría de la aplicación a un bucket bloqueado, funciones de bloqueo de Identity Platform, presupuestos gestionados por Terraform (requieren permisos en la cuenta de facturación), reducción de los roles del desplegador a lo mínimo.

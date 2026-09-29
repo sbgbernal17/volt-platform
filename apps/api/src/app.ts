@@ -14,6 +14,7 @@ import {
   RedisConnectionDirectory,
   StaticConnectionDirectory,
 } from '@volt/gateway-client';
+import { pinoOptions } from '@volt/logging';
 import { FakeGateway, type PaymentGateway, WOMPI_BASE_URLS, WompiGateway } from '@volt/payments';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Redis } from 'ioredis';
@@ -62,14 +63,20 @@ export function buildPaymentGateway(
 
 export function buildApp({ config, gateway: injectedGateway }: AppDependencies): FastifyInstance {
   const app = Fastify({
-    logger: {
+    logger: pinoOptions({
+      service: 'api',
       level: config.LOG_LEVEL,
-      ...(config.NODE_ENV === 'development' ? { transport: { target: 'pino-pretty' } } : {}),
-    },
+      pretty: config.NODE_ENV === 'development',
+      env: config.VOLT_ENV,
+    }),
   });
 
   const sql = config.DATABASE_URL
-    ? createSql(config.DATABASE_URL, { max: 5, applicationName: 'volt-api' })
+    ? createSql(config.DATABASE_URL, {
+        max: 5,
+        applicationName: 'volt-api',
+        sslCa: config.DATABASE_SSL_CA,
+      })
     : undefined;
   const redis = config.REDIS_URL
     ? new Redis(config.REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 })

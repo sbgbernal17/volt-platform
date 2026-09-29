@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocpp-gateway
+  namespace: volt
+  labels:
+    app.kubernetes.io/name: ocpp-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ocpp-gateway
+  ports:
+    - name: ocpp
+      port: 9220
+      targetPort: ocpp
+      protocol: TCP
+    - name: health
+      port: 9221
+      targetPort: health
+      protocol: TCP

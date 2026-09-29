@@ -1,22 +1,40 @@
 # Infraestructura en Google Cloud (Terraform)
 
-Estructura prevista (ARQ §3 y §6.1). Se implementa en la iteración 8, cuando existan los proyectos `volt-dev`, `volt-staging` y `volt-prod` (tarea del dueño del proyecto).
+Iteración 8 (ADR 0023). Un solo módulo raíz con variables por ambiente; el mismo código crea dev, staging y prod con tamaños y protecciones distintos.
 
 ```
 infra/terraform/
-  modules/
-    network/        VPC, subredes, Cloud NAT, Private Service Connect para Cloud SQL
-    edge/           External Application Load Balancer, Cloud Armor, Certificate Manager, política SSL propia
-    gke/            GKE Autopilot para ocpp-gateway (Gateway API, backend timeout, PDB)
-    cloudrun/       api, worker, backoffice
-    data/           Cloud SQL PostgreSQL (HA, IP privada, PITR), Memorystore Redis, BigQuery
-    messaging/      Pub/Sub (topic domain-events, suscripciones, dead letter, BigQuery subscription)
-    security/       Secret Manager, Cloud KMS (CMEK), IAM, Workload Identity Federation, Binary Authorization
-    observability/  Managed Prometheus, dashboards, alertas, SLOs, exportación de audit logs
-  envs/
-    dev/            un solo entorno de desarrollo compartido
-    staging/        réplica reducida de producción; cargador real de laboratorio
-    prod/
+  versions.tf providers.tf variables.tf locals.tf apis.tf
+  network.tf     VPC, subredes (principal con rangos de pods/servicios; egreso directo de Cloud Run), Private Service Access, reglas mínimas
+  sql.tf         Cloud SQL PostgreSQL 16 (IP privada, TLS obligatorio, backups y PITR; HA por variable)
+  redis.tf       Memorystore for Redis con AUTH
+  pubsub.tf      Topic domain-events, cola de rechazados y suscripción de BigQuery (telemetry.domain_events)
+  registry.tf    Artifact Registry con limpieza de versiones
+  iam.tf         Cuentas de servicio por carga, Workload Identity del gateway, roles del desplegador
+  secrets.tf     Secret Manager: generados (base, Redis, tokens) y externos (Wompi, Expo) con versión inicial `unset`
+  gke.tf         GKE Autopilot regional privado (endpoint DNS, Gateway API, complemento de Secret Manager)
+  cloudrun.tf    api, worker, backoffice, app-web, synthetic-charger y el Job migrate; clave de navegador de Identity Platform
+  edge.tf        IP y certificado de los dos balanceadores, políticas SSL, balanceador web (NEG serverless), redirección HTTP→HTTPS, IAP opcional
+  armor.tf       Políticas de Cloud Armor (web y ocpp) cuando cloud_armor_enabled
+  monitoring.tf  Canal de correo, métricas de logs, alertas con runbook, uptime checks, SLOs, panel, auditoría de acceso a datos
+  outputs.tf     IP, registros DNS, servicios, valores para los manifiestos de GKE
+  envs/<env>.tfvars       tamaños y banderas por ambiente
+  envs/<env>.backend.hcl  prefijo del estado (bucket <proyecto>-tfstate)
 ```
 
-Convenciones: estado remoto en un bucket de GCS con bloqueo, `terraform plan` en cada pull request y `apply` solo desde CD con Workload Identity Federation; sin claves de cuentas de servicio; variables sensibles nunca en `*.tfvars` versionados (ver `.gitignore`). Región principal `us-east1` (ADR 0005).
+## Cómo se ejecuta
+
+Desde GitHub Actions, flujo *Infraestructura (Terraform)*: `plan` corre solo en cada cambio de esta carpeta (ambiente dev); `apply` se lanza a mano eligiendo ambiente. La autenticación es Workload Identity Federation (`docs/google-cloud-setup.md`); no hay claves. Después del primer `apply` de un ambiente:
+
+1. El resumen del flujo imprime los registros `A` (dos IP por ambiente); el dueño los añade en Netlify DNS y los certificados se emiten solos. Luego `public_dns_ready = true` en `envs/<env>.tfvars` y otro `apply` activa uptime checks y SLO del gateway.
+2. El flujo *Despliegue* construye las imágenes, aplica migraciones, actualiza Cloud Run y despliega el gateway en GKE (`infra/k8s/ocpp-gateway`), que crea el balanceador de los cargadores.
+3. En staging el propio despliegue copia las llaves de prueba de Wompi a Secret Manager; en prod las escribe el dueño (Consola → Secret Manager → `wompi-*` → nueva versión).
+
+En local solo formato y validación (sin credenciales): `terraform init -backend=false && terraform validate`. CI lo comprueba en cada push.
+
+## Convenciones
+
+- Nunca `apply` desde una máquina personal ni con claves de cuentas de servicio.
+- `envs/*.tfvars` no llevan secretos; los secretos viven en Secret Manager.
+- Cambios de tamaño (`db_tier`, `redis_*`, `gateway_*`) y protecciones (`db_ha`, `audit_bucket_locked`, `cloud_armor_enabled`, `backoffice_iap_enabled`) se hacen por tfvars y `apply`.
+- Región `us-central1` (ADR 0015).

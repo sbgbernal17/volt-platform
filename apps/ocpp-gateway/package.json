@@ -17,6 +17,7 @@
     "@volt/domain": "workspace:*",
     "@volt/events": "workspace:*",
     "@volt/gateway-client": "workspace:*",
+    "@volt/logging": "workspace:*",
     "@volt/ocpp-schemas": "workspace:*",
     "@volt/security": "workspace:*",
     "ioredis": "catalog:",

@@ -9,13 +9,14 @@
     "start": "tsx src/main.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "build": "node ../../scripts/bundle.mjs src/main.ts dist/main.mjs"
+    "build": "node ../../scripts/bundle.mjs src/main.ts dist/main.mjs && node ../../scripts/bundle.mjs src/migrate.ts dist/migrate.mjs"
   },
   "dependencies": {
     "@volt/csms": "workspace:*",
     "@volt/db": "workspace:*",
     "@volt/domain": "workspace:*",
     "@volt/gateway-client": "workspace:*",
+    "@volt/logging": "workspace:*",
     "@volt/payments": "workspace:*",
     "@volt/security": "workspace:*",
     "@volt/tariff-engine": "workspace:*",

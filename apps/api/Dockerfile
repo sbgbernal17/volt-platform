@@ -11,6 +11,9 @@ ENV NODE_ENV=production
 WORKDIR /app
 RUN addgroup -S volt && adduser -S volt -G volt
 COPY --from=build /repo/apps/api/dist/main.mjs ./main.mjs
+# Migraciones (Cloud Run Job `migrate`): el bundle las busca en ../migrations respecto a sí mismo.
+COPY --from=build /repo/apps/api/dist/migrate.mjs ./migrate.mjs
+COPY --from=build /repo/packages/db/migrations /migrations
 USER volt
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1

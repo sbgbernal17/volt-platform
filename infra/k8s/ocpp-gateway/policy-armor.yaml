@@ -1,0 +1,19 @@
+# Solo cuando Terraform creó la política de Cloud Armor (cloud_armor_enabled).
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: ocpp-gateway
+  namespace: volt
+spec:
+  default:
+    timeoutSec: 86400
+    connectionDraining:
+      drainingTimeoutSec: 60
+    logging:
+      enabled: true
+      sampleRate: 1000000
+    securityPolicy: ${OCPP_SECURITY_POLICY}
+  targetRef:
+    group: ""
+    kind: Service
+    name: ocpp-gateway

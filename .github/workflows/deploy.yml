@@ -1,0 +1,243 @@
+# Despliegue de la plataforma (iteración 8, ADR 0023): construye las imágenes, las publica en
+# Artifact Registry, aplica las migraciones (Cloud Run Job), actualiza api/worker/backoffice/app web
+# y cargador sintético en Cloud Run y despliega el gateway en GKE sin cortar conexiones.
+# dev se despliega solo con cada push a main que toque apps o paquetes; staging y prod a mano.
+name: Despliegue
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente'
+        type: choice
+        default: dev
+        options: [dev, staging, prod]
+      image_tag:
+        description: 'Etiqueta de imágenes ya publicadas (vacío: construir desde este commit)'
+        type: string
+        default: ''
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'infra/k8s/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+env:
+  ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+  REGION: us-central1
+  DOMAIN: supercargadores.co
+
+jobs:
+  prepare:
+    name: Preparar
+    runs-on: ubuntu-latest
+    outputs:
+      suffix: ${{ steps.vars.outputs.suffix }}
+      tag: ${{ steps.vars.outputs.tag }}
+      build: ${{ steps.vars.outputs.build }}
+      api_host: ${{ steps.vars.outputs.api_host }}
+      registry: ${{ steps.vars.outputs.registry }}
+    steps:
+      - id: vars
+        env:
+          PROJECT_ID_DEV: ${{ vars.GCP_PROJECT_ID_DEV }}
+          PROJECT_ID_STAGING: ${{ vars.GCP_PROJECT_ID_STAGING }}
+          PROJECT_ID_PROD: ${{ vars.GCP_PROJECT_ID_PROD }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          suffix=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')
+          echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
+          if [ -n "$IMAGE_TAG" ]; then
+            echo "tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"; echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"; echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$ENVIRONMENT" = "prod" ]; then host="api.$DOMAIN"; else host="api-$ENVIRONMENT.$DOMAIN"; fi
+          echo "api_host=$host" >> "$GITHUB_OUTPUT"
+          project_var="PROJECT_ID_$suffix"
+          echo "registry=${REGION}-docker.pkg.dev/${!project_var}/volt" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Imagen ${{ matrix.app }}
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: api
+            path: apps/api
+          - app: worker
+            path: apps/worker
+          - app: ocpp-gateway
+            path: apps/ocpp-gateway
+          - app: backoffice
+            path: apps/backoffice
+          - app: app-web
+            path: apps/mobile
+          - app: synthetic-charger
+            path: apps/synthetic-charger
+    steps:
+      - uses: actions/checkout@v4
+      - name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', needs.prepare.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', needs.prepare.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', needs.prepare.outputs.suffix)] }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.path }}/Dockerfile
+          push: true
+          tags: |
+            ${{ needs.prepare.outputs.registry }}/${{ matrix.app }}:${{ needs.prepare.outputs.tag }}
+            ${{ needs.prepare.outputs.registry }}/${{ matrix.app }}:${{ env.ENVIRONMENT }}-latest
+          build-args: |
+            EXPO_PUBLIC_API_URL=https://${{ needs.prepare.outputs.api_host }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+
+  deploy:
+    name: Desplegar en ${{ inputs.environment || 'dev' }}
+    needs: [prepare, build]
+    if: always() && needs.prepare.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      REGISTRY: ${{ needs.prepare.outputs.registry }}
+      PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', needs.prepare.outputs.suffix)] }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', needs.prepare.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', needs.prepare.outputs.suffix)] }}
+          project_id: ${{ env.PROJECT_ID }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.16.4'
+          terraform_wrapper: false
+
+      - name: Salidas de Terraform
+        id: tf
+        working-directory: infra/terraform
+        run: |
+          terraform init -input=false \
+            -backend-config="envs/${ENVIRONMENT}.backend.hcl" \
+            -backend-config="bucket=${PROJECT_ID}-tfstate" >/dev/null
+          terraform output -json > "$RUNNER_TEMP/outputs.json"
+          jq -r '.gke.value | to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/outputs.json" > "$RUNNER_TEMP/gke.env"
+          echo "cluster=$(jq -r '.cluster_name.value' "$RUNNER_TEMP/outputs.json")" >> "$GITHUB_OUTPUT"
+          echo "location=$(jq -r '.cluster_location.value' "$RUNNER_TEMP/outputs.json")" >> "$GITHUB_OUTPUT"
+          echo "synthetic=$(jq -r '.run_services.value.synthetic // ""' "$RUNNER_TEMP/outputs.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Llaves de prueba de Wompi en Secret Manager (staging)
+        if: env.ENVIRONMENT == 'staging'
+        env:
+          WOMPI_PUBLIC_KEY_TEST: ${{ secrets.WOMPI_PUBLIC_KEY_TEST }}
+          WOMPI_PRIVATE_KEY_TEST: ${{ secrets.WOMPI_PRIVATE_KEY_TEST }}
+          WOMPI_INTEGRITY_SECRET_TEST: ${{ secrets.WOMPI_INTEGRITY_SECRET_TEST }}
+          WOMPI_EVENTS_SECRET_TEST: ${{ secrets.WOMPI_EVENTS_SECRET_TEST }}
+        run: |
+          set -euo pipefail
+          for pair in wompi-public-key:WOMPI_PUBLIC_KEY_TEST wompi-private-key:WOMPI_PRIVATE_KEY_TEST \
+                      wompi-integrity-secret:WOMPI_INTEGRITY_SECRET_TEST wompi-events-secret:WOMPI_EVENTS_SECRET_TEST; do
+            secret=${pair%%:*}; var=${pair##*:}; value="${!var}"
+            if [ -z "$value" ]; then echo "::warning::falta el secreto $var en GitHub"; continue; fi
+            current=$(gcloud secrets versions access latest --secret "$secret" --project "$PROJECT_ID" 2>/dev/null || echo "")
+            if [ "$current" = "$value" ]; then echo "$secret: al día"; continue; fi
+            printf '%s' "$value" | gcloud secrets versions add "$secret" --project "$PROJECT_ID" --data-file=- >/dev/null
+            echo "$secret: versión nueva"
+          done
+
+      - name: Migraciones (Cloud Run Job)
+        run: |
+          set -euo pipefail
+          gcloud run jobs update migrate --image "$REGISTRY/api:$TAG" --region "$REGION" --project "$PROJECT_ID" --quiet
+          gcloud run jobs execute migrate --region "$REGION" --project "$PROJECT_ID" --wait
+
+      - name: Servicios de Cloud Run
+        run: |
+          set -euo pipefail
+          for pair in api:api worker:worker backoffice:backoffice app-web:app-web synthetic-charger:synthetic-charger; do
+            service=${pair%%:*}; image=${pair##*:}
+            if [ "$service" = "synthetic-charger" ] && [ -z "${{ steps.tf.outputs.synthetic }}" ]; then continue; fi
+            gcloud run services update "$service" --image "$REGISTRY/$image:$TAG" \
+              --region "$REGION" --project "$PROJECT_ID" --quiet
+          done
+
+      - name: Credenciales del clúster
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ steps.tf.outputs.cluster }}
+          location: ${{ steps.tf.outputs.location }}
+          project_id: ${{ env.PROJECT_ID }}
+          use_dns_based_endpoint: true
+
+      - name: Gateway OCPP en GKE (rolling update sin cortes)
+        run: |
+          set -euo pipefail
+          set -a; . "$RUNNER_TEMP/gke.env"; set +a
+          export PROJECT_NUMBER=$(jq -r '.project_number.value' "$RUNNER_TEMP/outputs.json")
+          export IMAGE="$REGISTRY/ocpp-gateway" TAG VOLT_ENV="$ENVIRONMENT"
+          export GSA_EMAIL="$gsa_email" OCPP_HOST="$ocpp_host" OCPP_ADDRESS_NAME="$ocpp_address_name"
+          export OCPP_CERTIFICATE_MAP="$ocpp_certificate_map" OCPP_SSL_POLICY="$ocpp_ssl_policy"
+          export OCPP_SECURITY_POLICY="$ocpp_security_policy" GATEWAY_REPLICAS="$replicas"
+          export GATEWAY_MAX_REPLICAS="$max_replicas" GATEWAY_CPU="$cpu" GATEWAY_MEMORY="$memory"
+          out="$RUNNER_TEMP/k8s"; mkdir -p "$out"
+          for f in infra/k8s/ocpp-gateway/*.yaml; do envsubst < "$f" > "$out/$(basename "$f")"; done
+          if [ -n "$OCPP_SECURITY_POLICY" ]; then
+            # Con Cloud Armor la política de backend lleva securityPolicy.
+            mv "$out/policy-armor.yaml" "$out/policy-armor.rendered.yaml"
+            python3 - "$out" <<'PY'
+          import sys, pathlib
+          out = pathlib.Path(sys.argv[1])
+          policies = (out / 'policies.yaml').read_text().split('---\n')
+          policies = [p for p in policies if 'kind: GCPBackendPolicy' not in p]
+          (out / 'policies.yaml').write_text('---\n'.join(policies))
+          k = out / 'kustomization.yaml'
+          k.write_text(k.read_text().replace('  - policies.yaml\n', '  - policies.yaml\n  - policy-armor.rendered.yaml\n'))
+          PY
+          else
+            rm -f "$out/policy-armor.yaml"
+          fi
+          kubectl apply -k "$out"
+          kubectl rollout status deployment/ocpp-gateway -n volt --timeout=900s
+          kubectl get gateway ocpp -n volt -o wide || true
+
+      - name: Comprobación
+        run: |
+          set -euo pipefail
+          api_url=$(gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format 'value(status.url)')
+          if [ "$ENVIRONMENT" = "dev" ]; then
+            curl -sSf --max-time 20 "$api_url/healthz" | head -c 300; echo
+          fi
+          {
+            echo "## Despliegue ${ENVIRONMENT} (${TAG})"
+            echo ""
+            echo "- API: $api_url"
+            echo "- Gateway: $(kubectl get gateway ocpp -n volt -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || echo 'sin dirección aún')"
+            echo "- Pods del gateway: $(kubectl get pods -n volt -l app.kubernetes.io/name=ocpp-gateway --no-headers | wc -l)"
+          } >> "$GITHUB_STEP_SUMMARY"

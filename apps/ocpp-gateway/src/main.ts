@@ -1,7 +1,7 @@
 import { createSql } from '@volt/db';
 import { RedisConnectionDirectory } from '@volt/gateway-client';
+import { createLogger } from '@volt/logging';
 import { Redis } from 'ioredis';
-import { pino } from 'pino';
 import { loadConfig } from './config.ts';
 import { DbRegistry } from './db-registry.ts';
 import { RedisEvictionListener } from './eviction.ts';
@@ -10,13 +10,19 @@ import { DbPersistence, MemoryPersistence } from './persistence.ts';
 import { registryFromJson } from './registry.ts';
 
 const config = loadConfig();
-const logger = pino({
+const logger = createLogger({
+  service: 'ocpp-gateway',
   level: config.LOG_LEVEL,
-  ...(config.NODE_ENV === 'development' ? { transport: { target: 'pino-pretty' } } : {}),
+  pretty: config.NODE_ENV === 'development',
+  env: config.VOLT_ENV,
 });
 
 const sql = config.DATABASE_URL
-  ? createSql(config.DATABASE_URL, { max: 5, applicationName: 'volt-ocpp-gateway' })
+  ? createSql(config.DATABASE_URL, {
+      max: 5,
+      applicationName: 'volt-ocpp-gateway',
+      sslCa: config.DATABASE_SSL_CA,
+    })
   : undefined;
 const registry = sql ? new DbRegistry(sql, logger) : registryFromJson(config.OCPP_STATIC_REGISTRY);
 const persistence = sql ? new DbPersistence(sql, logger) : new MemoryPersistence();

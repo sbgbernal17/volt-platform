@@ -1,8 +1,11 @@
 import { hostname } from 'node:os';
+import { withFileSecrets } from '@volt/logging';
 import { z } from 'zod';
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /** Ambiente desplegado (dev, staging, prod); solo informativo en el gateway. */
+  VOLT_ENV: z.enum(['local', 'dev', 'staging', 'prod']).optional(),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info'),
   OCPP_GATEWAY_HOST: z.string().default('0.0.0.0'),
   OCPP_GATEWAY_PORT: z.coerce.number().int().min(0).max(65535).default(9220),
@@ -40,6 +43,8 @@ const schema = z.object({
   OCPP_SEEN_WRITE_INTERVAL_S: z.coerce.number().int().min(1).max(3600).default(10),
   /** Registro y estado en PostgreSQL; sin ella se usa el registro estático (laboratorio). */
   DATABASE_URL: z.string().url().optional(),
+  /** CA del servidor de Cloud SQL (PEM) para TLS con verificación (iteración 8). */
+  DATABASE_SSL_CA: z.string().optional(),
   /** Directorio de conexiones y evicción entre pods; sin ella el directorio es local. */
   REDIS_URL: z.string().url().optional(),
   /**
@@ -52,8 +57,13 @@ const schema = z.object({
 
 export type GatewayConfig = z.infer<typeof schema>;
 
+/**
+ * Las variables pueden llegar como archivos (`DATABASE_URL_FILE`, `REDIS_URL_FILE`,
+ * `OCPP_GATEWAY_INTERNAL_TOKEN_FILE`, `DATABASE_SSL_CA_FILE`): así entrega GKE los secretos de
+ * Secret Manager (ADR 0023).
+ */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
-  const result = schema.safeParse(env);
+  const result = schema.safeParse(withFileSecrets(env));
   if (!result.success) {
     const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
     throw new Error(`Configuración inválida: ${issues.join('; ')}`);

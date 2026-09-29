@@ -1,0 +1,29 @@
+{
+  "name": "@volt/synthetic-charger",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cargador sintético: un cargador simulado siempre conectado al gateway del ambiente que mide la disponibilidad de extremo a extremo (OPS §2.1)",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "build": "node ../../scripts/bundle.mjs src/main.ts dist/main.mjs"
+  },
+  "dependencies": {
+    "@volt/csms": "workspace:*",
+    "@volt/db": "workspace:*",
+    "@volt/domain": "workspace:*",
+    "@volt/logging": "workspace:*",
+    "@volt/ocpp-sim": "workspace:*",
+    "postgres": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

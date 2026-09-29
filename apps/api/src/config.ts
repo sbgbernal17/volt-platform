@@ -2,10 +2,17 @@ import { z } from 'zod';
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /**
+   * Ambiente desplegado. Las reglas "solo en producción" (identidad del personal, Wompi real, sin
+   * token estático) aplican cuando es `prod`, o cuando no está definido y NODE_ENV es production.
+   */
+  VOLT_ENV: z.enum(['local', 'dev', 'staging', 'prod']).optional(),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info'),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(8080),
   API_HOST: z.string().default('0.0.0.0'),
   DATABASE_URL: z.string().url().optional(),
+  /** CA del servidor de Cloud SQL (PEM) para TLS con verificación (iteración 8). */
+  DATABASE_SSL_CA: z.string().optional(),
   REDIS_URL: z.string().url().optional(),
   /**
    * Token estático de la API de administración (/admin/v1) para laboratorio, pruebas y automatización:
@@ -85,21 +92,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       `Configuración inválida: ${result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
     );
   }
-  if (result.data.NODE_ENV === 'production' && result.data.API_DEV_DRIVER_AUTH) {
+  const isProd = result.data.VOLT_ENV
+    ? result.data.VOLT_ENV === 'prod'
+    : result.data.NODE_ENV === 'production';
+  if (isProd && result.data.API_DEV_DRIVER_AUTH) {
     throw new Error('Configuración inválida: API_DEV_DRIVER_AUTH no puede activarse en producción');
   }
-  if (result.data.NODE_ENV === 'production' && result.data.API_ADMIN_TOKEN) {
+  if (isProd && result.data.API_ADMIN_TOKEN) {
     throw new Error(
       'Configuración inválida: API_ADMIN_TOKEN no puede usarse en producción (el personal entra con Identity Platform)',
     );
   }
-  if (result.data.NODE_ENV === 'production' && !result.data.IDENTITY_PLATFORM_PROJECT_ID) {
+  if (isProd && !result.data.IDENTITY_PLATFORM_PROJECT_ID) {
     throw new Error('Configuración inválida: en producción falta IDENTITY_PLATFORM_PROJECT_ID');
   }
-  if (result.data.NODE_ENV === 'production' && result.data.PAYMENTS_PROVIDER !== 'wompi') {
+  if (isProd && result.data.PAYMENTS_PROVIDER !== 'wompi') {
     throw new Error('Configuración inválida: en producción PAYMENTS_PROVIDER debe ser wompi');
   }
-  if (result.data.NODE_ENV === 'production' && result.data.WOMPI_ENVIRONMENT !== 'production') {
+  if (isProd && result.data.WOMPI_ENVIRONMENT !== 'production') {
     throw new Error('Configuración inválida: en producción WOMPI_ENVIRONMENT debe ser production');
   }
   if (result.data.PAYMENTS_PROVIDER === 'wompi') {
