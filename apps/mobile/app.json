@@ -14,7 +14,8 @@
       "associatedDomains": ["applinks:app.supercargadores.co"],
       "infoPlist": {
         "NSCameraUsageDescription": "Volt usa la cámara para leer el código QR del conector.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Volt usa su ubicación para mostrarle las estaciones más cercanas y la distancia a cada una."
       }
     },
     "android": {
@@ -23,7 +24,12 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0B0B"
       },
-      "permissions": ["CAMERA", "POST_NOTIFICATIONS"],
+      "permissions": [
+        "CAMERA",
+        "POST_NOTIFICATIONS",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -60,6 +66,13 @@
         {
           "cameraPermission": "Volt usa la cámara para leer el código QR del conector.",
           "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Volt usa su ubicación para mostrarle las estaciones más cercanas y la distancia a cada una.",
+          "isAndroidBackgroundLocationEnabled": false
         }
       ],
       [

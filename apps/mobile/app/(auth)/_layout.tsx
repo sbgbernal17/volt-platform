@@ -1,22 +1,14 @@
 import { Stack } from 'expo-router';
-import { useI18n } from '../../src/i18n/index.tsx';
-import { colors, fonts } from '../../src/theme/tokens.ts';
+import { colors } from '../../src/theme/tokens.ts';
 
+/** Bienvenida, registro, inicio y recuperación: sin barra nativa (cada pantalla trae su fila superior). */
 export default function AuthLayout() {
-  const { t } = useI18n();
   return (
-    <Stack
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.bg },
-        headerTintColor: colors.text,
-        headerTitleStyle: { fontFamily: fonts.titleMedium, fontSize: 20 },
-        headerShadowVisible: false,
-        contentStyle: { backgroundColor: colors.bg },
-      }}
-    >
-      <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-      <Stack.Screen name="sign-up" options={{ title: t('auth.signUp') }} />
-      <Stack.Screen name="forgot" options={{ title: t('auth.forgotTitle') }} />
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="sign-in" />
+      <Stack.Screen name="sign-up" />
+      <Stack.Screen name="forgot" />
     </Stack>
   );
 }

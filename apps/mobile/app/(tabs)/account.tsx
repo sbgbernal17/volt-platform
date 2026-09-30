@@ -1,27 +1,34 @@
-/** Cuenta: perfil, medios de pago, cobros pendientes, avisos, idioma, legal, salida y borrado. */
-import { MaterialIcons } from '@expo/vector-icons';
+/**
+ * Cuenta (handoff, pantalla 18): encabezado con el único degradado de la marca, avatar con
+ * iniciales, accesos rápidos (medios de pago, cobros pendientes, avisos), filas de perfil, idioma,
+ * legal, soporte y cierre de sesión; borrado de cuenta al final. El invitado ve la invitación a
+ * crear cuenta.
+ */
+
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
-import { Alert, Platform, Pressable, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiError } from '../../src/api/client.ts';
 import { useQuery } from '../../src/api/hooks.ts';
 import type { Billing } from '../../src/api/types.ts';
 import { useAuth } from '../../src/auth/auth.tsx';
 import { useI18n } from '../../src/i18n/index.tsx';
 import { pushSupported, registerForPush, unregisterPush } from '../../src/lib/notifications.ts';
-import { colors, spacing } from '../../src/theme/tokens.ts';
+import { Icon, type IconName } from '../../src/theme/icon.tsx';
 import {
-  Badge,
-  Body,
-  Button,
-  Card,
-  Heading,
-  Muted,
-  Notice,
-  Row,
-  Screen,
-} from '../../src/theme/ui.tsx';
+  colors,
+  fonts,
+  headerGradient,
+  radius,
+  spacing,
+  type Tone,
+  text,
+  toneColors,
+} from '../../src/theme/tokens.ts';
+import { Badge, Button, ListRow, Muted, Note, Notice, Screen } from '../../src/theme/ui.tsx';
 
 function confirm(title: string, message: string, ok: string, cancel: string): Promise<boolean> {
   if (Platform.OS === 'web') return Promise.resolve(globalThis.confirm(`${title}\n\n${message}`));
@@ -33,22 +40,72 @@ function confirm(title: string, message: string, ok: string, cancel: string): Pr
   });
 }
 
+export function initials(
+  name: string | null | undefined,
+  email: string | null | undefined,
+): string {
+  const source = (name ?? '').trim() || (email ?? '').split('@')[0] || '';
+  const parts = source.split(/[\s._-]+/).filter(Boolean);
+  const letters =
+    parts.length >= 2 ? `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}` : source.slice(0, 2);
+  return letters.toUpperCase() || 'V';
+}
+
+function QuickAccess({
+  icon,
+  tone,
+  label,
+  badge,
+  onPress,
+}: {
+  icon: IconName;
+  tone: Tone;
+  label: string;
+  badge?: number | undefined;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.quick, pressed && { borderColor: colors.handle }]}
+    >
+      <View style={[styles.quickIcon, { backgroundColor: toneColors[tone].bg }]}>
+        <Icon name={icon} size={22} color={toneColors[tone].fg} />
+        {badge ? (
+          <View style={styles.quickBadge}>
+            <Text style={styles.quickBadgeText}>{badge > 9 ? '9+' : String(badge)}</Text>
+          </View>
+        ) : null}
+      </View>
+      <Text style={styles.quickLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export default function Account() {
   const { t, locale, setLocale } = useI18n();
   const auth = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const signedIn = auth.status === 'authenticated';
   const [message, setMessage] = useState<{
     tone: 'success' | 'warning' | 'danger';
     text: string;
   } | null>(null);
-  const billing = useQuery(() => auth.api.get<Billing>('/billing'), [], { intervalMs: 30_000 });
+  const billing = useQuery(() => auth.api.get<Billing>('/billing'), [signedIn], {
+    enabled: signedIn,
+    intervalMs: 30_000,
+  });
   const unread = useQuery(
     () => auth.api.get<{ unread: number }>('/me/notifications', { limit: 1 }),
-    [],
-    { intervalMs: 30_000 },
+    [signedIn],
+    { enabled: signedIn, intervalMs: 30_000 },
   );
   const profile = auth.profile;
   const openDebts = billing.data?.debts.filter((d) => d.status === 'OPEN').length ?? 0;
+  const legal = auth.config?.legal;
+  const support = legal?.supportEmail ?? null;
 
   const enablePush = async () => {
     const result = await registerForPush(auth.api, locale);
@@ -91,118 +148,213 @@ export default function Account() {
     }
   };
 
-  const Item = ({
-    icon,
-    label,
-    badge,
-    onPress,
-  }: {
-    icon: keyof typeof MaterialIcons.glyphMap;
-    label: string;
-    badge?: string | undefined;
-    onPress: () => void;
-  }) => (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.md,
-        paddingVertical: spacing.md,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.line,
-        opacity: pressed ? 0.7 : 1,
-      })}
+  const header = (
+    <LinearGradient
+      colors={[...headerGradient]}
+      style={[styles.header, { paddingTop: insets.top + spacing.xxl }]}
     >
-      <MaterialIcons name={icon} size={24} color={colors.textSecondary} />
-      <Body style={{ flex: 1 }}>{label}</Body>
-      {badge ? <Badge tone="danger" text={badge} /> : null}
-      <MaterialIcons name="chevron-right" size={24} color={colors.textSecondary} />
-    </Pressable>
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>
+          {signedIn ? initials(profile?.displayName, profile?.email ?? auth.email) : 'V'}
+        </Text>
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={styles.name} numberOfLines={1}>
+          {signedIn
+            ? (profile?.displayName ?? auth.email ?? t('account.profile'))
+            : t('account.guestTitle')}
+        </Text>
+        <Text style={styles.email} numberOfLines={1}>
+          {signedIn ? (profile?.email ?? auth.email ?? '') : t('account.guestBody')}
+        </Text>
+      </View>
+    </LinearGradient>
   );
 
+  if (!signedIn) {
+    return (
+      <Screen dense padded={false}>
+        {header}
+        <View style={{ paddingHorizontal: spacing.list, gap: spacing.md, paddingTop: spacing.md }}>
+          <Button title={t('onboarding.create')} onPress={() => router.push('/(auth)/sign-up')} />
+          <Button
+            title={t('onboarding.signIn')}
+            variant="secondary"
+            onPress={() => router.push('/(auth)/sign-in')}
+          />
+          <View>
+            <ListRow
+              icon="language"
+              title={`${t('app.language')}: ${locale === 'es' ? t('app.spanish') : t('app.english')}`}
+              onPress={() => setLocale(locale === 'es' ? 'en' : 'es')}
+            />
+            {legal ? (
+              <ListRow
+                icon="gavel"
+                title={t('account.legalTitle')}
+                onPress={() => void WebBrowser.openBrowserAsync(legal.termsUrl)}
+              />
+            ) : null}
+          </View>
+          <Note>
+            {t('app.version')} {auth.config?.version ?? ''}
+          </Note>
+        </View>
+      </Screen>
+    );
+  }
+
   return (
-    <Screen>
-      <Card onPress={() => router.push('/profile')}>
-        <Heading>{profile?.displayName ?? auth.email ?? t('account.profile')}</Heading>
-        <Muted>{profile?.email ?? auth.email ?? ''}</Muted>
-        <Row>
-          {profile ? (
-            <Badge
-              tone={profile.emailVerified ? 'success' : 'warning'}
-              text={
-                profile.emailVerified ? t('account.emailVerified') : t('account.emailUnverified')
-              }
+    <Screen dense padded={false}>
+      {header}
+      <View style={{ paddingHorizontal: spacing.list, gap: spacing.md }}>
+        {profile && (!profile.emailVerified || profile.billingStatus !== 'OK') ? (
+          <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
+            {!profile.emailVerified ? (
+              <Badge tone="warning" icon="email" text={t('account.emailUnverified')} />
+            ) : null}
+            {profile.billingStatus !== 'OK' ? (
+              <Badge tone="danger" icon="error" text={t('account.blocked')} />
+            ) : null}
+          </View>
+        ) : null}
+        {profile && !profile.emailVerified && auth.config?.auth.provider === 'identity-platform' ? (
+          <Button
+            title={t('verify.title')}
+            variant="secondary"
+            onPress={() => router.push('/verify-email')}
+          />
+        ) : null}
+        {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
+        <View style={{ flexDirection: 'row', gap: spacing.ms }}>
+          <QuickAccess
+            icon="credit-card"
+            tone="info"
+            label={t('account.payment')}
+            onPress={() => router.push('/payment-methods')}
+          />
+          <QuickAccess
+            icon="receipt-long"
+            tone="danger"
+            label={t('account.debts')}
+            badge={openDebts || undefined}
+            onPress={() => router.push('/debts')}
+          />
+          <QuickAccess
+            icon="notifications"
+            tone="success"
+            label={t('account.notifications')}
+            badge={unread.data?.unread || undefined}
+            onPress={() => router.push('/notifications')}
+          />
+        </View>
+        <View>
+          <ListRow
+            icon="person"
+            title={t('account.profile')}
+            onPress={() => router.push('/profile')}
+          />
+          <ListRow
+            icon="language"
+            title={t('app.language')}
+            subtitle={locale === 'es' ? t('app.spanish') : t('app.english')}
+            onPress={() => setLocale(locale === 'es' ? 'en' : 'es')}
+          />
+          {pushSupported() ? (
+            <ListRow
+              icon="notifications-active"
+              title={t('notifications.enable')}
+              onPress={() => void enablePush()}
             />
           ) : null}
-          {profile?.billingStatus !== 'OK' && profile ? (
-            <Badge tone="danger" text={t('account.blocked')} />
+          {support ? (
+            <ListRow
+              icon="support-agent"
+              title={t('account.help')}
+              subtitle={support}
+              onPress={() => void Linking.openURL(`mailto:${support}`).catch(() => undefined)}
+            />
           ) : null}
-        </Row>
-      </Card>
-      {profile && !profile.emailVerified && auth.config?.auth.provider === 'identity-platform' ? (
-        <Button
-          title={t('verify.title')}
-          variant="secondary"
-          onPress={() => router.push('/verify-email')}
-        />
-      ) : null}
-      {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
-      <View>
-        <Item
-          icon="credit-card"
-          label={t('account.payment')}
-          onPress={() => router.push('/payment-methods')}
-        />
-        <Item
-          icon="receipt-long"
-          label={t('account.debts')}
-          badge={openDebts ? String(openDebts) : undefined}
-          onPress={() => router.push('/debts')}
-        />
-        <Item
-          icon="notifications"
-          label={t('account.notifications')}
-          badge={unread.data?.unread ? String(unread.data.unread) : undefined}
-          onPress={() => router.push('/notifications')}
-        />
-        <Item
-          icon="language"
-          label={`${t('app.language')}: ${locale === 'es' ? t('app.spanish') : t('app.english')}`}
-          onPress={() => setLocale(locale === 'es' ? 'en' : 'es')}
-        />
-        {auth.config ? (
-          <Item
-            icon="description"
-            label={t('account.terms')}
-            onPress={() => void WebBrowser.openBrowserAsync(auth.config?.legal.termsUrl ?? '')}
+          {legal ? (
+            <ListRow
+              icon="description"
+              title={t('account.terms')}
+              onPress={() => void WebBrowser.openBrowserAsync(legal.termsUrl)}
+            />
+          ) : null}
+          {legal ? (
+            <ListRow
+              icon="gavel"
+              title={t('account.privacy')}
+              onPress={() => void WebBrowser.openBrowserAsync(legal.privacyUrl)}
+            />
+          ) : null}
+          <ListRow
+            icon="logout"
+            title={t('auth.signOut')}
+            destructive
+            onPress={() => void signOut()}
           />
-        ) : null}
-        {auth.config ? (
-          <Item
-            icon="privacy-tip"
-            label={t('account.privacy')}
-            onPress={() => void WebBrowser.openBrowserAsync(auth.config?.legal.privacyUrl ?? '')}
-          />
-        ) : null}
+        </View>
+        <Muted>{t('account.deleteHelp')}</Muted>
+        <Button title={t('account.delete')} variant="ghost" onPress={() => void remove()} />
+        <Note>
+          {t('app.version')} {auth.config?.version ?? ''}
+        </Note>
       </View>
-      {pushSupported() ? (
-        <Button
-          title={t('notifications.enable')}
-          variant="secondary"
-          onPress={() => void enablePush()}
-        />
-      ) : null}
-      <Button title={t('auth.signOut')} variant="secondary" onPress={() => void signOut()} />
-      <Muted>{t('account.deleteHelp')}</Muted>
-      <Button title={t('account.delete')} variant="danger" onPress={() => void remove()} />
-      <Muted>
-        {t('app.version')} {auth.config?.version ?? ''}
-        {auth.config?.legal.supportEmail
-          ? ` · ${t('app.support')}: ${auth.config.legal.supportEmail}`
-          : ''}
-      </Muted>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  header: {
+    minHeight: 210,
+    paddingHorizontal: spacing.list,
+    paddingBottom: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { fontFamily: fonts.title, fontSize: 24, color: colors.text },
+  name: { ...text.titulo2, color: colors.text },
+  email: { ...text.cuerpoS, color: colors.text, opacity: 0.85 },
+  quick: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    padding: spacing.ms,
+    gap: spacing.ms,
+    minHeight: 112,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  quickIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickBadgeText: { fontFamily: fonts.bodyBold, fontSize: 11, color: colors.onPrimary },
+  quickLabel: { ...text.cuerpoS, color: colors.text },
+});

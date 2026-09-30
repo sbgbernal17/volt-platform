@@ -1,10 +1,9 @@
-/** Entrada: correo y contraseña en Identity Platform; en laboratorio, identidad de desarrollo. */
+/** Inicio de sesión (handoff, estilo de formularios): correo y contraseña; en laboratorio, identidad de desarrollo. */
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { useAuth } from '../../src/auth/auth.tsx';
 import { authErrorKey } from '../../src/auth/firebase.ts';
-import { BrandHeader } from '../../src/components/brand-header.tsx';
 import { useI18n } from '../../src/i18n/index.tsx';
 import { spacing } from '../../src/theme/tokens.ts';
 import {
@@ -13,17 +12,18 @@ import {
   Card,
   ErrorBox,
   Field,
-  Heading,
   LinkText,
   Muted,
   Notice,
   Row,
   Screen,
+  Subtitle,
   Title,
+  TopBar,
 } from '../../src/theme/ui.tsx';
 
 export default function SignIn() {
-  const { t, locale, setLocale } = useI18n();
+  const { t } = useI18n();
   const auth = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -51,14 +51,16 @@ export default function SignIn() {
     }
     await auth.signInDev(driverId);
   };
+  const back = () => (router.canGoBack() ? router.back() : router.replace('/(auth)'));
 
   return (
     <Screen padded={false}>
-      <BrandHeader>
-        <Title>{t('auth.welcome')}</Title>
-        <Body>{t('auth.tagline')}</Body>
-      </BrandHeader>
-      <View style={{ paddingHorizontal: spacing.xl, gap: spacing.md }}>
+      <TopBar onBack={back} backLabel={t('app.back')} />
+      <View style={{ paddingHorizontal: spacing.xl, gap: spacing.lg }}>
+        <View style={{ gap: spacing.xs }}>
+          <Title>{t('auth.signInTitle')}</Title>
+          <Muted style={{ fontSize: 16, lineHeight: 24 }}>{t('auth.signInHelp')}</Muted>
+        </View>
         {auth.configError ? (
           <ErrorBox
             message={t('app.offline')}
@@ -69,7 +71,7 @@ export default function SignIn() {
         {provider === 'identity-platform' ? (
           <>
             <Field
-              label={t('auth.email')}
+              label={t('auth.emailLabel')}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -95,7 +97,12 @@ export default function SignIn() {
             />
             <Row between>
               <LinkText onPress={() => router.push('/(auth)/forgot')}>{t('auth.forgot')}</LinkText>
-              <LinkText onPress={() => router.push('/(auth)/sign-up')}>{t('auth.signUp')}</LinkText>
+              <Row>
+                <Muted>{t('auth.noAccount')}</Muted>
+                <LinkText onPress={() => router.replace('/(auth)/sign-up')}>
+                  {t('auth.noAccountLink')}
+                </LinkText>
+              </Row>
             </Row>
           </>
         ) : provider === 'none' && !auth.configError ? (
@@ -103,8 +110,8 @@ export default function SignIn() {
         ) : null}
         {auth.config?.auth.devLogin ? (
           <Card>
-            <Heading>{t('auth.devTitle')}</Heading>
-            <Muted>{t('auth.devHelp')}</Muted>
+            <Subtitle>{t('auth.devTitle')}</Subtitle>
+            <Body style={{ color: undefined }}>{t('auth.devHelp')}</Body>
             <Field
               label={t('auth.devDriverId')}
               value={driverId}
@@ -122,12 +129,6 @@ export default function SignIn() {
             />
           </Card>
         ) : null}
-        <Row between>
-          <Muted>{t('app.language')}</Muted>
-          <LinkText onPress={() => setLocale(locale === 'es' ? 'en' : 'es')}>
-            {locale === 'es' ? t('app.english') : t('app.spanish')}
-          </LinkText>
-        </Row>
       </View>
     </Screen>
   );

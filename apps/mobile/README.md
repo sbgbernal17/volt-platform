@@ -1,6 +1,6 @@
 # App Volt (`apps/mobile`)
 
-App del conductor (iteración 7, ADR 0022) con Expo SDK 57 y React Native: registro e inicio de sesión con Identity Platform, consentimientos, mapa y lista de estaciones con estado en vivo, precio desagregado antes de cargar, lectura del QR del conector, inicio y parada de la carga con progreso en vivo, historial y recibos, medios de pago con Wompi (tarjeta con 3DS y Nequi), cobros pendientes con enlace de pago, avisos push y bandeja de avisos; español e inglés; marca VOLT en tema oscuro.
+App del conductor (iteración 7, ADR 0022) con Expo SDK 57 y React Native: registro e inicio de sesión con Identity Platform, consentimientos, mapa y lista de estaciones con estado en vivo, precio desagregado antes de cargar, lectura del QR del conector, inicio y parada de la carga con progreso en vivo, historial y recibos, medios de pago con Wompi (tarjeta con 3DS y Nequi), cobros pendientes con enlace de pago, avisos push y bandeja de avisos; español e inglés; marca VOLT en tema oscuro. El 30-09-2026 (ADR 0025) la interfaz se rehízo a partir del handoff de UI/UX del dueño: sistema de diseño propio en `src/theme`, barra de pestañas con el botón Cargar, mapa a pantalla completa con hoja de estación, flujo de carga con anillo de progreso y modo invitado (explorar sin cuenta).
 
 ## Cómo correrla en desarrollo
 
@@ -16,14 +16,15 @@ Rutas públicas de la versión web: `/auth/action` recibe los enlaces de los cor
 
 ```bash
 pnpm --filter @volt/mobile typecheck   # tsc con la configuración de Expo
-pnpm --filter @volt/mobile test        # módulos puros: formatos, QR, cliente de Wompi, catálogos
+pnpm --filter @volt/mobile test        # módulos puros: formatos, QR, cliente de Wompi, catálogos, estaciones, sesión, actividad
 pnpm --filter @volt/mobile export:web  # bundle web con Metro (lo corre CI)
 ```
 
 ## Estructura
 
-- `app/`: rutas de Expo Router. `_layout.tsx` monta los proveedores y las guardas (sin sesión → `(auth)`; consentimientos pendientes → `consents`; con sesión → `(tabs)` y detalles).
-- `src/api`: tipos de `/v1`, cliente y consultas con sondeo. `src/auth`: Identity Platform (SDK de Firebase con persistencia en AsyncStorage) y estado de la cuenta. `src/lib`: formatos de marca, lectura del QR, tokenización en Wompi y avisos push. `src/i18n`: catálogos es/en. `src/theme`: tokens de marca y componentes.
+- `app/`: rutas de Expo Router. `_layout.tsx` carga las fuentes (Barlow Semi Condensed y Roboto), monta los proveedores (identidad, idioma, sesión activa) y las guardas: sin sesión ni modo invitado → `(auth)` (bienvenida, registro, inicio, contraseña); con sesión → `verify-email` y `consents` si hacen falta. `(tabs)` (mapa, actividad, cuenta), `station/[id]`, `evse/[evseId]` y `scan` (modal a pantalla completa) se pueden ver como invitado; `session/[id]`, `receipt/[id]`, medios de pago, cobros, avisos y perfil exigen sesión. El invitado que intenta cargar pasa por registro o inicio y vuelve al mismo cargador (`returnTo`).
+- `src/theme`: `tokens.ts` (colores, tipografías, escala, espaciado, radios, tamaños, movimiento y colores por estado de conector, según el handoff de UI/UX y ADR 0025), `icon.tsx` (Material Icons) y `ui.tsx` (pantalla, barra superior, botones, campos, chips, tarjetas, insignias, avisos, filas de datos, mosaicos). `src/components`: barra de pestañas (`tab-bar.tsx`), hoja inferior, anillo de progreso, lista de pasos, diálogo, insignia de conector, marcador del mapa, esqueletos de carga y el mapa (`site-map.native.tsx` con react-native-maps y estilo oscuro; `site-map.web.tsx` con Maps JavaScript API).
+- `src/api`: tipos de `/v1`, cliente y consultas con sondeo. `src/auth`: Identity Platform (SDK de Firebase con persistencia en AsyncStorage), estado de la cuenta y modo invitado. `src/session`: sesión de carga activa compartida (botón Cargar y guardas). `src/lib`: formatos de marca, lectura del QR, tokenización en Wompi, avisos push, ubicación del usuario (`expo-location`), nombres y filtros de estaciones, fase y progreso de la sesión, actividad por mes. `src/i18n`: catálogos es/en, fuente de verdad de los textos de la app.
 - `assets/`: iconos y logotipo generados desde `docs/marca/volt-logo-blanco.svg`.
 - No hay `babel.config.js` a propósito: Expo aplica su preset por defecto (`babel-preset-expo`) resuelto desde sus propios paquetes. Con el `node_modules` aislado de pnpm, un `babel.config.js` que nombre el preset hace fallar el empaquetado de Android en EAS (`Cannot find module 'babel-preset-expo'`), aunque en local funcione. Si algún día hace falta configurar Babel, hay que añadir `babel-preset-expo` como dependencia de desarrollo de la app.
 

@@ -1,9 +1,23 @@
+/** Registro (handoff, pantalla 13): nombre, correo y contraseña; los consentimientos se aceptan después (ADR 0022). */
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
+import { Text, View } from 'react-native';
 import { useAuth } from '../../src/auth/auth.tsx';
 import { authErrorKey } from '../../src/auth/firebase.ts';
 import { useI18n } from '../../src/i18n/index.tsx';
-import { Button, Field, Muted, Notice, Screen } from '../../src/theme/ui.tsx';
+import { colors, spacing, text } from '../../src/theme/tokens.ts';
+import {
+  Button,
+  Field,
+  LinkText,
+  Muted,
+  Notice,
+  Row,
+  Screen,
+  Title,
+  TopBar,
+} from '../../src/theme/ui.tsx';
 
 export default function SignUp() {
   const { t } = useI18n();
@@ -14,6 +28,7 @@ export default function SignUp() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const legal = auth.config?.legal;
 
   const submit = async () => {
     if (password.length < 8) {
@@ -31,42 +46,75 @@ export default function SignUp() {
       setBusy(false);
     }
   };
+  const back = () => (router.canGoBack() ? router.back() : router.replace('/(auth)'));
 
   return (
-    <Screen>
-      <Field
-        label={t('auth.name')}
-        value={name}
-        onChangeText={setName}
-        autoComplete="name"
-        textContentType="name"
-      />
-      <Field
-        label={t('auth.email')}
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        autoComplete="email"
-        keyboardType="email-address"
-        textContentType="emailAddress"
-      />
-      <Field
-        label={t('auth.password')}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        autoComplete="new-password"
-        textContentType="newPassword"
-        help={t('auth.passwordHelp')}
-      />
-      {error ? <Notice tone="danger">{error}</Notice> : null}
-      <Muted>{t('auth.terms')}</Muted>
-      <Button
-        title={t('auth.signUp')}
-        onPress={() => void submit()}
-        loading={busy}
-        disabled={!email || !password}
-      />
+    <Screen padded={false}>
+      <TopBar onBack={back} backLabel={t('app.back')} />
+      <View style={{ paddingHorizontal: spacing.xl, gap: spacing.lg }}>
+        <View style={{ gap: spacing.xs }}>
+          <Title>{t('auth.signUpTitle')}</Title>
+          <Muted style={{ fontSize: 16, lineHeight: 24 }}>{t('auth.signUpHelp')}</Muted>
+        </View>
+        <Field
+          label={t('auth.fullName')}
+          value={name}
+          onChangeText={setName}
+          autoComplete="name"
+          textContentType="name"
+        />
+        <Field
+          label={t('auth.emailLabel')}
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          autoComplete="email"
+          keyboardType="email-address"
+          textContentType="emailAddress"
+        />
+        <Field
+          label={t('auth.password')}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          autoComplete="new-password"
+          textContentType="newPassword"
+          help={t('auth.passwordHelp')}
+        />
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+        <Text style={{ ...text.cuerpoS, color: colors.textSecondary }}>
+          {t('auth.terms')}{' '}
+          {legal ? (
+            <>
+              <Text
+                style={{ color: colors.link }}
+                onPress={() => void WebBrowser.openBrowserAsync(legal.termsUrl)}
+              >
+                {t('account.terms')}
+              </Text>
+              {' · '}
+              <Text
+                style={{ color: colors.link }}
+                onPress={() => void WebBrowser.openBrowserAsync(legal.privacyUrl)}
+              >
+                {t('account.privacy')}
+              </Text>
+            </>
+          ) : null}
+        </Text>
+        <Button
+          title={t('auth.signUp')}
+          onPress={() => void submit()}
+          loading={busy}
+          disabled={!email || !password}
+        />
+        <Row style={{ justifyContent: 'center' }}>
+          <Muted>{t('auth.haveAccount')}</Muted>
+          <LinkText onPress={() => router.replace('/(auth)/sign-in')}>
+            {t('auth.haveAccountLink')}
+          </LinkText>
+        </Row>
+      </View>
     </Screen>
   );
 }

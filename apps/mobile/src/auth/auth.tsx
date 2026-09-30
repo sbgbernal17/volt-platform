@@ -35,11 +35,18 @@ import type { AppConfig, ConsentKey, Profile } from '../api/types.ts';
 import { createAuth, isRecentLoginError } from './firebase.ts';
 
 const DEV_TOKEN_KEY = 'volt.devToken';
+const GUEST_KEY = 'volt.guest';
 
 export type AuthStatus = 'loading' | 'anonymous' | 'authenticated';
 
 export interface AuthState {
   status: AuthStatus;
+  /** Explora el mapa sin cuenta (handoff, sección 5): el registro aparece al iniciar una carga. */
+  guest: boolean;
+  browseAsGuest: () => void;
+  /** Ruta a la que volver cuando el invitado termine de registrarse o entrar. */
+  returnTo: string | null;
+  setReturnTo: (route: string | null) => void;
   config: AppConfig | null;
   configError: unknown;
   reloadConfig: () => Promise<void>;
@@ -90,6 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [devToken, setDevToken] = useState<string | null>(null);
+  const [guest, setGuest] = useState(false);
+  const [returnTo, setReturnTo] = useState<string | null>(null);
   const authRef = useRef<Auth | null>(null);
   const baseUrl = useMemo(() => defaultApiBaseUrl(), []);
 
@@ -133,7 +142,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (stored?.startsWith('dev:')) setDevToken(stored);
       })
       .catch(() => undefined);
+    AsyncStorage.getItem(GUEST_KEY)
+      .then((stored) => {
+        if (stored === '1') setGuest(true);
+      })
+      .catch(() => undefined);
   }, [loadConfig]);
+
+  const browseAsGuest = useCallback(() => {
+    setGuest(true);
+    AsyncStorage.setItem(GUEST_KEY, '1').catch(() => undefined);
+  }, []);
 
   // Identity Platform: se inicializa cuando llega la configuración.
   useEffect(() => {
@@ -169,6 +188,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (devToken) setStatus('authenticated');
     else if (config && !user) setStatus('anonymous');
   }, [devToken, config, user]);
+
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    setGuest(false);
+    AsyncStorage.removeItem(GUEST_KEY).catch(() => undefined);
+  }, [status]);
 
   const refreshProfile = useCallback(async (): Promise<Profile | null> => {
     try {
@@ -213,6 +238,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     setProfileError(null);
     if (authRef.current?.currentUser) await firebaseSignOut(authRef.current);
+    setGuest(false);
+    setReturnTo(null);
+    await AsyncStorage.removeItem(GUEST_KEY).catch(() => undefined);
     setStatus('anonymous');
   }, []);
 
@@ -290,6 +318,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthState>(
     () => ({
       status,
+      guest,
+      browseAsGuest,
+      returnTo,
+      setReturnTo,
       config,
       configError,
       reloadConfig: loadConfig,
@@ -313,6 +345,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }),
     [
       status,
+      guest,
+      browseAsGuest,
+      returnTo,
       config,
       configError,
       loadConfig,

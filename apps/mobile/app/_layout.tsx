@@ -4,11 +4,13 @@
  * consents; con sesión → pestañas y pantallas de detalle.
  */
 import {
+  BarlowSemiCondensed_500Medium,
   BarlowSemiCondensed_600SemiBold,
   BarlowSemiCondensed_700Bold,
+  BarlowSemiCondensed_800ExtraBold,
   BarlowSemiCondensed_800ExtraBold_Italic,
 } from '@expo-google-fonts/barlow-semi-condensed';
-import { Roboto_400Regular, Roboto_500Medium } from '@expo-google-fonts/roboto';
+import { Roboto_400Regular, Roboto_500Medium, Roboto_700Bold } from '@expo-google-fonts/roboto';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { Stack, useRouter } from 'expo-router';
@@ -20,6 +22,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../src/auth/auth.tsx';
 import { I18nProvider, useI18n } from '../src/i18n/index.tsx';
 import { configureNotificationHandler, registerForPush } from '../src/lib/notifications.ts';
+import { ActiveSessionProvider } from '../src/session/active-session.tsx';
 import { colors, fonts } from '../src/theme/tokens.ts';
 import { Loading } from '../src/theme/ui.tsx';
 
@@ -27,11 +30,14 @@ SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 export default function RootLayout() {
   const [fontsLoaded, fontsError] = useFonts({
+    BarlowSemiCondensed_500Medium,
     BarlowSemiCondensed_600SemiBold,
     BarlowSemiCondensed_700Bold,
+    BarlowSemiCondensed_800ExtraBold,
     BarlowSemiCondensed_800ExtraBold_Italic,
     Roboto_400Regular,
     Roboto_500Medium,
+    Roboto_700Bold,
   });
   const fontsReady = fontsLoaded || Boolean(fontsError);
   return (
@@ -47,7 +53,9 @@ function LocalizedRoot({ fontsReady }: { fontsReady: boolean }) {
   const auth = useAuth();
   return (
     <I18nProvider onChange={(locale) => void auth.updateLocale(locale)}>
-      <Root fontsReady={fontsReady} />
+      <ActiveSessionProvider>
+        <Root fontsReady={fontsReady} />
+      </ActiveSessionProvider>
     </I18nProvider>
   );
 }
@@ -85,12 +93,27 @@ function Root({ fontsReady }: { fontsReady: boolean }) {
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => undefined);
   }, [ready]);
+
+  // El invitado que crea su cuenta desde un cargador vuelve a ese cargador al terminar.
+  const { returnTo, setReturnTo, status, profileError, profile } = auth;
+  const canReturn =
+    status === 'authenticated' &&
+    profileError !== 'EMAIL_NOT_VERIFIED' &&
+    (profile?.pendingConsents.length ?? 0) === 0;
+  useEffect(() => {
+    if (!canReturn || !returnTo) return;
+    setReturnTo(null);
+    router.replace(returnTo as never);
+  }, [canReturn, returnTo, setReturnTo, router]);
+
   if (!ready) return <Loading text={t('app.loading')} />;
 
   const signedIn = auth.status === 'authenticated';
   const needsVerify = signedIn && auth.profileError === 'EMAIL_NOT_VERIFIED';
   const needsConsent = signedIn && !needsVerify && (auth.profile?.pendingConsents.length ?? 0) > 0;
   const inApp = signedIn && !needsVerify && !needsConsent;
+  // Invitado: mapa, estaciones y escáner sin cuenta; el resto pide registro (handoff, sección 5).
+  const browsing = inApp || (!signedIn && auth.guest);
 
   return (
     <>
@@ -122,11 +145,24 @@ function Root({ fontsReady }: { fontsReady: boolean }) {
               options={{ title: t('consent.title'), headerBackVisible: false }}
             />
           </Stack.Protected>
+        </Stack.Protected>
+        <Stack.Protected guard={browsing}>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="station/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="evse/[evseId]" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="scan"
+            options={{
+              headerShown: false,
+              presentation: 'fullScreenModal',
+              animation: 'slide_from_bottom',
+            }}
+          />
+        </Stack.Protected>
+        <Stack.Protected guard={signedIn}>
           <Stack.Protected guard={inApp}>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="evse/[evseId]" options={{ title: t('evse.title') }} />
-            <Stack.Screen name="session/[id]" options={{ title: t('session.title') }} />
-            <Stack.Screen name="receipt/[id]" options={{ title: t('receipt.title') }} />
+            <Stack.Screen name="session/[id]" options={{ headerShown: false }} />
+            <Stack.Screen name="receipt/[id]" options={{ headerShown: false }} />
             <Stack.Screen name="payment-methods/index" options={{ title: t('payment.title') }} />
             <Stack.Screen name="payment-methods/new" options={{ title: t('payment.add') }} />
             <Stack.Screen name="payment-methods/[id]" options={{ title: t('payment.title') }} />

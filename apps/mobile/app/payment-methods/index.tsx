@@ -1,19 +1,18 @@
-/** Medios de pago del conductor: lista, principal, eliminación y alta. */
+/** Medios de pago (handoff, pantalla 16): filas con franquicia, últimos dígitos y vencimiento; predeterminada; alta y baja. */
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
 import { errorMessage } from '../../src/api/client.ts';
 import { useQuery } from '../../src/api/hooks.ts';
 import type { PaymentMethod } from '../../src/api/types.ts';
 import { useAuth } from '../../src/auth/auth.tsx';
 import { useI18n } from '../../src/i18n/index.tsx';
-import type { Tone } from '../../src/theme/tokens.ts';
+import { colors, fonts, radius, spacing, type Tone } from '../../src/theme/tokens.ts';
 import {
   Badge,
-  Body,
   Button,
   Card,
-  Empty,
+  EmptyState,
   ErrorBox,
   LinkText,
   Loading,
@@ -77,7 +76,7 @@ export default function PaymentMethods() {
   if (methods.loading && !methods.data) return <Loading text={t('app.loading')} />;
   const items = methods.data?.items ?? [];
   return (
-    <Screen>
+    <Screen dense>
       {methods.error && !methods.data ? (
         <ErrorBox
           message={errorMessage(methods.error, t('app.offline'))}
@@ -86,7 +85,9 @@ export default function PaymentMethods() {
         />
       ) : null}
       {error ? <Notice tone="danger">{error}</Notice> : null}
-      {items.length === 0 && !methods.error ? <Empty text={t('payment.empty')} /> : null}
+      {items.length === 0 && !methods.error ? (
+        <EmptyState icon="credit-card" title={t('payment.empty')} />
+      ) : null}
       {items.map((method) => (
         <Card
           key={method.id}
@@ -96,24 +97,32 @@ export default function PaymentMethods() {
               : undefined
           }
         >
-          <Row between>
-            <Body>{methodLabel(method)}</Body>
-            <Row>
-              {method.isDefault ? <Badge tone="info" text={t('payment.default')} /> : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.ms }}>
+            <View style={styles.brand}>
+              <Text style={styles.brandText} numberOfLines={1}>
+                {method.kind === 'WALLET'
+                  ? 'Nequi'
+                  : (method.brand ?? t('payment.cardKind')).toUpperCase().slice(0, 6)}
+              </Text>
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={styles.label}>{methodLabel(method)}</Text>
+              <Muted>
+                {method.kind === 'WALLET' ? t('payment.walletKind') : t('payment.cardKind')}
+                {method.expiresMonth && method.expiresYear
+                  ? ` · ${t('payment.expires', { month: String(method.expiresMonth).padStart(2, '0'), year: String(method.expiresYear).slice(-2) })}`
+                  : ''}
+              </Muted>
+            </View>
+            {method.isDefault ? (
+              <Badge tone="success" icon="check" text={t('payment.default')} />
+            ) : (
               <Badge
                 tone={sourceTone(method.sourceStatus)}
                 text={td(`payment.status.${method.sourceStatus}`)}
               />
-            </Row>
-          </Row>
-          {method.expiresMonth && method.expiresYear ? (
-            <Muted>
-              {t('payment.expires', {
-                month: String(method.expiresMonth).padStart(2, '0'),
-                year: String(method.expiresYear).slice(-2),
-              })}
-            </Muted>
-          ) : null}
+            )}
+          </View>
           <Row between>
             {!method.isDefault && method.sourceStatus === 'AVAILABLE' ? (
               <LinkText
@@ -130,7 +139,30 @@ export default function PaymentMethods() {
           </Row>
         </Card>
       ))}
-      <Button title={t('payment.add')} onPress={() => router.push('/payment-methods/new')} />
+      <Button
+        title={t('payment.addCard')}
+        variant={items.length ? 'secondary' : 'primary'}
+        icon="add"
+        onPress={() => router.push('/payment-methods/new')}
+      />
+      <Notice tone="neutral" icon="lock">
+        {t('payment.lockNote')}
+      </Notice>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  brand: {
+    width: 48,
+    height: 32,
+    borderRadius: radius.control,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandText: { fontFamily: fonts.bodyBold, fontSize: 10, color: colors.text },
+  label: { fontFamily: fonts.bodyMedium, fontSize: 16, lineHeight: 22, color: colors.text },
+});

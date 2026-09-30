@@ -57,3 +57,85 @@ export function circleIcon(fill: string, label: string, size = 32): string {
 </svg>`;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
+
+/**
+ * Marcador píldora del handoff (MapMarker) como SVG en URL de datos: círculo con el glifo del estado
+ * a la izquierda y "libres/total" a la derecha; seleccionado: fondo rojo VOLT, borde blanco y
+ * potencia máxima. El glifo se dibuja con trazos (check, reloj, bloqueo, interrogación) para no
+ * depender de fuentes de íconos dentro del SVG.
+ */
+export type MarkerVisual = 'available' | 'occupied' | 'out' | 'nodata';
+
+const GLYPHS: Record<MarkerVisual, string> = {
+  available:
+    '<path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3" fill="none" stroke="%s" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  occupied:
+    '<circle r="5.5" fill="none" stroke="%s" stroke-width="1.8"/><path d="M0 -3 V0.5 L2.5 2" fill="none" stroke="%s" stroke-width="1.8" stroke-linecap="round"/>',
+  out: '<circle r="5.5" fill="none" stroke="%s" stroke-width="1.8"/><path d="M-4 -4 L4 4" stroke="%s" stroke-width="1.8" stroke-linecap="round"/>',
+  nodata:
+    '<path d="M-2.5 -2 A2.5 2.5 0 1 1 0.5 0.8 L0 2" fill="none" stroke="%s" stroke-width="1.8" stroke-linecap="round"/><circle cy="4.5" r="1" fill="%s"/>',
+};
+
+const VISUAL_COLORS: Record<MarkerVisual, { glyph: string; soft: string }> = {
+  available: { glyph: '#22C55E', soft: '#193123' },
+  occupied: { glyph: '#F59E0B', soft: '#33260F' },
+  out: { glyph: '#9CA3AF', soft: '#262626' },
+  nodata: { glyph: '#9CA3AF', soft: '#262626' },
+};
+
+export interface PillIcon {
+  url: string;
+  width: number;
+  height: number;
+}
+
+export function pillIcon(
+  visual: MarkerVisual,
+  label: string,
+  selected = false,
+  detail?: string,
+): PillIcon {
+  const height = selected ? 44 : 34;
+  const circle = selected ? 32 : 26;
+  const fontSize = selected ? 15 : 13;
+  const textValue = selected && detail ? `${detail} · ${label}` : label;
+  const textWidth = Math.round(textValue.length * fontSize * 0.62) + 6;
+  const width = 4 + circle + 6 + textWidth + 10;
+  const palette = VISUAL_COLORS[visual];
+  const glyphColor = selected ? palette.glyph : palette.glyph;
+  const glyph = GLYPHS[visual].split('%s').join(glyphColor);
+  const bg = selected ? '#EF4136' : '#0B0B0B';
+  const border = selected ? '#FFFFFF' : '#525252';
+  const circleFill = selected ? '#FFFFFF' : palette.soft;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+<rect x="1" y="1" width="${width - 2}" height="${height - 2}" rx="${(height - 2) / 2}" fill="${bg}" stroke="${border}" stroke-width="${selected ? 2 : 1}"/>
+<circle cx="${4 + circle / 2}" cy="${height / 2}" r="${circle / 2}" fill="${circleFill}"/>
+<g transform="translate(${4 + circle / 2} ${height / 2})">${glyph}</g>
+<text x="${4 + circle + 6}" y="${height / 2 + fontSize * 0.36}" font-family="Roboto, Arial, sans-serif" font-size="${fontSize}" font-weight="700" fill="#FFFFFF">${escapeXml(textValue)}</text>
+</svg>`;
+  return { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, width, height };
+}
+
+function escapeXml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Estilo oscuro y desaturado del mapa (handoff): sin puntos de interés de otras marcas. */
+export const DARK_MAP_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#0e0e0f' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8a8a8f' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#0e0e0f' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#0f1711' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1b1b1c' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#2a2a2b' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2a2a2b' }] },
+  { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0c1620' }] },
+  {
+    featureType: 'administrative',
+    elementType: 'geometry.stroke',
+    stylers: [{ color: '#2a2a2b' }],
+  },
+];

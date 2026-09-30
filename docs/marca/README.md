@@ -12,7 +12,7 @@ El manual de marca vive en el sistema de diseño del dueño (artefacto "VOLT", <
 - **Espaciado** en múltiplos de 4 px; márgenes laterales de la app 30 px. **Esquinas**: 6 px en controles, 12 px en tarjetas, rectas en impresos.
 - **Logotipo**: solo desde `volt-logo-rojo|blanco|negro.svg`; proporción 2124 × 905; zona de protección 17 % de la altura; ancho mínimo 120 px en pantalla y 30 mm impreso. Rojo sobre blanco (y válido sobre negro), blanco sobre rojo/negro/foto oscura, negro a una tinta.
 - **Voz**: técnico de confianza; trato de usted; frases cortas con el verbo al inicio; sin exclamaciones, superlativos ni emojis; tildes y signos de apertura siempre. Vocabulario: electrolinera/estación de carga, cargador y conector (no "manguera" ni "pistola"), sesión de carga, kWh y kW con espacio ("22 kWh"), dinero "$ 35.000", horas "3:20 p. m.", coma decimal ("48,6 kWh").
-- **App**: tema oscuro (fondo #000000, tarjetas #171717, campos #262626 con borde blanco 1 px), botón primario a lo ancho de 52 px, íconos Material Symbols Outlined. **Web y documentos**: tema claro, texto hasta 720 px de ancho.
+- **App**: tema oscuro (fondo #000000, tarjetas #171717, campos #262626 con borde blanco 1 px), botón primario a lo ancho de 52 px, íconos Material Symbols Outlined (la app usa hoy Material Icons con los mismos nombres; incorporar Material Symbols es decisión pendiente del dueño, ADR 0025). **Web y documentos**: tema claro, texto hasta 720 px de ancho.
 
 ## Cómo se aplica
 
@@ -22,6 +22,6 @@ El manual de marca vive en el sistema de diseño del dueño (artefacto "VOLT", <
 | `apps/backoffice/public/brand/` | `volt-logo-rojo.svg`, `volt-logo-blanco.svg`, `volt-logo-negro.svg` (copias exactas del manual) |
 | `apps/backoffice/index.html` | Barlow Semi Condensed y Roboto desde Google Fonts (con reserva a Arial y Helvetica) |
 | Recibos HTML (`packages/csms/src/billing/receipts.ts`) y correos | Tema claro, razón social completa, formatos de cifras y fechas del manual (se ajusta en la iteración 7 junto con el envío de correo) |
-| App Volt (iteración 7) | Tema oscuro, degradado del encabezado, botón primario, pestañas, insignias de estado, textos de `docs/textos-app-conductor.md` |
+| App Volt (`apps/mobile/src/theme/tokens.ts`, iteraciones 7 y 9) | Tema oscuro, tokens del handoff de UI/UX del dueño (ADR 0025: colores, escala tipográfica, espaciado, radios, tamaños, movimiento), degradado del encabezado, botón primario de 52 px, barra de pestañas con el botón Cargar, insignias de estado, textos de `apps/mobile/src/i18n` (propuestos en `docs/textos-app-conductor.md`) |
 
-Extensión propia, no del manual: el back-office necesita un tercer color de estado para alarmas de severidad WARNING (ámbar #B45309 sobre #FEF3C7 en claro; #F59E0B sobre #3B2A0A en oscuro). Solo se usa en insignias operativas, nunca en piezas de marca.
+Extensión propia, no del manual: el back-office necesita un tercer color de estado para alarmas de severidad WARNING (ámbar #B45309 sobre #FEF3C7 en claro; #F59E0B sobre #3B2A0A en oscuro). Solo se usa en insignias operativas, nunca en piezas de marca. En la app, el handoff de UI/UX añade el mismo ámbar (#F59E0B sobre #33260F) para el conector ocupado y el rojo de acción #DC2626 para el botón primario (ADR 0025).

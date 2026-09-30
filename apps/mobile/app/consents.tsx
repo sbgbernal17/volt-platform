@@ -3,13 +3,23 @@
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
-import { Switch, View } from 'react-native';
+import { View } from 'react-native';
 import { errorMessage } from '../src/api/client.ts';
 import type { ConsentKey } from '../src/api/types.ts';
 import { useAuth } from '../src/auth/auth.tsx';
 import { useI18n } from '../src/i18n/index.tsx';
-import { colors, spacing } from '../src/theme/tokens.ts';
-import { Body, Button, LinkText, Muted, Notice, Row, Screen, Title } from '../src/theme/ui.tsx';
+import { spacing } from '../src/theme/tokens.ts';
+import {
+  Body,
+  Button,
+  LinkText,
+  Muted,
+  Notice,
+  Row,
+  Screen,
+  Title,
+  Toggle,
+} from '../src/theme/ui.tsx';
 
 export default function Consents() {
   const { t, locale } = useI18n();
@@ -50,12 +60,7 @@ export default function Consents() {
     text: string;
   }) => (
     <Row style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        trackColor={{ true: colors.primary, false: colors.field }}
-        thumbColor={colors.text}
-      />
+      <Toggle value={value} onChange={onChange} label={text} />
       <Body style={{ flex: 1 }}>{text}</Body>
     </Row>
   );
