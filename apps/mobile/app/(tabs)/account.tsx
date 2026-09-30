@@ -1,6 +1,6 @@
 /**
  * Cuenta (handoff, pantalla 18): encabezado con el único degradado de la marca, avatar con
- * iniciales, accesos rápidos (medios de pago, cobros pendientes, avisos), filas de perfil, idioma,
+ * iniciales, accesos rápidos (actividad, medios de pago, cobros pendientes, avisos), filas de perfil, idioma,
  * legal, soporte y cierre de sesión; borrado de cuenta al final. El invitado ve la invitación a
  * crear cuenta.
  */
@@ -184,6 +184,11 @@ export default function Account() {
           />
           <View>
             <ListRow
+              icon="receipt-long"
+              title={t('history.activity')}
+              onPress={() => router.push('/history')}
+            />
+            <ListRow
               icon="language"
               title={`${t('app.language')}: ${locale === 'es' ? t('app.spanish') : t('app.english')}`}
               onPress={() => setLocale(locale === 'es' ? 'en' : 'es')}
@@ -226,10 +231,16 @@ export default function Account() {
           />
         ) : null}
         {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
-        <View style={{ flexDirection: 'row', gap: spacing.ms }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.ms }}>
+          <QuickAccess
+            icon="receipt-long"
+            tone="info"
+            label={t('history.activity')}
+            onPress={() => router.push('/history')}
+          />
           <QuickAccess
             icon="credit-card"
-            tone="info"
+            tone="neutral"
             label={t('account.payment')}
             onPress={() => router.push('/payment-methods')}
           />
@@ -327,7 +338,8 @@ const styles = StyleSheet.create({
   name: { ...text.titulo2, color: colors.text },
   email: { ...text.cuerpoS, color: colors.text, opacity: 0.85 },
   quick: {
-    flex: 1,
+    flexBasis: '46%',
+    flexGrow: 1,
     backgroundColor: colors.surface,
     borderRadius: radius.card,
     padding: spacing.ms,

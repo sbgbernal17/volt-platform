@@ -35,6 +35,7 @@ import {
   SITE_ACCESS_TYPES,
   SUPPORT_ACTIONS,
   transitionLifecycle,
+  updateChargePointPower,
   VOLT_TENANT_ID,
 } from '@volt/csms';
 import { LIFECYCLE_STATES, SESSION_STATES } from '@volt/domain';
@@ -136,7 +137,24 @@ const chargePointBody = z.object({
   securityProfile: z.number().int().min(1).max(3).optional(),
   configTemplateId: uuid.optional(),
   heartbeatIntervalS: z.number().int().min(10).max(86_400).optional(),
+  /** Potencia del gabinete (W), compartida entre conectores (ADR 0026). */
+  maxPowerW: z.number().int().positive().optional(),
   connectors: z.array(connectorBody).min(1).max(64),
+});
+
+const powerBody = z.object({
+  maxPowerW: z.number().int().positive().nullable().optional(),
+  connectors: z
+    .array(
+      z.object({
+        ocppConnectorId: z.number().int().min(1).max(64),
+        maxPowerW: z.number().int().positive().nullable().optional(),
+        standard: z.enum(CONNECTOR_STANDARDS).optional(),
+        powerType: z.enum(POWER_TYPES).optional(),
+      }),
+    )
+    .max(64)
+    .optional(),
 });
 
 const lifecycleBody = z.object({
@@ -277,6 +295,13 @@ export async function adminRoutes(
     reply.code(201);
     return serialize(chargePoint);
   });
+  // Potencia del gabinete y de los conectores de un cargador ya inventariado (ADR 0026).
+  app.patch('/charge-points/:id/power', async (request) => {
+    const { id } = params.parse(request.params);
+    await scopedChargePoint(request, id);
+    const body = powerBody.parse(request.body ?? {});
+    return serialize(await updateChargePointPower(sql, id, body));
+  });
   app.get('/charge-points/:id', async (request) => {
     const { id } = params.parse(request.params);
     const chargePoint = await scopedChargePoint(request, id);
@@ -411,7 +436,15 @@ export async function adminRoutes(
   });
 
   // ---- Conductores ----
-  app.get('/drivers', async () => ({ items: serialize(await listDrivers(sql, tenantId)) }));
+  // En la lista el documento va enmascarado; el detalle lo muestra completo (ADR 0027).
+  app.get('/drivers', async () => ({
+    items: serialize(
+      (await listDrivers(sql, tenantId)).map((driver) => ({
+        ...driver,
+        document_number: driver.document_number ? `···${driver.document_number.slice(-4)}` : null,
+      })),
+    ),
+  }));
   app.post('/drivers', async (request, reply) => {
     const body = driverBody.parse(request.body);
     const driver = await createDriver(sql, { tenantId, ...body });

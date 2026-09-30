@@ -149,6 +149,7 @@ function Root({ fontsReady }: { fontsReady: boolean }) {
         <Stack.Protected guard={browsing}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="station/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="history" options={{ headerShown: false }} />
           <Stack.Screen name="evse/[evseId]" options={{ headerShown: false }} />
           <Stack.Screen
             name="scan"

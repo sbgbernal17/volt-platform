@@ -156,6 +156,7 @@ export default function StationScreen() {
           ) : null}
         </View>
         <Muted>{t('station.chooseHelp')}</Muted>
+        {station.evses.some((e) => e.powerShared) ? <Muted>{t('power.shared')}</Muted> : null}
         {visible.map((evse, index) => {
           const visual = connectorVisual(evse.status);
           const usable = visual === 'available' || visual === 'nodata';
@@ -185,7 +186,10 @@ export default function StationScreen() {
                 <Text style={styles.number}>{chargerNumber(index)}</Text>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={styles.chargerTitle}>
-                    {formatKw(evse.maxPowerKw)} {formatPowerType(evse.powerType, locale)}
+                    {evse.chargerMaxPowerKw
+                      ? t('power.upTo', { power: formatKw(evse.chargerMaxPowerKw) })
+                      : formatKw(evse.maxPowerKw)}{' '}
+                    {formatPowerType(evse.powerType, locale)}
                   </Text>
                   <Muted>
                     {formatStandard(evse.standard, locale)}

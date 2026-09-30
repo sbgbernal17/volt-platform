@@ -7,6 +7,7 @@ import {
   Kpi,
   Loading,
   PageHeader,
+  Segmented,
   SessionBadge,
   SeverityBadge,
   StatusBadge,
@@ -18,6 +19,7 @@ import {
   energyKwh,
   money,
   powerKw,
+  powerSummary,
   relativeTime,
 } from '../lib/format.ts';
 import { Link, useRouter } from '../lib/router.tsx';
@@ -61,20 +63,15 @@ export function DashboardPage() {
         title={t('dash.title')}
         actions={
           <>
-            <button
-              type="button"
-              className={view === 'map' ? 'primary' : ''}
-              onClick={() => setView('map')}
-            >
-              {t('dash.map')}
-            </button>
-            <button
-              type="button"
-              className={view === 'list' ? 'primary' : ''}
-              onClick={() => setView('list')}
-            >
-              {t('dash.list')}
-            </button>
+            <Segmented
+              label={t('dash.title')}
+              value={view}
+              onChange={setView}
+              options={[
+                { id: 'map', label: t('dash.map'), icon: 'map' },
+                { id: 'list', label: t('dash.list'), icon: 'list' },
+              ]}
+            />
             <button type="button" onClick={() => void overview.reload()}>
               {t('app.refresh')}
             </button>
@@ -137,6 +134,11 @@ export function DashboardPage() {
                       {t('dash.lastSeen')} {relativeTime(cp.last_seen_at, locale)}
                     </span>
                   </div>
+                  {cp.max_power_w ? (
+                    <div className="muted small">
+                      {t('cp.cabinetPower')}: {powerSummary(cp.max_power_w, cp.connectors, locale)}
+                    </div>
+                  ) : null}
                   <div className="row small">
                     {cp.connectors.map((c) => (
                       <span key={c.id} className="connector-chip">

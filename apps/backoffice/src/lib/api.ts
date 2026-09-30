@@ -65,6 +65,15 @@ export class ApiClient {
     return this.request<T>('DELETE', path);
   }
 
+  /** Cabecera de autorización actual, para descargas fuera de `request` (recibo HTML o PDF). */
+  async authHeaders(): Promise<Record<string, string>> {
+    const token = await this.options.token();
+    return {
+      ...(this.options.headers?.() ?? {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    };
+  }
+
   /** URL absoluta de un recurso (para abrirlo en otra pestaña, p. ej. el recibo HTML). */
   url(path: string): string {
     return `${this.options.baseUrl}/admin/v1${path}`;

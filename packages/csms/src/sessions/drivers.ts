@@ -24,6 +24,10 @@ export interface DriverRow {
   email_verified: boolean;
   idp_provider: string | null;
   last_login_at: Date | null;
+  /** Documento de identidad y factura electrónica (ADR 0027). */
+  document_type: 'CC' | 'CE' | 'NIT' | 'PAS' | 'PPT' | null;
+  document_number: string | null;
+  wants_invoice: boolean;
   created_at: Date;
   updated_at: Date;
 }

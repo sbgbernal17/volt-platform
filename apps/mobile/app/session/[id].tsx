@@ -334,9 +334,11 @@ export default function SessionScreen() {
               stale={stale}
             />
           </View>
-          {evse?.maxPowerKw ? (
+          {evse && (evse.chargerMaxPowerKw ?? evse.maxPowerKw) ? (
             <Note style={{ textAlign: 'center' }}>
-              {t('session.maxPowerNote', { power: formatKw(evse.maxPowerKw) })}
+              {t(evse.powerShared ? 'session.maxPowerSharedNote' : 'session.maxPowerNote', {
+                power: formatKw(evse.chargerMaxPowerKw ?? evse.maxPowerKw),
+              })}
             </Note>
           ) : null}
           {warn ? <Notice tone="warning">{t('session.limitWarn')}</Notice> : null}

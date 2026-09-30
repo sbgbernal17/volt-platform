@@ -10,6 +10,7 @@ import {
   type AcceptanceTokens,
   type ChargeInput,
   type CreatePaymentSourceInput,
+  type GatewayHealth,
   type GatewayTransaction,
   type PaymentGateway,
   PaymentGatewayError,
@@ -134,6 +135,10 @@ export class FakeGateway implements PaymentGateway {
       publicData: { type: 'NEQUI', phone_number: phoneNumber },
     });
     return token;
+  }
+
+  async health(): Promise<GatewayHealth> {
+    return { ok: true, latencyMs: 0, merchant: 'Emulador VOLT', error: null };
   }
 
   async getAcceptanceTokens(): Promise<AcceptanceTokens> {

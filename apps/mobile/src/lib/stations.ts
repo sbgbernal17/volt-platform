@@ -13,8 +13,10 @@ export interface Coordinates {
 export interface Availability {
   available: number;
   total: number;
-  /** Potencia máxima entre los conectores (kW) o null si no se conoce. */
+  /** Potencia máxima que puede recibir un vehículo (kW): la del gabinete si se conoce. */
   maxPowerKw: number | null;
+  /** Algún cargador reparte su potencia entre conectores (ADR 0026). */
+  shared: boolean;
   /** Ningún conector reporta estado en vivo. */
   noData: boolean;
   /** Todos los conectores conocidos están fuera de servicio. */
@@ -36,12 +38,15 @@ const LIVE = new Set([
 ]);
 
 export function availability(evses: readonly LocationEvse[]): Availability {
-  const powers = evses.map((e) => e.maxPowerKw).filter((p): p is number => p !== null);
+  const powers = evses
+    .map((e) => e.chargerMaxPowerKw ?? e.maxPowerKw)
+    .filter((p): p is number => p !== null);
   const known = evses.filter((e) => LIVE.has(e.status));
   return {
     available: evses.filter((e) => e.status === 'Available').length,
     total: evses.length,
     maxPowerKw: powers.length ? Math.max(...powers) : null,
+    shared: evses.some((e) => e.powerShared === true),
     noData: evses.length > 0 && known.length === 0,
     allOut: known.length > 0 && known.every((e) => OUT.has(e.status)),
   };
@@ -105,7 +110,8 @@ export function filterStations(
       (evse) =>
         (!filters.availableNow || evse.status === 'Available') &&
         (filters.standards.length === 0 || filters.standards.includes(evse.standard)) &&
-        (filters.minPowerKw <= 0 || (evse.maxPowerKw ?? 0) >= filters.minPowerKw),
+        (filters.minPowerKw <= 0 ||
+          (evse.chargerMaxPowerKw ?? evse.maxPowerKw ?? 0) >= filters.minPowerKw),
     );
     return matching.length > 0;
   });

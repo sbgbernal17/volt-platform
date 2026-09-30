@@ -1,8 +1,9 @@
 /**
- * Barra de pestañas (handoff, TabBar y ChargeTabButton): 84 px sobre negro, cuatro destinos
- * (Mapa · Cargar · Actividad · Cuenta). El botón central es un círculo rojo de 60 px que sube
- * 24 px: sin sesión abre el escáner; con una carga en curso muestra el rayo con el porcentaje y
- * abre la carga en vivo.
+ * Barra de pestañas (handoff, TabBar y ChargeTabButton): 84 px sobre negro, tres destinos
+ * (Mapa · Cargar · Cuenta) para que el botón Cargar quede centrado; la actividad vive dentro de
+ * Cuenta (adición del 30-09-2026 al ADR 0025). El botón central es un círculo rojo de 60 px que
+ * sube 24 px: sin sesión abre el escáner; con una carga en curso muestra el rayo con el porcentaje
+ * y abre la carga en vivo.
  */
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -23,13 +24,8 @@ export interface TabBarProps {
   };
 }
 
-const TABS: {
-  name: string;
-  icon: IconName;
-  label: 'tabs.map' | 'tabs.history' | 'tabs.account';
-}[] = [
+const TABS: { name: string; icon: IconName; label: 'tabs.map' | 'tabs.account' }[] = [
   { name: 'index', icon: 'map', label: 'tabs.map' },
-  { name: 'history', icon: 'receipt-long', label: 'tabs.history' },
   { name: 'account', icon: 'person', label: 'tabs.account' },
 ];
 
@@ -98,8 +94,7 @@ export function VoltTabBar({ state, navigation }: TabBarProps) {
           {active ? t('tabs.charging') : t('tabs.scan')}
         </Text>
       </View>
-      {tab('history', 'receipt-long', t('tabs.history'))}
-      {tab('account', 'person', t('tabs.account'))}
+      {tab(TABS[1]?.name ?? 'account', 'person', t('tabs.account'))}
     </View>
   );
 }

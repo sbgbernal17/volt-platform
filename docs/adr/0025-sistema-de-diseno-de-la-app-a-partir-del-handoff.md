@@ -32,3 +32,7 @@ El dueño entregó el handoff de UI/UX de la app (documento `VOLT App — Handof
 - `expo-location` entra en `app.json` con el texto de permiso "mientras usa la app" (iOS y Android); no hay ubicación en segundo plano.
 - Las capturas de referencia se generan con la versión web contra una API simulada (`lab/` no; script local del laboratorio de la sesión) y el dueño las revisa en `app-dev`.
 - Pendientes del dueño en `docs/tareas-del-dueno.md`: aprobar los tokens propuestos, decidir Material Symbols y la fuente del ícono de la app, fotos de las estaciones y si se modelan vehículos.
+
+## Adición 2026-09-30: tres pestañas
+
+A pedido del dueño, la barra pasa de cuatro destinos a tres (Mapa · Cargar · Cuenta) para que el botón Cargar quede centrado. La actividad (sesiones por mes y recibos) se abre desde Cuenta, como primer acceso rápido y como fila para el invitado; la ruta `history` sigue existiendo fuera de las pestañas con barra superior y botón de volver. Las capturas 14 y 24 del handoff se leen ahora como pantallas hijas de Cuenta.

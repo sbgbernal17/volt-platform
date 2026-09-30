@@ -1,15 +1,20 @@
-/* VOLT back-office: tokens del manual de marca (docs/marca/tokens.json). Tema claro por defecto (web)
-   y oscuro cuando el sistema lo pide. Un solo rojo protagonista; verde y azul solo para estados. */
+/* VOLT back-office: tokens del manual de marca (docs/marca/tokens.json) y del sistema de diseño de la
+   app (apps/mobile/src/theme/tokens.ts, ADR 0025 y 0030). Tema claro por defecto (web), oscuro si el
+   sistema lo pide o si el usuario lo elige (data-theme, guardado en volt.theme). Un solo rojo
+   protagonista; verde, azul y ámbar solo para estados, siempre con palabra e ícono. */
 :root {
   --color-bg: #ffffff; /* superficie */
   --color-surface: #ffffff; /* tarjetas, separadas por linea */
   --color-surface-2: #f5f5f5; /* superficie-elevada */
   --color-field: #ffffff; /* campo */
   --color-border: #e5e5e5; /* linea */
+  --color-border-soft: #d4d4d4; /* chips y botones redondos (propuesto para el tema claro) */
   --color-border-control: #737373; /* borde-control */
+  --color-bar: #f5f5f5; /* barra lateral */
   --color-text: #0b0b0b; /* texto */
   --color-text-muted: #525252; /* texto-secundario */
-  --color-brand: #ef4136; /* rojo-volt: logotipo y acentos grandes */
+  --color-text-disabled: #737373;
+  --color-brand: #ef4136; /* rojo-volt: logotipo, navegación activa y acentos grandes */
   --color-primary: #dc2626; /* rojo-accion: botón primario */
   --color-primary-pressed: #b91c1c; /* rojo-presionado */
   --color-primary-contrast: #ffffff; /* en-rojo-accion */
@@ -22,28 +27,41 @@
   --color-ok: #15803d; /* verde-disponible */
   --color-ok-soft: #dcfce7; /* verde-suave */
   --color-info: #1d4ed8; /* azul-info */
+  --color-info-text: #1d4ed8; /* texto sobre azul-suave (blanco en oscuro: el azul solo tiñe el ícono) */
   --color-info-soft: #dbeafe; /* azul-suave */
-  --color-warning: #b45309; /* extensión operativa (alarmas WARNING); no es color de marca */
+  --color-warning: #b45309; /* ámbar operativo (alarmas WARNING, ocupado); no es color de marca */
   --color-warning-soft: #fef3c7;
   --color-focus: #0b0b0b; /* foco */
+  --color-backdrop: rgba(0, 0, 0, 0.55);
   --radius: 12px; /* radio-tarjeta */
   --radius-control: 6px; /* radio-control */
+  --radius-sheet: 20px; /* hoja y diálogos grandes */
+  --size-button: 44px; /* botón en la web (52 px en la app) */
+  --size-button-lg: 52px; /* botón primario de formularios y diálogos */
+  --size-badge: 28px;
+  --size-icon: 24px;
+  --motion-fast: 120ms;
+  --motion-base: 220ms;
   --shadow-floating: 0 2px 4px #0b0b0b14, 0 8px 24px #0b0b0b1f; /* sombra-flotante */
   --font: Roboto, Arial, "Helvetica Neue", sans-serif;
   --font-heading: "Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light dark;
 }
+/* Oscuro por preferencia del sistema (salvo que el usuario haya elegido claro). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --color-bg: #000000;
     --color-surface: #171717;
     --color-surface-2: #262626;
     --color-field: #262626;
     --color-border: #262626;
+    --color-border-soft: #404040;
     --color-border-control: #ffffff;
+    --color-bar: #0b0b0b;
     --color-text: #ffffff;
     --color-text-muted: #9ca3af;
+    --color-text-disabled: #6b7280;
     --color-primary-soft: #351918;
     --color-primary-soft-text: #f87171;
     --color-link: #ef4136;
@@ -52,11 +70,54 @@
     --color-ok: #22c55e;
     --color-ok-soft: #193123;
     --color-info: #3b82f6;
+    --color-info-text: #ffffff;
     --color-info-soft: #1c2838;
     --color-warning: #f59e0b;
-    --color-warning-soft: #3b2a0a;
+    --color-warning-soft: #33260f;
     --color-focus: #ffffff;
+    --color-backdrop: rgba(0, 0, 0, 0.75);
     --shadow-floating: none;
+  }
+}
+/* Oscuro elegido por el usuario. */
+:root[data-theme="dark"] {
+  --color-bg: #000000;
+  --color-surface: #171717;
+  --color-surface-2: #262626;
+  --color-field: #262626;
+  --color-border: #262626;
+  --color-border-soft: #404040;
+  --color-border-control: #ffffff;
+  --color-bar: #0b0b0b;
+  --color-text: #ffffff;
+  --color-text-muted: #9ca3af;
+  --color-text-disabled: #6b7280;
+  --color-primary-soft: #351918;
+  --color-primary-soft-text: #f87171;
+  --color-link: #ef4136;
+  --color-danger-soft: #351918;
+  --color-danger-soft-text: #f87171;
+  --color-ok: #22c55e;
+  --color-ok-soft: #193123;
+  --color-info: #3b82f6;
+  --color-info-text: #ffffff;
+  --color-info-soft: #1c2838;
+  --color-warning: #f59e0b;
+  --color-warning-soft: #33260f;
+  --color-focus: #ffffff;
+  --color-backdrop: rgba(0, 0, 0, 0.75);
+  --shadow-floating: none;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
   }
 }
 * {
@@ -120,6 +181,84 @@ pre {
   word-break: break-word;
 }
 
+/* Íconos: Material Icons por ligadura, servida desde public/fonts (misma fuente que la app) */
+@font-face {
+  font-family: "Material Icons";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("/fonts/MaterialIcons-Regular.ttf") format("truetype");
+}
+.material-icons {
+  font-family: "Material Icons", sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  font-size: var(--size-icon);
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  vertical-align: middle;
+  flex: none;
+  user-select: none;
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+}
+.icon-sm {
+  font-size: 18px;
+}
+.icon-lg {
+  font-size: 32px;
+}
+
+/* Estado vacío y carga, como en la app */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 16px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.empty .circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-surface-2);
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+}
+.loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-text-muted);
+  padding: 8px 0;
+}
+.spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-brand);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
 /* Disposición */
 .shell {
   display: grid;
@@ -127,7 +266,7 @@ pre {
   min-height: 100%;
 }
 .sidebar {
-  background: var(--color-surface-2);
+  background: var(--color-bar);
   border-right: 1px solid var(--color-border);
   padding: 16px 12px;
   display: flex;
@@ -149,18 +288,23 @@ pre {
   display: block;
 }
 .sidebar a {
-  display: block;
-  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 10px;
   border-radius: var(--radius-control);
   color: var(--color-text);
+  font-weight: 500;
+  transition: background var(--motion-fast);
 }
 .sidebar a:hover {
   background: var(--color-surface);
   text-decoration: none;
 }
 .sidebar a.active {
-  background: var(--color-primary-soft);
-  color: var(--color-primary-soft-text);
+  background: var(--color-surface);
+  color: var(--color-brand);
   font-weight: 600;
 }
 .sidebar .spacer {
@@ -182,6 +326,32 @@ pre {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
+}
+.topbar .heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.topbar .heading h1 {
+  margin: 0;
+}
+.topbar .subtitle {
+  color: var(--color-text-muted);
+  font-size: 14px;
+  margin: 2px 0 0;
+}
+.icon-button {
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: none;
 }
 .topbar .right {
   display: flex;
@@ -248,15 +418,21 @@ pre {
 }
 .kpi .label {
   color: var(--color-text-muted);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 14px; /* etiqueta, en frase */
+  font-weight: 500;
 }
 .kpi .value {
-  font-size: 32px; /* dato */
+  font-size: 28px; /* dato (app) */
+  line-height: 34px;
   font-weight: 700;
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
+}
+.kpi .value .unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  margin-left: 4px;
 }
 .kpi .sub {
   color: var(--color-text-muted);
@@ -328,13 +504,17 @@ table.data td.num {
   font-variant-numeric: tabular-nums;
 }
 
-/* Insignias: siempre con palabra; el color solo refuerza */
+/* Insignias: palabra + ícono + color (el color solo refuerza), 28 px como en la app */
 .badge {
-  display: inline-block;
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--size-badge);
+  padding: 0 10px 0 8px;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
   background: var(--color-surface-2);
   color: var(--color-text-muted);
   white-space: nowrap;
@@ -345,7 +525,7 @@ table.data td.num {
 }
 .badge.info {
   background: var(--color-info-soft);
-  color: var(--color-info);
+  color: var(--color-info-text);
 }
 .badge.warning {
   background: var(--color-warning-soft);
@@ -357,8 +537,17 @@ table.data td.num {
 }
 .badge.primary {
   background: var(--color-info-soft);
-  color: var(--color-text);
+  color: var(--color-info-text);
 } /* Cargando: texto sobre azul-suave */
+.badge.outlined {
+  background: transparent;
+  border: 1px solid currentColor;
+}
+.badge.dotted {
+  background: transparent;
+  border: 1px dashed var(--color-border-soft);
+  color: var(--color-text-muted);
+}
 .connector-chip {
   display: inline-flex;
   align-items: center;
@@ -377,16 +566,28 @@ table.data td.num {
   vertical-align: middle;
 }
 
-/* Botones y formularios */
+/* Botones (app: 44 px en la web, 52 px el primario de formularios; siempre en mayúsculas) y formularios */
 button,
 .btn {
   font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase; /* estilo boton */
+  min-height: var(--size-button);
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 1px solid var(--color-border-control);
-  background: var(--color-surface);
+  background: transparent;
   color: var(--color-text);
-  padding: 7px 12px;
   border-radius: var(--radius-control);
   cursor: pointer;
+  transition:
+    background var(--motion-fast),
+    border-color var(--motion-fast);
 }
 button:hover,
 .btn:hover {
@@ -394,7 +595,9 @@ button:hover,
   text-decoration: none;
 }
 button:disabled {
-  opacity: 0.55;
+  color: var(--color-text-disabled);
+  border-color: var(--color-border);
+  background: transparent;
   cursor: not-allowed;
 }
 button.primary,
@@ -402,43 +605,95 @@ button.primary,
   background: var(--color-primary);
   border-color: var(--color-primary);
   color: var(--color-primary-contrast);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase; /* estilo boton */
+  font-size: 16px;
 }
 button.primary:hover {
   background: var(--color-primary-pressed);
   border-color: var(--color-primary-pressed);
 }
+button.primary:disabled {
+  background: var(--color-surface-2);
+  border-color: transparent;
+  color: var(--color-text-disabled);
+}
+.form-actions button.primary,
+.dialog button.primary,
+.login button.primary {
+  min-height: var(--size-button-lg);
+}
+.login button.primary {
+  width: 100%;
+}
 button.danger {
-  background: var(--color-danger);
-  border-color: var(--color-danger);
-  color: #fff;
+  background: transparent;
+  border-color: var(--color-danger-soft-text);
+  color: var(--color-danger-soft-text);
+}
+button.danger:hover {
+  background: var(--color-danger-soft);
 }
 button.link {
   border: none;
   background: none;
   color: var(--color-link);
   padding: 0;
+  min-height: 0;
+  text-transform: none;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 button.small,
 .btn.small {
-  padding: 4px 8px;
+  min-height: 32px;
+  padding: 0 10px;
   font-size: 12px;
+}
+/* Selector segmentado (Mapa · Lista), como los chips de la app */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+.segmented button {
+  border: none;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text-muted);
+}
+.segmented button.active {
+  background: var(--color-text);
+  color: var(--color-bg);
 }
 input,
 select,
 textarea {
   font: inherit;
+  font-size: 15px;
   color: var(--color-text);
   background: var(--color-field);
   border: 1px solid var(--color-border-control);
   border-radius: var(--radius-control);
-  padding: 7px 10px;
+  min-height: var(--size-button);
+  padding: 0 12px;
   width: 100%;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  min-height: 0;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
 }
 textarea {
   min-height: 120px;
+  padding: 10px 12px;
   font-family: var(--mono);
   font-size: 12.5px;
 }
@@ -452,13 +707,14 @@ a:focus-visible {
 }
 label.field {
   display: block;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 label.field > span {
   display: block;
-  font-size: 12px;
-  color: var(--color-text-muted);
-  margin-bottom: 4px;
+  font-size: 14px; /* etiqueta */
+  font-weight: 500;
+  color: var(--color-text);
+  margin-bottom: 6px;
 }
 label.check {
   display: inline-flex;
@@ -477,41 +733,47 @@ label.check input {
 .help {
   font-size: 12px;
   color: var(--color-text-muted);
+  margin-top: 4px;
 }
 
-/* Avisos */
+/* Avisos: fondo suave, radio de tarjeta, ícono al inicio (app) */
 .alert {
-  padding: 10px 12px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--color-border);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius);
   margin-bottom: 12px;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-weight: 500;
+}
+.alert > .body {
+  flex: 1;
+  min-width: 0;
 }
 .alert.error {
   background: var(--color-danger-soft);
-  border-color: var(--color-danger);
   color: var(--color-danger-soft-text);
 }
 .alert.ok {
   background: var(--color-ok-soft);
-  border-color: var(--color-ok);
   color: var(--color-ok);
 }
 .alert.warning {
   background: var(--color-warning-soft);
-  border-color: var(--color-warning);
   color: var(--color-warning);
 }
 .alert.info {
   background: var(--color-info-soft);
-  border-color: var(--color-info);
-  color: var(--color-info);
+  color: var(--color-info-text);
 }
 
 /* Diálogo */
 .dialog-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--color-backdrop);
   display: grid;
   place-items: center;
   z-index: 50;
@@ -539,10 +801,14 @@ label.check input {
 .tabs button {
   border: none;
   background: none;
+  min-height: 0;
   padding: 8px 12px;
   border-bottom: 2px solid transparent;
   border-radius: 0;
   color: var(--color-text-muted);
+  text-transform: none;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 .tabs button.active {
   color: var(--color-link);
@@ -588,6 +854,8 @@ label.check input {
 }
 .map-card button {
   justify-self: start;
+  min-height: 32px;
+  font-size: 12px;
 }
 
 /* Entrada */
@@ -698,4 +966,45 @@ label.field.inline {
 .tabs.compact {
   margin-bottom: 0;
   border-bottom: none;
+}
+
+/* Filtros en fila: los controles no ocupan todo el ancho */
+.row > select,
+.row > input:not([type="checkbox"]),
+.row > label > input {
+  width: auto;
+}
+
+/* Íconos y controles en contexto (al final, en orden ascendente de especificidad) */
+button .material-icons,
+.btn .material-icons {
+  font-size: 20px;
+}
+.badge .material-icons {
+  font-size: 18px;
+}
+.alert .material-icons {
+  font-size: 22px;
+}
+.sidebar a .material-icons {
+  color: var(--color-text-muted);
+  font-size: 22px;
+}
+.sidebar .me select {
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+  width: auto;
+}
+.badge.info .material-icons {
+  color: var(--color-info);
+}
+.badge.primary .material-icons {
+  color: var(--color-info);
+}
+.alert.info .material-icons {
+  color: var(--color-info);
+}
+.sidebar a.active .material-icons {
+  color: var(--color-brand);
 }

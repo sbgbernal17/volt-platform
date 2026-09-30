@@ -17,6 +17,7 @@ import { type CsmsLogger, silentLogger, toJson } from '../types.ts';
 import { findChargeablePaymentMethod, type PaymentMethodRow } from './payment-methods.ts';
 import { issueReceipt } from './receipts.ts';
 import type { DebtRow, PaymentRow, WebhookInboxRow } from './rows.ts';
+import { bogotaDayWindow } from './summary.ts';
 
 export interface BillingServiceOptions {
   logger?: CsmsLogger;
@@ -834,12 +835,22 @@ export class BillingService {
     tenantId: string;
     sessionId?: string | undefined;
     driverId?: string | undefined;
+    status?: string | undefined;
+    kind?: string | undefined;
+    environment?: string | undefined;
+    from?: Date | undefined;
+    to?: Date | undefined;
     limit?: number | undefined;
   }): Promise<PaymentRow[]> {
     return this.sql<PaymentRow[]>`
       SELECT * FROM billing.payment WHERE tenant_id = ${filter.tenantId}
         AND (${filter.sessionId ?? null}::uuid IS NULL OR session_id = ${filter.sessionId ?? null})
         AND (${filter.driverId ?? null}::uuid IS NULL OR driver_id = ${filter.driverId ?? null})
+        AND (${filter.status ?? null}::text IS NULL OR status = ${filter.status ?? null})
+        AND (${filter.kind ?? null}::text IS NULL OR kind = ${filter.kind ?? null})
+        AND (${filter.environment ?? null}::text IS NULL OR psp_environment = ${filter.environment ?? null})
+        AND (${filter.from ?? null}::timestamptz IS NULL OR created_at >= ${filter.from ?? null})
+        AND (${filter.to ?? null}::timestamptz IS NULL OR created_at < ${filter.to ?? null})
       ORDER BY created_at DESC LIMIT ${filter.limit ?? 100}`;
   }
 
@@ -858,11 +869,12 @@ export class BillingService {
 
   // ---- conciliación ----
 
-  /** Conciliación del día: sesiones liquidadas contra cobros; discrepancias → alarma PAYMENT_RECONCILIATION. */
+  /**
+   * Conciliación del día (en hora de Colombia, ADR 0029): sesiones liquidadas contra cobros;
+   * discrepancias → alarma PAYMENT_RECONCILIATION.
+   */
   async reconcile(day: Date = this.now(), tenantId?: string): Promise<ReconciliationReport> {
-    const dayKey = day.toISOString().slice(0, 10);
-    const from = new Date(`${dayKey}T00:00:00.000Z`);
-    const to = new Date(from.getTime() + 86_400_000);
+    const { key: dayKey, from, to } = bogotaDayWindow(day);
     const discrepancies: ReconciliationReport['discrepancies'] = [];
     const notCharged = await this.sql<{ id: string; session_no: string }[]>`
       SELECT id, session_no FROM sessions.charging_session

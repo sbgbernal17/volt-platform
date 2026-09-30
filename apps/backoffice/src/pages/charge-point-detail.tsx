@@ -19,7 +19,16 @@ import {
   Tabs,
 } from '../components/ui.tsx';
 import { useI18n } from '../i18n/index.tsx';
-import { dateTime, energyKwh, money, powerKw, relativeTime } from '../lib/format.ts';
+import {
+  connectorStandard,
+  dateTime,
+  energyKwh,
+  money,
+  powerKw,
+  powerSummary,
+  powerTypeLabel,
+  relativeTime,
+} from '../lib/format.ts';
 import { useRouter } from '../lib/router.tsx';
 import type {
   Alarm,
@@ -166,11 +175,9 @@ export function ChargePointDetailPage({ id }: { id: string }) {
             <Badge tone={cp.connected ? 'ok' : 'danger'}>
               {cp.connected ? t('cp.connected') : t('cp.disconnected')}
             </Badge>
-            <button type="button" onClick={() => navigate('/charge-points')}>
-              {t('app.back')}
-            </button>
           </>
         }
+        onBack={() => navigate('/charge-points')}
       />
       <ErrorBox error={mutation.error} />
       {mutation.message ? <Alert tone="ok">{mutation.message}</Alert> : null}
@@ -237,6 +244,10 @@ export function ChargePointDetailPage({ id }: { id: string }) {
                 <div>
                   <div className="muted small">{t('cp.heartbeat')}</div>
                   {cp.heartbeat_interval_s}
+                </div>
+                <div>
+                  <div className="muted small">{t('cp.cabinetPower')}</div>
+                  {powerSummary(cp.max_power_w, cp.connectors, locale)}
                 </div>
                 <div>
                   <div className="muted small">{t('cp.lastSeen')}</div>
@@ -332,6 +343,9 @@ export function ChargePointDetailPage({ id }: { id: string }) {
           </div>
           <div className="card">
             <h2>{t('cp.connectors')}</h2>
+            {auth.can('inventory:write') ? (
+              <PowerEditor cp={cp} onSaved={() => void detail.reload()} />
+            ) : null}
             <DataTable
               rows={cp.connectors}
               rowKey={(c) => c.id}
@@ -342,7 +356,8 @@ export function ChargePointDetailPage({ id }: { id: string }) {
                 {
                   key: 'std',
                   header: t('cp.standard'),
-                  render: (c) => `${c.standard} · ${c.power_type}`,
+                  render: (c) =>
+                    `${connectorStandard(c.standard, locale)} · ${powerTypeLabel(c.power_type, locale)}`,
                 },
                 {
                   key: 'power',
@@ -927,5 +942,93 @@ function EvseQr({ evseCode }: { evseCode: string }) {
     <a href={src} download={`qr-${evseCode}.png`} title={evseQrUrl(evseCode)}>
       <img src={src} alt={`QR ${evseCode}`} width={48} height={48} />
     </a>
+  );
+}
+
+/** Potencia del gabinete y de cada conector (kW) de un cargador ya inventariado (ADR 0026). */
+function PowerEditor({ cp, onSaved }: { cp: ChargePointDetail; onSaved: () => void }) {
+  const { t, locale } = useI18n();
+  const api = useApi();
+  const mutation = useMutation();
+  const [open, setOpen] = useState(false);
+  const [cabinetKw, setCabinetKw] = useState(cp.max_power_w ? String(cp.max_power_w / 1000) : '');
+  const [connectorKw, setConnectorKw] = useState<Record<number, string>>(() =>
+    Object.fromEntries(
+      cp.connectors.map((c) => [
+        c.ocpp_connector_id,
+        c.max_power_w ? String(c.max_power_w / 1000) : '',
+      ]),
+    ),
+  );
+  const toW = (kw: string) => (kw.trim() ? Math.round(Number(kw) * 1000) : null);
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void mutation
+      .run(
+        () =>
+          api.patch(`/charge-points/${cp.id}/power`, {
+            maxPowerW: toW(cabinetKw),
+            connectors: cp.connectors.map((c) => ({
+              ocppConnectorId: c.ocpp_connector_id,
+              maxPowerW: toW(connectorKw[c.ocpp_connector_id] ?? ''),
+            })),
+          }),
+        t('cp.powerSaved'),
+      )
+      .then(() => {
+        setOpen(false);
+        onSaved();
+      });
+  };
+  if (!open) {
+    return (
+      <div className="row mb">
+        <span className="muted small">{powerSummary(cp.max_power_w, cp.connectors, locale)}</span>
+        <button type="button" className="small" onClick={() => setOpen(true)}>
+          {t('cp.editPower')}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <form onSubmit={submit} className="mb">
+      <ErrorBox error={mutation.error} />
+      <div className="row">
+        <Field label={t('cp.cabinetPowerKw')} help={t('cp.cabinetPowerHelp')}>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            step="0.1"
+            value={cabinetKw}
+            onChange={(e) => setCabinetKw(e.target.value)}
+            style={{ width: 140 }}
+          />
+        </Field>
+        {cp.connectors.map((c) => (
+          <Field key={c.id} label={t('cp.connectorPowerKw', { n: c.ocpp_connector_id })}>
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              step="0.1"
+              value={connectorKw[c.ocpp_connector_id] ?? ''}
+              onChange={(e) =>
+                setConnectorKw({ ...connectorKw, [c.ocpp_connector_id]: e.target.value })
+              }
+              style={{ width: 120 }}
+            />
+          </Field>
+        ))}
+      </div>
+      <div className="form-actions">
+        <button type="button" onClick={() => setOpen(false)}>
+          {t('app.cancel')}
+        </button>
+        <button type="submit" className="primary" disabled={mutation.busy}>
+          {t('app.save')}
+        </button>
+      </div>
+    </form>
   );
 }

@@ -384,6 +384,15 @@ describe.skipIf(!baseUrl)(
         await admin('POST', `/admin/v1/sessions/${body.id}/cost/recalculate`, { reason: 'prueba' })
       ).json() as { created: boolean };
       expect(recalc.created).toBe(false);
+      // El back-office lee `final`/`running` del envoltorio, nunca líneas en la raíz.
+      const adminCost = (await admin('GET', `/admin/v1/sessions/${body.id}/cost`)).json() as {
+        running: unknown;
+        final: { lines: { dimension: string }[]; totalMinor: string; flags: string[] } | null;
+        calcs: unknown[];
+      };
+      expect(adminCost.final?.lines.map((l) => l.dimension)).toEqual(['ENERGY', 'PARKING_TIME']);
+      expect(adminCost.final?.totalMinor).toBe(String(settled.calc.total_minor));
+      expect(Array.isArray(adminCost.calcs)).toBe(true);
       const detail = await adminSession(body.id);
       expect((detail.events as { type: string }[]).map((e) => e.type)).toEqual(
         expect.arrayContaining([

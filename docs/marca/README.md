@@ -18,7 +18,7 @@ El manual de marca vive en el sistema de diseño del dueño (artefacto "VOLT", <
 
 | Dónde | Qué toma del manual |
 |---|---|
-| `apps/backoffice/src/styles.css` | Tokens CSS de color (claro y oscuro), tipografía, radios y foco; el back-office es "web" (tema claro por defecto, oscuro si el sistema lo pide) |
+| `apps/backoffice/src/styles.css`, `src/lib/status.ts`, `src/components/icon.tsx` | Tokens CSS de color (claro y oscuro), tipografía, radios y foco, alineados con el sistema de diseño de la app (ADR 0030): el back-office es "web" (tema claro por defecto, oscuro si el sistema lo pide o el usuario lo elige), estados por palabra, ícono y color desde un solo módulo, Material Icons |
 | `apps/backoffice/public/brand/` | `volt-logo-rojo.svg`, `volt-logo-blanco.svg`, `volt-logo-negro.svg` (copias exactas del manual) |
 | `apps/backoffice/index.html` | Barlow Semi Condensed y Roboto desde Google Fonts (con reserva a Arial y Helvetica) |
 | Recibos HTML (`packages/csms/src/billing/receipts.ts`) y correos | Tema claro, razón social completa, formatos de cifras y fechas del manual (se ajusta en la iteración 7 junto con el envío de correo) |

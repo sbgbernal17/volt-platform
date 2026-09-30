@@ -21,6 +21,8 @@ const evse = (overrides: Partial<LocationEvse>): LocationEvse => ({
   standard: 'IEC_62196_T2_COMBO',
   powerType: 'DC',
   maxPowerKw: 180,
+  chargerMaxPowerKw: null,
+  powerShared: false,
   status: 'Available',
   ...overrides,
 });
@@ -50,6 +52,7 @@ describe('estaciones', () => {
       available: 1,
       total: 3,
       maxPowerKw: 180,
+      shared: false,
       noData: false,
       allOut: false,
     });
@@ -115,5 +118,30 @@ describe('estaciones', () => {
     );
     expect(isOpen24h({ twentyfourseven: true })).toBe(true);
     expect(isOpen24h(null)).toBe(false);
+  });
+});
+
+describe('potencia por gabinete (ADR 0026)', () => {
+  it('la disponibilidad usa la potencia del gabinete y marca el reparto', () => {
+    const summary = availability([
+      evse({ maxPowerKw: 90, chargerMaxPowerKw: 180, powerShared: true }),
+      evse({ evseId: 'VOLT-X-2', maxPowerKw: 90, chargerMaxPowerKw: 180, powerShared: true }),
+    ]);
+    expect(summary.maxPowerKw).toBe(180);
+    expect(summary.shared).toBe(true);
+    expect(availability([evse({})]).shared).toBe(false);
+  });
+
+  it('el filtro de potencia mínima considera el gabinete', () => {
+    const shared = station('S', 6.2, -75.5, [
+      evse({ maxPowerKw: 90, chargerMaxPowerKw: 180, powerShared: true }),
+    ]);
+    expect(filterStations([shared], { ...NO_FILTERS, minPowerKw: 150 })).toHaveLength(1);
+    expect(
+      filterStations([station('T', 6.2, -75.5, [evse({ maxPowerKw: 90 })])], {
+        ...NO_FILTERS,
+        minPowerKw: 150,
+      }),
+    ).toHaveLength(0);
   });
 });

@@ -129,9 +129,20 @@ export interface WebhookEvent {
   raw: unknown;
 }
 
+/** Resultado de la comprobación de la pasarela (`GET /merchants/{llave pública}` en Wompi). */
+export interface GatewayHealth {
+  ok: boolean;
+  latencyMs: number;
+  /** Nombre del comercio según el proveedor; confirma que la llave pública es la de la cuenta. */
+  merchant: string | null;
+  error: string | null;
+}
+
 export interface PaymentGateway {
   readonly provider: string;
   readonly environment: 'sandbox' | 'production' | 'fake';
+  /** Comprueba conectividad y llave pública sin mover dinero. Opcional en dobles de prueba. */
+  health?(): Promise<GatewayHealth>;
   getAcceptanceTokens(): Promise<AcceptanceTokens>;
   createPaymentSource(input: CreatePaymentSourceInput): Promise<PaymentSource>;
   getPaymentSource(id: number): Promise<PaymentSource>;

@@ -13,6 +13,9 @@ export interface EvseLiveRow {
   standard: string;
   power_type: string;
   max_power_w: number | null;
+  /** Potencia del gabinete (W) y si se reparte entre sus conectores (ADR 0026). */
+  charger_max_power_w: number | null;
+  power_shared: boolean;
   status: string;
   last_seen_at: Date | null;
   visible_in_app: boolean;
@@ -37,7 +40,11 @@ const EVSE_LIVE_SELECT = (db: ISql) => db`
   SELECT e.evse_id AS evse_code, e.id AS evse_uuid, v.connector_id AS connector_uuid, v.charge_point_id,
          v.charge_box_id, v.site_id, v.ocpp_connector_id, v.standard::text, v.power_type::text, v.max_power_w,
          v.status, v.last_seen_at, (e.visible_in_app AND cp.visible_in_app) AS visible_in_app,
-         cp.lifecycle_status, cp.connected
+         cp.lifecycle_status, cp.connected, cp.max_power_w AS charger_max_power_w,
+         (cp.max_power_w IS NOT NULL
+          AND (SELECT COUNT(*) FROM assets.connector c2 WHERE c2.charge_point_id = cp.id) > 1
+          AND cp.max_power_w < (SELECT SUM(COALESCE(c2.max_power_w, cp.max_power_w))
+                                FROM assets.connector c2 WHERE c2.charge_point_id = cp.id)) AS power_shared
   FROM assets.v_connector_live v
   JOIN assets.evse e ON e.id = v.evse_id
   JOIN assets.charge_point cp ON cp.id = v.charge_point_id`;

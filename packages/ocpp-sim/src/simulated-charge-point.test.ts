@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { type IHandlersOption, type RPCClient, RPCServer } from 'ocpp-rpc';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SimulatedChargePoint } from './simulated-charge-point.ts';
+import { SimulatedChargePoint, sharedPowerW } from './simulated-charge-point.ts';
 
 describe('cargador simulado', () => {
   const server = new RPCServer({ protocols: ['ocpp1.6'], strictMode: false });
@@ -113,5 +113,14 @@ describe('cargador simulado', () => {
     expect(sim.connected).toBe(true);
     expect(sim.configuration.get('WebSocketPingInterval')?.value).toBe('60');
     await sim.close();
+  });
+});
+
+describe('reparto de potencia del gabinete (ADR 0026)', () => {
+  it('con dos transacciones activas cada conector recibe la mitad del gabinete', () => {
+    expect(sharedPowerW(180_000, 1, 180_000)).toBe(180_000);
+    expect(sharedPowerW(180_000, 2, 180_000)).toBe(90_000);
+    expect(sharedPowerW(180_000, 2, 50_000)).toBe(50_000);
+    expect(sharedPowerW(undefined, 2, 50_000)).toBe(50_000);
   });
 });

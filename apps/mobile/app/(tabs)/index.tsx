@@ -345,7 +345,7 @@ function StationRow({ station, onPress }: { station: StationWithDistance; onPres
         <Muted>
           {[
             station.distanceKm !== null ? formatDistance(station.distanceKm) : null,
-            summary.maxPowerKw ? formatKw(summary.maxPowerKw) : null,
+            summary.maxPowerKw ? t('power.upTo', { power: formatKw(summary.maxPowerKw) }) : null,
             groups.map((g) => `${g.label} · ${g.count}`).join(', '),
           ]
             .filter(Boolean)

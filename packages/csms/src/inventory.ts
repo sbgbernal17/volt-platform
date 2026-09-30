@@ -172,6 +172,8 @@ export interface CreateChargePointInput {
   securityProfile?: number | undefined;
   configTemplateId?: string | undefined;
   heartbeatIntervalS?: number | undefined;
+  /** Potencia máxima del gabinete (W), compartida entre sus conectores (ADR 0026). */
+  maxPowerW?: number | undefined;
   connectors: ExpectedConnector[];
 }
 
@@ -195,6 +197,8 @@ export interface ChargePointRow {
   config_template_id: string | null;
   supported_profiles: string[];
   number_of_connectors: number | null;
+  /** Potencia máxima del gabinete (W); null si no se conoce. */
+  max_power_w: number | null;
   heartbeat_interval_s: number;
   cp_status: string;
   cp_error_code: string;
@@ -262,11 +266,12 @@ export async function createChargePoint(
       const rows = await tx<ChargePointRow[]>`
       INSERT INTO assets.charge_point
         (id, tenant_id, site_id, charge_box_id, serial_number, vendor, model, security_profile,
-         config_template_id, number_of_connectors, heartbeat_interval_s, lifecycle_status)
+         config_template_id, number_of_connectors, heartbeat_interval_s, lifecycle_status, max_power_w)
       VALUES (${id}, ${input.tenantId}, ${input.siteId}, ${input.chargeBoxId},
               ${input.serialNumber ?? null}, ${input.vendor ?? null}, ${input.model ?? null},
               ${input.securityProfile ?? 2}, ${input.configTemplateId ?? null},
-              ${input.connectors.length}, ${input.heartbeatIntervalS ?? 300}, 'INVENTORIED')
+              ${input.connectors.length}, ${input.heartbeatIntervalS ?? 300}, 'INVENTORIED',
+              ${input.maxPowerW ?? null})
       RETURNING *`;
       for (const connector of input.connectors) {
         const evseId = randomUUID();
@@ -374,7 +379,17 @@ export interface ConnectorSummaryRow {
   max_power_w: number | null;
   ocpp_status: string;
   visible_in_app: boolean;
+  /** Potencia máxima del gabinete (W) y si se reparte entre conectores (ADR 0026). */
+  charger_max_power_w: number | null;
+  power_shared: boolean;
 }
+
+/** Fragmento SQL de la regla de potencia compartida (misma regla que `isPowerShared`). */
+const POWER_SHARED_SQL = (sql: Sql) => sql`
+  (cp.max_power_w IS NOT NULL
+   AND (SELECT COUNT(*) FROM assets.connector c2 WHERE c2.charge_point_id = cp.id) > 1
+   AND cp.max_power_w < (SELECT SUM(COALESCE(c2.max_power_w, cp.max_power_w))
+                         FROM assets.connector c2 WHERE c2.charge_point_id = cp.id))`;
 
 export async function listConnectorSummaries(
   sql: Sql,
@@ -383,8 +398,11 @@ export async function listConnectorSummaries(
   if (chargePointIds.length === 0) return [];
   return sql<ConnectorSummaryRow[]>`
     SELECT c.id, c.charge_point_id, c.evse_id, e.evse_id AS evse_code, c.ocpp_connector_id, c.standard,
-           c.power_type, c.max_power_w, c.ocpp_status, e.visible_in_app
-    FROM assets.connector c JOIN assets.evse e ON e.id = c.evse_id
+           c.power_type, c.max_power_w, c.ocpp_status, e.visible_in_app,
+           cp.max_power_w AS charger_max_power_w, ${POWER_SHARED_SQL(sql)} AS power_shared
+    FROM assets.connector c
+    JOIN assets.evse e ON e.id = c.evse_id
+    JOIN assets.charge_point cp ON cp.id = c.charge_point_id
     WHERE c.charge_point_id = ANY(${chargePointIds}::uuid[])
     ORDER BY c.charge_point_id, c.ocpp_connector_id`;
 }
@@ -398,6 +416,59 @@ export async function listConnectors(sql: Sql, chargePointId: string): Promise<C
     FROM assets.connector c JOIN assets.evse e ON e.id = c.evse_id
     WHERE c.charge_point_id = ${chargePointId}
     ORDER BY c.ocpp_connector_id`;
+}
+
+export interface UpdateChargePointPowerInput {
+  /** Potencia del gabinete (W); null la borra. Omitido: no cambia. */
+  maxPowerW?: number | null | undefined;
+  connectors?:
+    | {
+        ocppConnectorId: number;
+        maxPowerW?: number | null | undefined;
+        standard?: ConnectorStandard | undefined;
+        powerType?: PowerType | undefined;
+      }[]
+    | undefined;
+}
+
+/** Potencia del gabinete y de sus conectores (y estándar o corriente) de un cargador ya inventariado. */
+export async function updateChargePointPower(
+  sql: Sql,
+  chargePointId: string,
+  input: UpdateChargePointPowerInput,
+): Promise<ChargePointRow> {
+  await getChargePoint(sql, chargePointId);
+  return sql.begin(async (tx) => {
+    if (input.maxPowerW !== undefined) {
+      await tx`
+        UPDATE assets.charge_point SET max_power_w = ${input.maxPowerW}, updated_at = now()
+        WHERE id = ${chargePointId}`;
+    }
+    for (const connector of input.connectors ?? []) {
+      const rows = await tx<{ id: string; evse_id: string }[]>`
+        SELECT id, evse_id FROM assets.connector
+        WHERE charge_point_id = ${chargePointId} AND ocpp_connector_id = ${connector.ocppConnectorId}`;
+      const row = rows[0];
+      if (!row) {
+        throw new NotFoundError(
+          `El cargador no tiene el conector ${connector.ocppConnectorId}`,
+          'CONNECTOR_NOT_FOUND',
+        );
+      }
+      await tx`
+        UPDATE assets.connector
+        SET max_power_w = CASE WHEN ${connector.maxPowerW !== undefined} THEN ${connector.maxPowerW ?? null} ELSE max_power_w END,
+            standard = COALESCE(${connector.standard ?? null}::assets.connector_standard, standard),
+            power_type = COALESCE(${connector.powerType ?? null}::assets.power_type, power_type)
+        WHERE id = ${row.id}`;
+      if (connector.maxPowerW !== undefined) {
+        await tx`UPDATE assets.evse SET max_power_w = ${connector.maxPowerW ?? null} WHERE id = ${row.evse_id}`;
+      }
+    }
+    const updated = await tx<ChargePointRow[]>`
+      SELECT * FROM assets.charge_point WHERE id = ${chargePointId}`;
+    return updated[0] as ChargePointRow;
+  });
 }
 
 export interface ConfigRow {

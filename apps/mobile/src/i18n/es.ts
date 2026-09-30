@@ -26,7 +26,6 @@ export const es = {
 
   'tabs.map': 'Mapa',
   'tabs.scan': 'Cargar',
-  'tabs.history': 'Actividad',
   'tabs.account': 'Cuenta',
   'tabs.charging': 'Cargando',
 
@@ -131,6 +130,10 @@ export const es = {
   'map.availableNow': 'Disponible ahora',
   'map.availableNowHelp': 'Solo estaciones con al menos un conector libre.',
   'map.power': 'Potencia',
+  'power.upTo': 'Hasta {power}',
+  'power.sharedShort': 'potencia compartida',
+  'power.shared':
+    'La potencia del cargador se reparte entre sus conectores cuando los dos cargan a la vez.',
   'map.anyPower': 'Cualquiera',
   'map.connector': 'Conector',
   'map.anyConnector': 'Todos',
@@ -249,7 +252,13 @@ export const es = {
   'scan.manual': 'Identificador del conector',
   'scan.go': 'Buscar',
   'scan.invalid': 'Ese código no es de un conector Volt.',
-  'scan.webHint': 'En el navegador escriba el identificador del conector.',
+  'scan.webHint': 'Escriba el identificador del conector.',
+  'scan.webUnsupported':
+    'Este navegador no permite usar la cámara aquí. Escriba el identificador del conector.',
+  'scan.webBlocked':
+    'La cámara está bloqueada para este sitio. Permítala en los ajustes del navegador (el candado junto a la dirección) o escriba el identificador.',
+  'scan.cameraError': 'No pudimos abrir la cámara. Escriba el identificador del conector.',
+  'scan.retry': 'Intentar con la cámara',
   'scan.searching': 'Buscando código…',
   'scan.enterCode': 'Ingresar código',
   'scan.enterHelp': 'El identificador está impreso bajo el código QR del conector.',
@@ -320,6 +329,7 @@ export const es = {
   'session.charging': 'Cargando',
   'session.pausedShort': 'Su vehículo pausó la carga',
   'session.maxPowerNote': 'Potencia máxima del cargador {power}',
+  'session.maxPowerSharedNote': 'Hasta {power}, compartidos con el otro conector del cargador',
   'session.stopDialogTitle': '¿Desea finalizar la sesión de carga?',
   'session.stopDialogNote':
     'El valor final se calcula con la lectura del medidor al cerrar la sesión.',
@@ -393,6 +403,10 @@ export const es = {
   'receipt.totalVat': 'Total (servicio excluido de IVA)',
   'receipt.dianNote':
     'Este recibo es el comprobante de la sesión. La factura electrónica llegará a su correo cuando esté habilitada.',
+  'receipt.pdf': 'Descargar PDF',
+  'receipt.pdfSaved': 'Recibo guardado en sus descargas.',
+  'receipt.pdfError': 'No pudimos descargar el recibo. Intente de nuevo.',
+  'history.pdf': 'Recibo en PDF',
   'receipt.printable': 'Ver versión imprimible',
   'receipt.report': 'Reportar un problema con esta carga',
   'receipt.legal': 'Supercargadores Vehiculares S.A.S. · VOLT',
@@ -414,6 +428,21 @@ export const es = {
   'account.deleteBlocked.DEBT_PENDING':
     'Tiene un cobro pendiente. Páguelo antes de eliminar la cuenta.',
   'account.deleteRelogin': 'Por seguridad, vuelva a entrar y repita la eliminación.',
+  'profile.documentSection': 'Documento de identidad',
+  'profile.documentHelp': 'Opcional. Solo hace falta si quiere factura electrónica.',
+  'profile.documentType.CC': 'Cédula (CC)',
+  'profile.documentType.CE': 'Extranjería (CE)',
+  'profile.documentType.NIT': 'NIT',
+  'profile.documentType.PAS': 'Pasaporte',
+  'profile.documentType.PPT': 'PPT',
+  'profile.documentNumber': 'Número de documento',
+  'profile.nitHelp': 'Con el dígito de verificación, por ejemplo 900123456-7.',
+  'profile.wantsInvoice': 'Requiere factura electrónica',
+  'profile.wantsInvoiceHelp':
+    'La factura electrónica ante la DIAN llegará a su correo cuando esté habilitada. Con esta opción el documento es obligatorio.',
+  'profile.documentRequired': 'Para la factura electrónica indique tipo y número de documento.',
+  'profile.documentPair': 'Elija el tipo y escriba el número, o deje los dos vacíos.',
+  'profile.documentInvalid': 'Revise el número de documento.',
   'account.phone': 'Celular',
   'account.emailVerified': 'Correo verificado',
   'account.emailUnverified': 'Correo sin verificar',

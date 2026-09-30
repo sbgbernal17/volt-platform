@@ -4,7 +4,7 @@ import { ConfirmDialog } from '../components/confirm-dialog.tsx';
 import { DataTable } from '../components/data-table.tsx';
 import {
   Alert,
-  Badge,
+  BillingBadge,
   ErrorBox,
   Field,
   Loading,
@@ -17,13 +17,6 @@ import { dateTime, energyKwh, money } from '../lib/format.ts';
 import { useRouter } from '../lib/router.tsx';
 import type { Driver, Items, SessionView } from '../lib/types.ts';
 import { useMutation, useQuery } from '../lib/use-query.ts';
-
-function BillingBadge({ value }: { value: string }) {
-  const { t } = useI18n();
-  if (value === 'OK') return <Badge tone="ok">{t('drivers.ok')}</Badge>;
-  if (value === 'BLOCKED_DEBT') return <Badge tone="danger">{t('drivers.blockedDebt')}</Badge>;
-  return <Badge tone="warning">{t('drivers.blockedManual')}</Badge>;
-}
 
 export function DriversPage() {
   const { t, locale } = useI18n();
@@ -57,7 +50,7 @@ export function DriversPage() {
   const rows = (drivers.data?.items ?? []).filter(
     (d) =>
       !filter ||
-      `${d.email ?? ''} ${d.display_name ?? ''} ${d.phone ?? ''}`
+      `${d.email ?? ''} ${d.display_name ?? ''} ${d.phone ?? ''} ${d.document_number ?? ''}`
         .toLowerCase()
         .includes(filter.toLowerCase()),
   );
@@ -132,6 +125,11 @@ export function DriversPage() {
             { key: 'email', header: t('drivers.email'), render: (d) => d.email ?? '—' },
             { key: 'phone', header: t('drivers.phone'), render: (d) => d.phone ?? '—' },
             { key: 'segment', header: t('drivers.segment'), render: (d) => d.segment },
+            {
+              key: 'invoice',
+              header: t('drivers.wantsInvoice'),
+              render: (d) => (d.wants_invoice ? t('app.yes') : t('app.no')),
+            },
             { key: 'status', header: t('app.status'), render: (d) => d.status },
             {
               key: 'billing',
@@ -224,11 +222,9 @@ export function DriverDetailPage({ id }: { id: string }) {
                 </button>
               )
             ) : null}
-            <button type="button" onClick={() => navigate('/drivers')}>
-              {t('app.back')}
-            </button>
           </>
         }
+        onBack={() => navigate('/drivers')}
       />
       <ErrorBox error={mutation.error} />
       {mutation.message ? <Alert tone="ok">{mutation.message}</Alert> : null}
@@ -243,6 +239,14 @@ export function DriverDetailPage({ id }: { id: string }) {
             <div>
               <div className="muted small">{t('drivers.phone')}</div>
               {d.phone ?? '—'}
+            </div>
+            <div>
+              <div className="muted small">{t('drivers.document')}</div>
+              {d.document_type ? `${d.document_type} ${d.document_number ?? ''}` : '—'}
+            </div>
+            <div>
+              <div className="muted small">{t('drivers.wantsInvoice')}</div>
+              {d.wants_invoice ? t('app.yes') : t('app.no')}
             </div>
             <div>
               <div className="muted small">{t('drivers.segment')}</div>

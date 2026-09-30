@@ -212,7 +212,7 @@ export function assertInScope(request: FastifyRequest, siteId: string | null | u
   }
 }
 
-const SENSITIVE_KEY = /key|secret|password|token|authorization|cvc|pan$/i;
+const SENSITIVE_KEY = /key|secret|password|token|authorization|cvc|pan$|document/i;
 const MAX_AUDIT_JSON = 8000;
 
 /** Copia de un valor para auditoría: sin secretos y acotada en tamaño. */

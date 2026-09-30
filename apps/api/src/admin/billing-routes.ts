@@ -4,16 +4,22 @@
  */
 import {
   type BillingService,
+  bogotaDayKey,
+  bogotaDayStart,
   CsmsError,
   ForbiddenError,
   getReceipt,
   listPaymentMethods,
+  providerStatus,
   renderReceiptHtml,
+  renderReceiptPdf,
   resolveParam,
+  summarizePayments,
 } from '@volt/csms';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
+import { receiptFilename } from '../public/billing-routes.ts';
 import { actorOf, serialize } from './routes.ts';
 import { hasPermission, staffOf } from './staff-auth.ts';
 
@@ -40,16 +46,65 @@ export async function billingAdminRoutes(
     return options.billing;
   };
 
+  const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
   app.get('/payments', async (request) => {
     const query = z
       .object({
         sessionId: z.string().uuid().optional(),
         driverId: z.string().uuid().optional(),
+        status: z.enum(['PENDING', 'SUCCEEDED', 'FAILED', 'CANCELLED']).optional(),
+        kind: z.enum(['CAPTURE', 'DEBT', 'VOID', 'REFUND']).optional(),
+        environment: z.string().max(20).optional(),
+        from: day.optional(),
+        to: day.optional(),
         limit: z.coerce.number().int().min(1).max(500).optional(),
       })
       .parse(request.query ?? {});
-    return { items: serialize(await requireBilling().listPayments({ tenantId, ...query })) };
+    const { from, to, ...rest } = query;
+    return {
+      items: serialize(
+        await requireBilling().listPayments({
+          tenantId,
+          ...rest,
+          from: from ? bogotaDayStart(from) : undefined,
+          to: to ? new Date(bogotaDayStart(to).getTime() + 86_400_000) : undefined,
+        }),
+      ),
+    };
   });
+  /**
+   * Resumen de ingresos (ADR 0029): días de Colombia, `to` inclusive; por defecto los últimos 30
+   * días y solo el ambiente de la pasarela configurada (sandbox no se mezcla con producción;
+   * `environment=all` lo muestra todo).
+   */
+  app.get('/billing/summary', async (request) => {
+    const query = z
+      .object({
+        from: day.optional(),
+        to: day.optional(),
+        environment: z.string().max(20).optional(),
+      })
+      .parse(request.query ?? {});
+    const today = bogotaDayKey(new Date());
+    const toKey = query.to ?? today;
+    const fromKey =
+      query.from ?? bogotaDayKey(new Date(bogotaDayStart(toKey).getTime() - 29 * 86_400_000));
+    const environment =
+      query.environment === 'all'
+        ? null
+        : (query.environment ?? options.billing?.gateway.environment ?? null);
+    return serialize(
+      await summarizePayments(sql, {
+        tenantId,
+        from: bogotaDayStart(fromKey),
+        to: new Date(bogotaDayStart(toKey).getTime() + 86_400_000),
+        environment,
+      }),
+    );
+  });
+  app.get('/billing/provider', async () =>
+    serialize(await providerStatus(sql, { tenantId, gateway: options.billing?.gateway })),
+  );
   app.get('/payments/:id', async (request) =>
     serialize(await requireBilling().getPayment(params.parse(request.params).id)),
   );
@@ -103,11 +158,20 @@ export async function billingAdminRoutes(
     const { id } = params.parse(request.params);
     const receipt = await getReceipt(sql, id);
     const query = z
-      .object({ format: z.enum(['json', 'html']).default('json') })
+      .object({ format: z.enum(['json', 'html', 'pdf']).default('json') })
       .parse(request.query ?? {});
     if (query.format === 'html') {
       reply.type('text/html; charset=utf-8');
       return renderReceiptHtml(receipt);
+    }
+    if (query.format === 'pdf') {
+      reply.type('application/pdf');
+      reply.header(
+        'content-disposition',
+        `attachment; filename="${receiptFilename(receipt.invoice.number)}"`,
+      );
+      reply.header('cache-control', 'private, no-store');
+      return Buffer.from(await renderReceiptPdf(receipt));
     }
     return serialize({
       invoice: receipt.invoice,

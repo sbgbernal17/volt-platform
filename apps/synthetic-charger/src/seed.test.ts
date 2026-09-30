@@ -31,6 +31,7 @@ describe.skipIf(!baseUrl)('alta del cargador sintético', () => {
     expect(cp?.lifecycle_status).toBe('OPERATIONAL');
     expect(cp?.visible_in_app).toBe(false);
     expect(cp?.tenant_id).toBe(VOLT_TENANT_ID);
+    expect(cp?.max_power_w).toBe(180_000);
 
     const second = await ensureSyntheticChargePoint(sql, {
       chargeBoxId: 'VOLT-SYNTH-TEST',
@@ -54,6 +55,11 @@ describe.skipIf(!baseUrl)('alta del cargador sintético', () => {
     const site = locations.find((l) => l.code === 'SYNTH');
     expect(site?.name).toBe('Estación de pruebas Volt (virtual)');
     expect(site?.evses.map((e) => e.evse_code)).toEqual(['VOLT-SYNTH-TEST-1', 'VOLT-SYNTH-TEST-2']);
+    // Gabinete de 180 kW compartido entre los dos conectores (ADR 0026).
+    expect(site?.evses.map((e) => [e.charger_max_power_w, e.power_shared])).toEqual([
+      [180_000, true],
+      [180_000, true],
+    ]);
     const evse = site?.evses[0];
     const quote = await quoteEvse(sql, {
       tenantId: VOLT_TENANT_ID,

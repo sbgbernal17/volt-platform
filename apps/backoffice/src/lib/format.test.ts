@@ -4,7 +4,9 @@ import {
   connectorSummary,
   duration,
   energyKwh,
+  isPowerShared,
   money,
+  powerSummary,
   powerTypeLabel,
   relativeTime,
 } from './format.ts';
@@ -43,7 +45,36 @@ describe('formato', () => {
         ],
         'en',
       ),
-    ).toBe('CCS1 + GB/T DC · 90 kW');
+    ).toBe('CCS1 + GB/T · 90 kW');
     expect(connectorSummary([])).toBe('—');
+    // Gabinete de 180 kW compartido (ADR 0026): la lista lo dice en palabras.
+    expect(
+      connectorSummary([
+        {
+          standard: 'IEC_62196_T2_COMBO',
+          max_power_w: 180_000,
+          charger_max_power_w: 180_000,
+          power_shared: true,
+        },
+        {
+          standard: 'IEC_62196_T2_COMBO',
+          max_power_w: 180_000,
+          charger_max_power_w: 180_000,
+          power_shared: true,
+        },
+      ]),
+    ).toBe('2 × CCS2 · hasta 180 kW · compartida entre conectores');
+    expect(
+      powerSummary(
+        180_000,
+        [
+          { standard: 'GBT_DC', max_power_w: 90_000 },
+          { standard: 'GBT_DC', max_power_w: 90_000 },
+        ],
+        'en',
+      ),
+    ).toBe('180 kW');
+    expect(isPowerShared(180_000, [180_000, 180_000])).toBe(true);
+    expect(isPowerShared(180_000, [90_000, 90_000])).toBe(false);
   });
 });

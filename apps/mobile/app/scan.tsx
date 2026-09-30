@@ -1,7 +1,9 @@
 /**
  * Escáner del código QR del cargador (handoff, pantallas 07 y 20): cámara a pantalla completa con
  * máscara y visor de 260 px, linterna, entrada manual del identificador, permiso denegado y código
- * inválido. En el navegador no hay cámara: se muestra la entrada manual.
+ * inválido. En el navegador también usa la cámara (expo-camera lee el QR con el BarcodeDetector
+ * nativo de Chrome o con su decodificador WebAssembly en Safari): hace falta HTTPS y el permiso del
+ * sitio; si el navegador no puede, queda la entrada manual con la explicación.
  */
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
@@ -16,13 +18,24 @@ import { Button, Field, IconButton, Note, Screen, Subtitle, TopBar } from '../sr
 
 const WINDOW = 260;
 
+/** La cámara del navegador exige contexto seguro (HTTPS o localhost) y getUserMedia. */
+function webCameraSupported(): boolean {
+  if (typeof navigator === 'undefined' || typeof globalThis.isSecureContext === 'undefined')
+    return true;
+  return Boolean(globalThis.isSecureContext && navigator.mediaDevices?.getUserMedia);
+}
+
 export default function ScanScreen() {
   const { t } = useI18n();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
-  const [manual, setManual] = useState(Platform.OS === 'web');
+  const [manual, setManual] = useState(false);
+  /** Motivo por el que la cámara no está disponible en el navegador (se explica sobre la entrada manual). */
+  const [webIssue, setWebIssue] = useState<'unsupported' | 'blocked' | 'error' | null>(() =>
+    Platform.OS === 'web' && !webCameraSupported() ? 'unsupported' : null,
+  );
   const [code, setCode] = useState('');
   const [invalid, setInvalid] = useState(false);
   const [found, setFound] = useState(false);
@@ -64,18 +77,29 @@ export default function ScanScreen() {
         onSubmitEditing={() => go(code)}
       />
       <Button title={t('scan.go')} onPress={() => go(code)} disabled={!code.trim()} />
-      {Platform.OS !== 'web' ? (
+      {webIssue !== 'unsupported' ? (
         <Button
-          title={t('scan.again')}
+          title={webIssue ? t('scan.retry') : t('scan.again')}
           variant="ghost"
           icon="qr-code-scanner"
-          onPress={() => setManual(false)}
+          onPress={() => {
+            setWebIssue(null);
+            setManual(false);
+          }}
         />
       ) : null}
     </View>
   );
 
-  if (Platform.OS === 'web' || manual) {
+  if (manual || webIssue) {
+    const hint =
+      webIssue === 'unsupported'
+        ? t('scan.webUnsupported')
+        : webIssue === 'blocked'
+          ? t('scan.webBlocked')
+          : webIssue === 'error'
+            ? t('scan.cameraError')
+            : t('scan.webHint');
     return (
       <Screen scroll={false} padded={false}>
         <TopBar
@@ -85,14 +109,15 @@ export default function ScanScreen() {
           title={t('scan.enterCode')}
         />
         <View style={{ paddingHorizontal: spacing.xl, gap: spacing.md }}>
-          <Text style={styles.body}>{t('scan.webHint')}</Text>
+          <Text style={styles.body}>{hint}</Text>
           {manualPanel}
         </View>
       </Screen>
     );
   }
 
-  if (!permission?.granted) {
+  // En el navegador la propia cámara pide el permiso al montarse; en nativo se pide antes.
+  if (Platform.OS !== 'web' && !permission?.granted) {
     return (
       <Screen scroll={false} padded={false}>
         <TopBar onBack={close} backLabel={t('app.close')} backIcon="close" />
@@ -124,9 +149,14 @@ export default function ScanScreen() {
       <CameraView
         style={StyleSheet.absoluteFill}
         facing="back"
+        autofocus="on"
         enableTorch={torch}
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
         onBarcodeScanned={onScanned}
+        onMountError={(event) => {
+          // NotAllowedError: el sitio no tiene permiso; el resto: sin cámara u ocupada.
+          setWebIssue(/NotAllowed|Permission|denied/i.test(event.message) ? 'blocked' : 'error');
+        }}
       />
       {/* Máscara al 72 % alrededor del visor */}
       <View style={[styles.mask, { top: 0, height: '30%' }]} />

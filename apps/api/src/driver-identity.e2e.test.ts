@@ -236,6 +236,45 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
       locale: 'en',
     });
     expect((await call('PATCH', '/v1/me', verified, { locale: 'fr' })).statusCode).toBe(400);
+    // Documento de identidad y factura electrónica (ADR 0027).
+    expect(errorCode(await call('PATCH', '/v1/me', verified, { wantsInvoice: true }))).toBe(
+      'INVOICE_DOCUMENT_REQUIRED',
+    );
+    expect(
+      json(
+        await call('PATCH', '/v1/me', verified, {
+          documentType: 'CC',
+          documentNumber: '1.020.304.050',
+          wantsInvoice: true,
+        }),
+      ),
+    ).toMatchObject({ documentType: 'CC', documentNumber: '1020304050', wantsInvoice: true });
+    expect(
+      errorCode(
+        await call('PATCH', '/v1/me', verified, { documentType: null, documentNumber: null }),
+      ),
+    ).toBe('INVOICE_DOCUMENT_REQUIRED');
+    expect(
+      errorCode(
+        await call('PATCH', '/v1/me', verified, {
+          documentType: 'NIT',
+          documentNumber: '800197268-1',
+        }),
+      ),
+    ).toBe('DOCUMENT_INVALID');
+    expect(
+      (await call('PATCH', '/v1/me', verified, { documentType: 'XX', documentNumber: '123456' }))
+        .statusCode,
+    ).toBe(400);
+    expect(
+      json(
+        await call('PATCH', '/v1/me', verified, {
+          wantsInvoice: false,
+          documentType: null,
+          documentNumber: null,
+        }),
+      ),
+    ).toMatchObject({ documentType: null, documentNumber: null, wantsInvoice: false });
   });
 
   it('vincula una cuenta creada por el personal solo con el correo verificado', async () => {
@@ -348,12 +387,23 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
   it('elimina la cuenta: anonimiza y un nuevo inicio de sesión crea otra cuenta', async () => {
     const ana = tokenFor('ana@example.com', 'sub-ana');
     const before = json(await call('GET', '/v1/me', ana)).id as string;
+    expect(
+      (
+        await call('PATCH', '/v1/me', ana, {
+          documentType: 'CC',
+          documentNumber: '1020304050',
+          wantsInvoice: true,
+        })
+      ).statusCode,
+    ).toBe(200);
     expect((await call('POST', '/v1/me/delete', ana, {})).statusCode).toBe(400);
     const deleted = await call('POST', '/v1/me/delete', ana, { confirm: true });
     expect(deleted.statusCode).toBe(200);
     expect(json(deleted)).toMatchObject({ deleted: true, id: before });
     const rows = await sql<Json[]>`
-      SELECT email, phone, display_name, idp_subject, status, consents, anonymized_at FROM auth.driver WHERE id = ${before}`;
+      SELECT email, phone, display_name, idp_subject, status, consents, anonymized_at,
+             document_type, document_number, wants_invoice
+      FROM auth.driver WHERE id = ${before}`;
     expect(rows[0]).toMatchObject({
       email: null,
       phone: null,
@@ -361,6 +411,9 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
       idp_subject: null,
       status: 'DELETED',
       consents: {},
+      document_type: null,
+      document_number: null,
+      wants_invoice: false,
     });
     expect(rows[0]?.anonymized_at).not.toBeNull();
     expect(

@@ -1,0 +1,4 @@
+Material Icons (MaterialIcons-Regular.ttf), Google LLC.
+Licencia Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0
+Copia del archivo que distribuye @expo/vector-icons (el mismo que usa la app Volt), servida desde el
+propio back-office para no depender de Google Fonts en tiempo de ejecución (ADR 0030).

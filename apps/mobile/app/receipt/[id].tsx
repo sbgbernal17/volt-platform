@@ -1,17 +1,18 @@
 /**
  * Recibo (handoff, pantalla 15): total grande, estado del pago, líneas del cobro, datos de la
- * sesión, aviso sobre la factura electrónica, versión imprimible y reporte de un problema.
+ * sesión, aviso sobre la factura electrónica, descarga del PDF (ADR 0028) y reporte de un problema.
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Linking, Platform, Share, StyleSheet, Text, View } from 'react-native';
-import { WebView } from 'react-native-webview';
 import { errorMessage } from '../../src/api/client.ts';
 import { useQuery } from '../../src/api/hooks.ts';
 import type { Location, Receipt } from '../../src/api/types.ts';
 import { useAuth } from '../../src/auth/auth.tsx';
 import { useI18n } from '../../src/i18n/index.tsx';
 import { formatClock, formatDateTime, formatKwh, formatMoney } from '../../src/lib/format.ts';
+// Sin extensión: Metro elige receipt-file.native.ts o receipt-file.web.ts según la plataforma.
+import { downloadReceipt } from '../../src/lib/receipt-file';
 import { chargerNumber } from '../../src/lib/stations.ts';
 import { colors, fonts, spacing } from '../../src/theme/tokens.ts';
 import {
@@ -34,7 +35,10 @@ export default function ReceiptScreen() {
   const { t, td, locale } = useI18n();
   const auth = useAuth();
   const router = useRouter();
-  const [html, setHtml] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfMessage, setPdfMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(
+    null,
+  );
   const receipt = useQuery(() => auth.api.get<Receipt>(`/sessions/${id}/receipt`), [id], {
     enabled: Boolean(id),
   });
@@ -44,11 +48,25 @@ export default function ReceiptScreen() {
     ? (locations.data?.items.find((l) => l.evses.some((e) => e.evseId === data.evseId)) ?? null)
     : null;
   const index = station && data ? station.evses.findIndex((e) => e.evseId === data.evseId) : -1;
-  const back = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/history'));
+  const back = () => (router.canGoBack() ? router.back() : router.replace('/history'));
 
-  const openHtml = async () => {
-    const text = await auth.api.get<string>(`/sessions/${id}/receipt`, { format: 'html' });
-    setHtml(typeof text === 'string' ? text : JSON.stringify(text));
+  const savePdf = async () => {
+    if (!data) return;
+    setPdfBusy(true);
+    setPdfMessage(null);
+    try {
+      const outcome = await downloadReceipt({
+        api: auth.api,
+        sessionId: data.sessionId,
+        number: data.number,
+        title: t('receipt.number', { number: data.number }),
+      });
+      if (outcome === 'saved') setPdfMessage({ tone: 'success', text: t('receipt.pdfSaved') });
+    } catch {
+      setPdfMessage({ tone: 'danger', text: t('receipt.pdfError') });
+    } finally {
+      setPdfBusy(false);
+    }
   };
   const share = () => {
     if (!data) return;
@@ -84,19 +102,6 @@ export default function ReceiptScreen() {
     );
   }
   if (!data) return null;
-  if (html && Platform.OS !== 'web') {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.bg }}>
-        <TopBar
-          onBack={() => setHtml(null)}
-          backLabel={t('app.close')}
-          backIcon="close"
-          title={t('receipt.number', { number: data.number })}
-        />
-        <WebView source={{ html }} style={{ flex: 1 }} />
-      </View>
-    );
-  }
   const currency = data.totals.currency;
   const paid = data.paymentStatus === 'CAPTURED' || data.paymentStatus === 'WAIVED';
   return (
@@ -169,14 +174,14 @@ export default function ReceiptScreen() {
         <Notice tone="neutral" icon="description">
           {t('receipt.dianNote')}
         </Notice>
-        {Platform.OS !== 'web' ? (
-          <Button
-            title={t('receipt.printable')}
-            variant="secondary"
-            icon="download"
-            onPress={() => void openHtml()}
-          />
-        ) : null}
+        <Button
+          title={t('receipt.pdf')}
+          variant="secondary"
+          icon="download"
+          loading={pdfBusy}
+          onPress={() => void savePdf()}
+        />
+        {pdfMessage ? <Notice tone={pdfMessage.tone}>{pdfMessage.text}</Notice> : null}
         {support ? (
           <View style={{ alignItems: 'center' }}>
             <LinkText onPress={report}>{t('receipt.report')}</LinkText>

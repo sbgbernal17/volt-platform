@@ -76,6 +76,8 @@ export function ChargePointsPage() {
     serialNumber: '',
     configTemplateId: '',
     heartbeatIntervalS: '',
+    /** Potencia del gabinete en kW (compartida entre conectores, ADR 0026). */
+    maxPowerKw: '180',
   });
   const [connectors, setConnectors] = useState<ConnectorForm[]>([
     { ocppConnectorId: 1, standard: 'IEC_62196_T2_COMBO', powerType: 'DC', maxPowerKw: '180' },
@@ -99,6 +101,7 @@ export function ChargePointsPage() {
             heartbeatIntervalS: form.heartbeatIntervalS
               ? Number(form.heartbeatIntervalS)
               : undefined,
+            maxPowerW: form.maxPowerKw ? Math.round(Number(form.maxPowerKw) * 1000) : undefined,
             connectors: connectors.map((c) => ({
               ocppConnectorId: c.ocppConnectorId,
               standard: c.standard,
@@ -197,6 +200,17 @@ export function ChargePointsPage() {
               />
             </Field>
           </div>
+          <Field label={t('cp.cabinetPowerKw')} help={t('cp.cabinetPowerHelp')}>
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              step="0.1"
+              value={form.maxPowerKw}
+              onChange={(e) => setForm({ ...form, maxPowerKw: e.target.value })}
+              style={{ width: 140 }}
+            />
+          </Field>
           <h3>{t('cp.connectors')}</h3>
           <p className="help">{t('cp.connectorsHelp')}</p>
           {connectors.map((c, index) => (

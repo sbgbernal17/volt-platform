@@ -41,6 +41,9 @@ export interface ConnectorSummary {
   max_power_w: number | null;
   ocpp_status: string;
   visible_in_app: boolean;
+  /** Potencia del gabinete (W) y si se reparte entre conectores (ADR 0026). */
+  charger_max_power_w: number | null;
+  power_shared: boolean;
 }
 
 export interface ChargePoint {
@@ -51,6 +54,8 @@ export interface ChargePoint {
   model: string | null;
   serial_number: string | null;
   firmware_version: string | null;
+  /** Potencia máxima del gabinete (W), compartida entre conectores (ADR 0026). */
+  max_power_w: number | null;
   lifecycle_status: string;
   connected: boolean;
   last_seen_at: string | null;
@@ -143,6 +148,81 @@ export interface SessionView {
   receipt_id: string | null;
 }
 
+/** Línea de un cálculo de costo (JSON de `toCostResultJson`). */
+export interface CostLineJson {
+  seq: number;
+  dimension: string;
+  elementRef: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  quantity: string;
+  unit: string;
+  unitPrice: string;
+  amount: string;
+  amountMinor: string;
+  taxRate: string;
+  tax: string;
+  taxMinor: string;
+  total: string;
+}
+
+/** Cálculo de costo persistido (final o histórico). */
+export interface CostCalcJson {
+  id: string;
+  calcVersion: number;
+  kind: string;
+  engineVersion: string;
+  currency: string;
+  subtotal: string;
+  discount: string;
+  tax: string;
+  total: string;
+  subtotalMinor: string;
+  discountMinor: string;
+  taxMinor: string;
+  totalMinor: string;
+  capped: boolean;
+  flags: string[];
+  alerts: string[];
+  reason: string | null;
+  computedBy: string;
+  computedAt: string;
+}
+
+/** Costo en curso de una sesión abierta (snake_case, como lo guarda la sesión). */
+export interface RunningCost {
+  currency: string;
+  tax_included: boolean;
+  total_minor: string;
+  subtotal_minor: string;
+  tax_minor: string;
+  discount_minor: string;
+  energy_wh: number;
+  alerts: string[];
+  flags: string[];
+  computed_at: string;
+  engine_version: string;
+}
+
+/** Respuesta de `GET /admin/v1/sessions/:id/cost`: envoltorio con el costo en curso y el final. */
+export interface SessionCostView {
+  session_id: string;
+  state: string;
+  currency: string | null;
+  segment: string | null;
+  snapshot: {
+    tariff_code: string | null;
+    tariff_version: number | null;
+    tax_included: boolean;
+    snapshot_hash: string;
+    frozen_at: string;
+    retro: boolean;
+  } | null;
+  running: RunningCost | null;
+  final: (CostCalcJson & { lines: CostLineJson[] }) | null;
+  calcs: CostCalcJson[];
+}
+
 export interface Overview {
   sites: (Site & { chargePoints: (ChargePoint & { connectors: Connector[] })[] })[];
   counts: {
@@ -168,6 +248,10 @@ export interface Driver {
   status: string;
   billing_status: string;
   blocked_reason: string | null;
+  /** Documento de identidad y factura electrónica (ADR 0027); en la lista el número va enmascarado. */
+  document_type: string | null;
+  document_number: string | null;
+  wants_invoice: boolean;
   created_at: string;
 }
 

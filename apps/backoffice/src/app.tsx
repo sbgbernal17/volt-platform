@@ -1,8 +1,9 @@
 import { AuthProvider, useAuth } from './auth/auth.tsx';
+import { ErrorBoundary } from './components/error-boundary.tsx';
 import { Layout } from './components/layout.tsx';
-import { Loading } from './components/ui.tsx';
+import { Alert, Loading } from './components/ui.tsx';
 import { I18nProvider, useI18n } from './i18n/index.tsx';
-import { type RouteDefinition, RouterProvider, Routes } from './lib/router.tsx';
+import { type RouteDefinition, RouterProvider, Routes, useRouter } from './lib/router.tsx';
 import { AlarmsPage } from './pages/alarms.tsx';
 import { AuditPage } from './pages/audit.tsx';
 import { ChargePointDetailPage } from './pages/charge-point-detail.tsx';
@@ -42,6 +43,7 @@ const ROUTES: RouteDefinition[] = [
 function Shell() {
   const auth = useAuth();
   const { t } = useI18n();
+  const { path } = useRouter();
   if (auth.status === 'loading')
     return (
       <div className="login">
@@ -52,7 +54,20 @@ function Shell() {
   if (auth.status !== 'authenticated') return <LoginPage />;
   return (
     <Layout>
-      <Routes routes={ROUTES} fallback={<p className="muted">{t('app.notFound')}</p>} />
+      <ErrorBoundary
+        resetKey={path}
+        fallback={(error, reset) => (
+          <div className="card">
+            <Alert tone="error">{t('app.renderError')}</Alert>
+            <p className="muted small">{error.message}</p>
+            <button type="button" onClick={reset}>
+              {t('app.renderRetry')}
+            </button>
+          </div>
+        )}
+      >
+        <Routes routes={ROUTES} fallback={<p className="muted">{t('app.notFound')}</p>} />
+      </ErrorBoundary>
     </Layout>
   );
 }

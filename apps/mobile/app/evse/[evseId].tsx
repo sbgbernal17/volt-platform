@@ -236,8 +236,15 @@ export default function EvseScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
             <View style={{ gap: 2 }}>
               <Muted>{t('evse.power')}</Muted>
-              <Text style={styles.fact}>{formatKw(data.maxPowerKw)}</Text>
-              <Muted>{formatPowerType(data.powerType, locale)}</Muted>
+              <Text style={styles.fact}>
+                {data.chargerMaxPowerKw
+                  ? t('power.upTo', { power: formatKw(data.chargerMaxPowerKw) })
+                  : formatKw(data.maxPowerKw)}
+              </Text>
+              <Muted>
+                {formatPowerType(data.powerType, locale)}
+                {data.powerShared ? ` · ${t('power.sharedShort')}` : ''}
+              </Muted>
             </View>
             <View style={styles.vDivider} />
             <View style={{ gap: 2, flex: 1 }}>

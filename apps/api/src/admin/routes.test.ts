@@ -15,7 +15,7 @@ describe.skipIf(!baseUrl)('API de administración (sin gateway)', () => {
   let chargePointId = '';
 
   const call = (
-    method: 'GET' | 'POST' | 'PUT',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH',
     url: string,
     body?: unknown,
     token: string | null = TOKEN,
@@ -117,6 +117,30 @@ describe.skipIf(!baseUrl)('API de administración (sin gateway)', () => {
       lifecycle_status: 'INVENTORIED',
       connection_generation: 0,
     });
+    // Potencia del gabinete (ADR 0026): 180 kW compartidos entre los dos conectores de 180 kW.
+    const power = await call('PATCH', `/admin/v1/charge-points/${chargePointId}/power`, {
+      maxPowerW: 180000,
+      connectors: [{ ocppConnectorId: 2, maxPowerW: 180000 }],
+    });
+    expect(power.statusCode).toBe(200);
+    expect((power.json() as { max_power_w: number }).max_power_w).toBe(180000);
+    const listed = (await call('GET', '/admin/v1/charge-points')).json() as {
+      items: {
+        id: string;
+        max_power_w: number;
+        connectors: { charger_max_power_w: number; power_shared: boolean }[];
+      }[];
+    };
+    const mine = listed.items.find((cp) => cp.id === chargePointId);
+    expect(mine?.max_power_w).toBe(180000);
+    expect(mine?.connectors.map((c) => [c.charger_max_power_w, c.power_shared])).toEqual([
+      [180000, true],
+      [180000, true],
+    ]);
+    const unknownConnector = await call('PATCH', `/admin/v1/charge-points/${chargePointId}/power`, {
+      connectors: [{ ocppConnectorId: 9, maxPowerW: 1000 }],
+    });
+    expect(unknownConnector.statusCode).toBe(404);
     const badConnector = await call('POST', '/admin/v1/charge-points', {
       siteId,
       chargeBoxId: 'CP-API-2',

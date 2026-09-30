@@ -20,6 +20,7 @@
     "@volt/payments": "workspace:*",
     "@volt/security": "workspace:*",
     "@volt/tariff-engine": "workspace:*",
+    "pdf-lib": "catalog:",
     "postgres": "catalog:",
     "zod": "catalog:"
   },

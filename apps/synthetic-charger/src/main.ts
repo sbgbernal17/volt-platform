@@ -77,6 +77,7 @@ async function connectedLoop(password: string): Promise<void> {
     model: 'SIM-DC180',
     firmwareVersion: '1.0.0-synthetic',
     chargingPowerW: 50_000,
+    cabinetMaxPowerW: 180_000,
     meterValueIntervalMs: 10_000,
     plugDelayMs: 2_000,
     callTimeoutMs: 15_000,

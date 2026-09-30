@@ -39,8 +39,18 @@ export async function issueReceipt(
   }
   const driver = session.driver_id
     ? (
-        await db<{ email: string | null; display_name: string | null; phone: string | null }[]>`
-        SELECT email, display_name, phone FROM auth.driver WHERE id = ${session.driver_id}`
+        await db<
+          {
+            email: string | null;
+            display_name: string | null;
+            phone: string | null;
+            document_type: string | null;
+            document_number: string | null;
+            wants_invoice: boolean;
+          }[]
+        >`
+        SELECT email, display_name, phone, document_type, document_number, wants_invoice
+        FROM auth.driver WHERE id = ${session.driver_id}`
       )[0]
     : undefined;
   const breakdown = session.final_calc_id
@@ -63,7 +73,15 @@ export async function issueReceipt(
                 tax_minor: String(b.tax_minor),
               })),
             )},
-            ${toJson(db as never, { email: driver?.email ?? null, name: driver?.display_name ?? null, phone: driver?.phone ?? null })},
+            ${toJson(db as never, {
+              email: driver?.email ?? null,
+              name: driver?.display_name ?? null,
+              phone: driver?.phone ?? null,
+              // Base del adquiriente para la factura electrónica (DIAN, iteración 10; ADR 0027).
+              documentType: driver?.document_type ?? null,
+              documentNumber: driver?.document_number ?? null,
+              wantsInvoice: driver?.wants_invoice ?? false,
+            })},
             ${[session.id]}::uuid[])
     ON CONFLICT (tenant_id, series, number) DO UPDATE SET issued_at = billing.invoice.issued_at
     RETURNING *`;
@@ -92,6 +110,8 @@ export async function issueReceipt(
 export interface Receipt {
   invoice: InvoiceRow;
   session: SessionView;
+  /** Sede de la carga (nombre y dirección) para el recibo en PDF; null si ya no existe. */
+  site: { name: string; address: string; city: string | null } | null;
   lines: CostLineJson[];
   payment: PaymentRow | null;
   totals: { currency: string; subtotal: string; tax: string; total: string; taxIncluded: boolean };
@@ -114,9 +134,12 @@ export async function getReceipt(db: ISql, sessionId: string): Promise<Receipt> 
   const payments = await db<PaymentRow[]>`
     SELECT * FROM billing.payment WHERE session_id = ${sessionId} AND status = 'SUCCEEDED' AND kind IN ('CAPTURE','DEBT')
     ORDER BY created_at DESC LIMIT 1`;
+  const sites = await db<{ name: string; address: string; city: string | null }[]>`
+    SELECT name, address, city FROM assets.site WHERE id = ${session.site_id}`;
   return {
     invoice,
     session,
+    site: sites[0] ?? null,
     lines: lines.map((l) => toLineJson(l, exponent)),
     payment: payments[0] ?? null,
     totals: {

@@ -35,6 +35,8 @@ export interface SimulatedChargePointOptions {
   protocols?: string[];
   /** Potencia de carga simulada por conector (W). */
   chargingPowerW?: number;
+  /** Potencia del gabinete (W): con dos transacciones activas se reparte entre ellas (ADR 0026). */
+  cabinetMaxPowerW?: number;
   /** Intervalo entre MeterValues durante una transacción (ms). */
   meterValueIntervalMs?: number;
   /** Tiempo entre RemoteStartTransaction aceptado y el enchufado del vehículo (ms). */
@@ -412,7 +414,7 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
     const suspended = this.suspendedConnectors.has(connectorId);
     const register = (this.meterWh.get(connectorId) ?? 0) + (suspended ? 0 : energyDeltaWh);
     this.meterWh.set(connectorId, register);
-    const powerW = suspended ? 0 : (this.options.chargingPowerW ?? 22_000);
+    const powerW = suspended ? 0 : this.currentPowerW();
     const payload = {
       connectorId,
       transactionId: transaction.transactionId,
@@ -506,12 +508,24 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
 
   private startMeterValues(transaction: SimulatedTransaction): void {
     const intervalMs = this.options.meterValueIntervalMs ?? 60_000;
-    const powerW = this.options.chargingPowerW ?? 22_000;
-    const deltaWh = Math.max(1, Math.round((powerW * intervalMs) / 3_600_000));
     transaction.timer = setInterval(() => {
+      // La potencia se recalcula en cada lectura: con dos transacciones activas el gabinete la reparte.
+      const deltaWh = Math.max(1, Math.round((this.currentPowerW() * intervalMs) / 3_600_000));
       void this.sendMeterValues(transaction.connectorId, deltaWh).catch(() => undefined);
     }, intervalMs);
     transaction.timer.unref();
+  }
+
+  /** Potencia que entrega cada conector activo ahora mismo (W). */
+  currentPowerW(): number {
+    const active = [...this.transactions.keys()].filter(
+      (connectorId) => !this.suspendedConnectors.has(connectorId),
+    ).length;
+    return sharedPowerW(
+      this.options.cabinetMaxPowerW,
+      active,
+      this.options.chargingPowerW ?? 22_000,
+    );
   }
 
   /** El vehículo se llena: StatusNotification SuspendedEV y lecturas sin avance (caso A de TAR §3.6). */
@@ -804,4 +818,15 @@ export class SimulatedChargePoint extends EventEmitter<SimulatedChargePointEvent
     }, 10);
     return { status: 'Accepted' };
   }
+}
+
+/** Reparto de la potencia del gabinete entre los conectores activos (misma regla que @volt/csms). */
+export function sharedPowerW(
+  cabinetMaxW: number | null | undefined,
+  activeConnectors: number,
+  connectorMaxW: number,
+): number {
+  if (!cabinetMaxW) return connectorMaxW;
+  if (activeConnectors <= 1) return Math.min(connectorMaxW, cabinetMaxW);
+  return Math.min(connectorMaxW, Math.floor(cabinetMaxW / activeConnectors));
 }

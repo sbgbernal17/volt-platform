@@ -9,6 +9,7 @@ import {
   currentConsentVersion,
   DEVICE_PLATFORMS,
   DRIVER_CONSENT_KEYS,
+  DRIVER_DOCUMENT_TYPES,
   DRIVER_LOCALES,
   type DriverNotificationRow,
   type DriverRow,
@@ -60,6 +61,10 @@ const profilePatch = z.object({
     .nullable()
     .optional(),
   locale: z.enum(DRIVER_LOCALES).optional(),
+  // Documento de identidad y factura electrónica (ADR 0027); la regla condicional vive en el CSMS.
+  documentType: z.enum(DRIVER_DOCUMENT_TYPES).nullable().optional(),
+  documentNumber: z.string().trim().min(3).max(24).nullable().optional(),
+  wantsInvoice: z.boolean().optional(),
 });
 const consentBody = z.object({
   accept: z.array(z.enum(DRIVER_CONSENT_KEYS)).max(3).default([]),
@@ -93,6 +98,9 @@ export function toPublicProfile(driver: DriverRow, consentVersion: string) {
     pendingConsents: pendingConsents(driver, consentVersion),
     consentVersion,
     defaultPaymentMethodId: driver.default_payment_method_id,
+    documentType: driver.document_type,
+    documentNumber: driver.document_number,
+    wantsInvoice: driver.wants_invoice,
     createdAt: driver.created_at.toISOString(),
     lastLoginAt: driver.last_login_at?.toISOString() ?? null,
   };

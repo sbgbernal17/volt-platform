@@ -89,6 +89,9 @@ export async function publicRoutes(
           standard: evse.standard,
           powerType: evse.power_type,
           maxPowerKw: evse.max_power_w === null ? null : evse.max_power_w / 1000,
+          chargerMaxPowerKw:
+            evse.charger_max_power_w === null ? null : evse.charger_max_power_w / 1000,
+          powerShared: evse.power_shared,
           status: evse.status,
         })),
       })),
@@ -114,6 +117,8 @@ export async function publicRoutes(
       standard: evse.standard,
       powerType: evse.power_type,
       maxPowerKw: evse.max_power_w === null ? null : evse.max_power_w / 1000,
+      chargerMaxPowerKw: evse.charger_max_power_w === null ? null : evse.charger_max_power_w / 1000,
+      powerShared: evse.power_shared,
       status: evse.status,
       visibleInApp: evse.visible_in_app,
       tariff,

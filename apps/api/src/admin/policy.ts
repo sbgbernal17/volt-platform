@@ -65,6 +65,10 @@ export const ADMIN_POLICY: Record<`${Method} ${string}`, RoutePolicy> = {
     audit: audit('charge_point.create', 'charge_point', 'response:id'),
   },
   'GET /charge-points/:id': { permission: 'inventory:read' },
+  'PATCH /charge-points/:id/power': {
+    permission: 'inventory:write',
+    audit: audit('charge_point.power.update', 'charge_point'),
+  },
   'POST /charge-points/:id/credentials': {
     permission: 'commissioning:execute',
     audit: audit('credential.issue', 'charge_point'),
@@ -217,6 +221,8 @@ export const ADMIN_POLICY: Record<`${Method} ${string}`, RoutePolicy> = {
   'POST /debts/:id/waive': { permission: 'billing:refund', audit: audit('debt.waive', 'debt') },
   'POST /debts/:id/retry': { permission: 'billing:operate', audit: audit('debt.retry', 'debt') },
   'GET /billing/webhooks': { permission: 'billing:read' },
+  'GET /billing/summary': { permission: 'billing:read' },
+  'GET /billing/provider': { permission: 'billing:read' },
   'POST /billing/reconcile': {
     permission: 'billing:operate',
     audit: audit('billing.reconcile', 'billing'),

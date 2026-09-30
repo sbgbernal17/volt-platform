@@ -126,6 +126,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 3: sesiones por la API', () =>
         chargeBoxId: 'VOLT-BOG02-CP01',
         vendor: 'VoltSim',
         model: 'SIM-DC180',
+        maxPowerW: 180000,
         connectors: [
           {
             ocppConnectorId: 1,
@@ -198,6 +199,11 @@ describe.skipIf(!baseUrl)('aceptación iteración 3: sesiones por la API', () =>
       ['VOLT-BOG02-CP01-1', 'Available', 180],
       ['VOLT-BOG02-CP01-2', 'Available', 180],
     ]);
+    // Gabinete de 180 kW compartido entre los dos conectores (ADR 0026).
+    expect(locations.items[0]?.evses[0]).toMatchObject({
+      chargerMaxPowerKw: 180,
+      powerShared: true,
+    });
     const evse = (
       await app.inject({ method: 'GET', url: '/v1/evses/VOLT-BOG02-CP01-1' })
     ).json() as { status: string; chargeBoxId: string };

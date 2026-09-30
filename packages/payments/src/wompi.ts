@@ -13,6 +13,7 @@ import {
   type AcceptanceTokens,
   type ChargeInput,
   type CreatePaymentSourceInput,
+  type GatewayHealth,
   type GatewayTransaction,
   type PaymentGateway,
   PaymentGatewayError,
@@ -141,6 +142,33 @@ export class WompiGateway implements PaymentGateway {
         json.data,
       );
     return token;
+  }
+
+  /** Conectividad y llave pública: el comercio responde con su nombre y sus tokens de aceptación. */
+  async health(): Promise<GatewayHealth> {
+    const started = Date.now();
+    try {
+      const json = await this.request<{ data?: Json }>('GET', `/merchants/${this.publicKey}`, {
+        auth: 'none',
+      });
+      const data = json.data ?? {};
+      return {
+        ok: true,
+        latencyMs: Date.now() - started,
+        merchant: str(data.name) || str(data.legal_name) || null,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        latencyMs: Date.now() - started,
+        merchant: null,
+        error:
+          error instanceof PaymentGatewayError
+            ? `${error.code}: ${error.message}`
+            : (error as Error).message,
+      };
+    }
   }
 
   async getAcceptanceTokens(): Promise<AcceptanceTokens> {

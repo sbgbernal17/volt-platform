@@ -15,6 +15,8 @@ export function registerCors(app: FastifyInstance, origins: readonly string[]): 
     const origin = request.headers.origin;
     if (!origin || !allowed.has(origin)) return false;
     reply.header('access-control-allow-origin', origin);
+    // La app web lee el nombre del archivo del recibo en PDF.
+    reply.header('access-control-expose-headers', 'content-disposition');
     reply.header('vary', 'origin');
     return true;
   };

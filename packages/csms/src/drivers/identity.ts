@@ -7,11 +7,18 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { ISql, Sql } from 'postgres';
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors.ts';
+import {
+  ConflictError,
+  CsmsError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '../errors.ts';
 import { resolveParam } from '../pricing/params.ts';
 import type { DriverRow } from '../sessions/drivers.ts';
 import { appendEvent } from '../sessions/outbox.ts';
 import { toJson } from '../types.ts';
+import { type DriverDocumentType, normalizeDriverDocument } from './document.ts';
 
 export const DRIVER_CONSENT_KEYS = ['terms', 'data_processing', 'marketing'] as const;
 export type DriverConsentKey = (typeof DRIVER_CONSENT_KEYS)[number];
@@ -140,6 +147,49 @@ export interface DriverProfilePatch {
   displayName?: string | null | undefined;
   phone?: string | null | undefined;
   locale?: DriverLocale | undefined;
+  /** Documento de identidad (ADR 0027): tipo y número van juntos; null en ambos lo borra. */
+  documentType?: DriverDocumentType | null | undefined;
+  documentNumber?: string | null | undefined;
+  /** Pide factura electrónica: exige documento (y lo seguirá exigiendo hasta que se apague). */
+  wantsInvoice?: boolean | undefined;
+}
+
+/**
+ * Regla del documento y la factura sobre el estado resultante (el PATCH es parcial): con
+ * `wantsInvoice` activo tiene que quedar un documento; el número se normaliza por tipo.
+ */
+export function resolveDriverDocument(
+  current: Pick<DriverRow, 'document_type' | 'document_number' | 'wants_invoice'>,
+  patch: DriverProfilePatch,
+): {
+  documentType: DriverDocumentType | null;
+  documentNumber: string | null;
+  wantsInvoice: boolean;
+} {
+  const touches = patch.documentType !== undefined || patch.documentNumber !== undefined;
+  let documentType = current.document_type;
+  let documentNumber = current.document_number;
+  if (touches) {
+    const type = patch.documentType === undefined ? current.document_type : patch.documentType;
+    const number =
+      patch.documentNumber === undefined ? current.document_number : patch.documentNumber;
+    if ((type === null) !== (number === null || number === '')) {
+      throw new ValidationError('El tipo y el número de documento van juntos', {
+        code: 'DOCUMENT_PAIR',
+      });
+    }
+    documentType = type;
+    documentNumber = type && number ? normalizeDriverDocument(type, number) : null;
+  }
+  const wantsInvoice = patch.wantsInvoice ?? current.wants_invoice;
+  if (wantsInvoice && !documentNumber) {
+    throw new CsmsError(
+      'Para la factura electrónica hace falta el documento de identidad',
+      400,
+      'INVOICE_DOCUMENT_REQUIRED',
+    );
+  }
+  return { documentType, documentNumber, wantsInvoice };
 }
 
 export async function updateDriverProfile(
@@ -147,11 +197,21 @@ export async function updateDriverProfile(
   driverId: string,
   patch: DriverProfilePatch,
 ): Promise<DriverRow> {
+  const current = (
+    await db<
+      DriverRow[]
+    >`SELECT * FROM auth.driver WHERE id = ${driverId} AND anonymized_at IS NULL`
+  )[0];
+  if (!current) throw new NotFoundError('driver', driverId);
+  const document = resolveDriverDocument(current, patch);
   const rows = await db<DriverRow[]>`
     UPDATE auth.driver SET
       display_name = CASE WHEN ${patch.displayName !== undefined} THEN ${patch.displayName ?? null} ELSE display_name END,
       phone = CASE WHEN ${patch.phone !== undefined} THEN ${patch.phone ?? null} ELSE phone END,
       locale = COALESCE(${patch.locale ?? null}, locale),
+      document_type = ${document.documentType},
+      document_number = ${document.documentNumber},
+      wants_invoice = ${document.wantsInvoice},
       updated_at = now()
     WHERE id = ${driverId} AND anonymized_at IS NULL RETURNING *`;
   const row = rows[0];
@@ -277,6 +337,7 @@ export async function anonymizeDriver(
       UPDATE auth.driver SET
         email = NULL, phone = NULL, display_name = NULL, idp_subject = NULL, idp_provider = NULL,
         email_verified = false, consents = '{}'::jsonb, default_payment_method_id = NULL,
+        document_type = NULL, document_number = NULL, wants_invoice = false,
         status = 'DELETED', anonymized_at = ${now}, updated_at = now()
       WHERE id = ${driverId} RETURNING *`;
     await appendEvent(tx, {

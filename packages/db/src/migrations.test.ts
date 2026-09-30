@@ -51,6 +51,21 @@ describe.skipIf(!baseUrl)('migración inicial del modelo de datos', () => {
         SELECT column_default FROM information_schema.columns
         WHERE table_schema = 'assets' AND table_name = 'charge_point' AND column_name = 'lifecycle_status'`;
       expect(lifecycleDefault[0]?.column_default).toContain('INVENTORIED');
+      // Migración 0010 (potencia del gabinete, ADR 0026).
+      const cabinetPower = await sql<{ data_type: string }[]>`
+        SELECT data_type FROM information_schema.columns
+        WHERE table_schema = 'assets' AND table_name = 'charge_point' AND column_name = 'max_power_w'`;
+      expect(cabinetPower[0]?.data_type).toBe('integer');
+      // Migración 0011 (documento de identidad y factura electrónica, ADR 0027).
+      const invoiceColumns = await sql<{ column_name: string }[]>`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'auth' AND table_name = 'driver'
+          AND column_name IN ('document_type', 'document_number', 'wants_invoice')`;
+      expect(invoiceColumns.map((c) => c.column_name).sort()).toEqual([
+        'document_number',
+        'document_type',
+        'wants_invoice',
+      ]);
       const commissioningTables = await sql<{ table_name: string }[]>`
         SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'assets'

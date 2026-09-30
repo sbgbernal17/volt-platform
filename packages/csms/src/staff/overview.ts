@@ -28,6 +28,8 @@ export interface OverviewChargePoint {
   charge_box_id: string;
   vendor: string | null;
   model: string | null;
+  /** Potencia máxima del gabinete (W), compartida entre conectores (ADR 0026). */
+  max_power_w: number | null;
   lifecycle_status: string;
   connected: boolean;
   last_seen_at: Date | null;
@@ -64,7 +66,8 @@ export async function getOverview(
     WHERE tenant_id = ${tenantId} AND (${scope}::uuid[] IS NULL OR id = ANY(${scope}::uuid[]))
     ORDER BY code`;
   const chargePoints = await db<Omit<OverviewChargePoint, 'connectors'>[]>`
-    SELECT id, site_id, charge_box_id, vendor, model, lifecycle_status, connected, last_seen_at, cp_status, visible_in_app
+    SELECT id, site_id, charge_box_id, vendor, model, max_power_w, lifecycle_status, connected, last_seen_at,
+           cp_status, visible_in_app
     FROM assets.charge_point
     WHERE tenant_id = ${tenantId} AND (${scope}::uuid[] IS NULL OR site_id = ANY(${scope}::uuid[]))
     ORDER BY charge_box_id`;

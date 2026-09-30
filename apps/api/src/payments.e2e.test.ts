@@ -306,6 +306,15 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
     const html = await as(anaId)('GET', `/v1/sessions/${anaSessionId}/receipt?format=html`);
     expect(html.headers['content-type']).toContain('text/html');
     expect(html.payload).toContain(receipt.number);
+    // Recibo en PDF (ADR 0028): binario, con nombre de archivo y sin caché.
+    const pdf = await as(anaId)('GET', `/v1/sessions/${anaSessionId}/receipt?format=pdf`);
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+    expect(pdf.headers['content-disposition']).toBe(
+      `attachment; filename="recibo-${receipt.number}.pdf"`,
+    );
+    expect(pdf.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(pdf.rawPayload.length).toBeGreaterThan(1500);
     const payments = (
       await admin('GET', `/admin/v1/payments?sessionId=${anaSessionId}`)
     ).json() as { items: { kind: string; status: string; reference: string }[] };
@@ -318,6 +327,35 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
     ]);
     // Otro conductor no ve el recibo.
     expect((await as(luisId)('GET', `/v1/sessions/${anaSessionId}/receipt`)).statusCode).toBe(404);
+    // Resumen de ingresos y estado del proveedor (ADR 0029).
+    const summary = (await admin('GET', '/admin/v1/billing/summary?environment=all')).json() as {
+      totals: { collectedMinor: number; collectedCount: number; netMinor: number };
+      byDay: { day: string; collectedMinor: number }[];
+      byMethod: { method: string }[];
+    };
+    expect(summary.totals.collectedCount).toBeGreaterThanOrEqual(1);
+    expect(summary.totals.collectedMinor).toBeGreaterThan(0);
+    expect(summary.totals.netMinor).toBe(summary.totals.collectedMinor);
+    expect(summary.byDay.length).toBeGreaterThanOrEqual(1);
+    expect(summary.byMethod.map((m) => m.method)).toContain('CARD');
+    const filtered = (
+      await admin(
+        'GET',
+        `/admin/v1/payments?status=SUCCEEDED&kind=CAPTURE&sessionId=${anaSessionId}`,
+      )
+    ).json() as { items: unknown[] };
+    expect(filtered.items).toHaveLength(1);
+    const provider = (await admin('GET', '/admin/v1/billing/provider')).json() as {
+      provider: string;
+      configured: boolean;
+      health: { ok: boolean; merchant: string | null } | null;
+      lastCaptureAt: string | null;
+      last24h: { approved: number };
+    };
+    expect(provider).toMatchObject({ provider: 'FAKE', configured: true });
+    expect(provider.health?.ok).toBe(true);
+    expect(provider.lastCaptureAt).not.toBeNull();
+    expect(provider.last24h.approved).toBeGreaterThanOrEqual(1);
   });
 
   it('cobro rechazado: deuda, bloqueo, enlace de pago y webhook idempotente que salda la deuda', async () => {

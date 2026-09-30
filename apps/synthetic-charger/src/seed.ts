@@ -5,6 +5,7 @@ import {
   findChargePointByChargeBoxId,
   issueCredential,
   transitionLifecycle,
+  updateChargePointPower,
   VOLT_TENANT_ID,
 } from '@volt/csms';
 import type { LifecycleState } from '@volt/domain';
@@ -67,6 +68,9 @@ const PATH_TO_OPERATIONAL: Record<LifecycleState, LifecycleState[]> = {
  * estación de pruebas (iteración 9: dev y staging), en cuyo caso también garantiza la tarifa base
  * para que la app muestre precio y permita iniciar una carga.
  */
+/** Gabinete de 180 kW compartido entre dos conectores, como los cargadores reales (ADR 0026). */
+const SYNTHETIC_CABINET_POWER_W = 180_000;
+
 export async function ensureSyntheticChargePoint(
   sql: Sql,
   input: SyntheticSeedInput,
@@ -85,11 +89,21 @@ export async function ensureSyntheticChargePoint(
       serialNumber: `${input.chargeBoxId}-SN`,
       securityProfile: 2,
       heartbeatIntervalS: 60,
+      maxPowerW: SYNTHETIC_CABINET_POWER_W,
       connectors: [1, 2].map((ocppConnectorId) => ({
         ocppConnectorId,
         standard: 'IEC_62196_T2_COMBO' as const,
         powerType: 'DC' as const,
-        maxPowerW: 90_000,
+        maxPowerW: SYNTHETIC_CABINET_POWER_W,
+      })),
+    });
+  } else if (chargePoint.max_power_w === null) {
+    // Cargadores creados antes de la potencia por gabinete (ADR 0026): 180 kW compartidos.
+    chargePoint = await updateChargePointPower(sql, chargePoint.id, {
+      maxPowerW: SYNTHETIC_CABINET_POWER_W,
+      connectors: [1, 2].map((ocppConnectorId) => ({
+        ocppConnectorId,
+        maxPowerW: SYNTHETIC_CABINET_POWER_W,
       })),
     });
   }

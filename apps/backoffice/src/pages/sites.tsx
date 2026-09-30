@@ -190,14 +190,7 @@ export function SiteDetailPage({ id }: { id: string }) {
   const s = site.data;
   return (
     <>
-      <PageHeader
-        title={`${s.code} · ${s.name}`}
-        actions={
-          <button type="button" onClick={() => navigate('/sites')}>
-            {t('app.back')}
-          </button>
-        }
-      />
+      <PageHeader title={`${s.code} · ${s.name}`} onBack={() => navigate('/sites')} />
       <div className="grid cols-2">
         <div className="card">
           <div className="grid cols-2">

@@ -1,38 +1,40 @@
 /**
  * Actividad (handoff, pantallas 14 y 24): resumen del mes, sesiones agrupadas por mes con estación,
- * fecha, energía, duración y valor; pago pendiente cuando aplica; estado vacío e invitado.
+ * fecha, energía, duración y valor; pago pendiente cuando aplica; estado vacío e invitado. Se abre
+ * desde Cuenta (la barra tiene tres pestañas para centrar el botón Cargar).
  */
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { errorMessage } from '../../src/api/client.ts';
-import { useQuery } from '../../src/api/hooks.ts';
-import type { Location, Session } from '../../src/api/types.ts';
-import { useAuth } from '../../src/auth/auth.tsx';
-import { Skeleton } from '../../src/components/skeleton.tsx';
-import { useI18n } from '../../src/i18n/index.tsx';
-import { groupByMonth, hasPendingPayment, monthSummary } from '../../src/lib/activity.ts';
-import { formatDateTime, formatDuration, formatKwh, formatMoney } from '../../src/lib/format.ts';
-import { sessionPhase } from '../../src/lib/session-view.ts';
-import { Icon } from '../../src/theme/icon.tsx';
-import { colors, fonts, radius, spacing, text } from '../../src/theme/tokens.ts';
+import { errorMessage } from '../src/api/client.ts';
+import { useQuery } from '../src/api/hooks.ts';
+import type { Location, Session } from '../src/api/types.ts';
+import { useAuth } from '../src/auth/auth.tsx';
+import { Skeleton } from '../src/components/skeleton.tsx';
+import { useI18n } from '../src/i18n/index.tsx';
+import { groupByMonth, hasPendingPayment, monthSummary } from '../src/lib/activity.ts';
+import { formatDateTime, formatDuration, formatKwh, formatMoney } from '../src/lib/format.ts';
+// Sin extensión: Metro elige receipt-file.native.ts o receipt-file.web.ts según la plataforma.
+import { downloadReceipt } from '../src/lib/receipt-file';
+import { sessionPhase } from '../src/lib/session-view.ts';
+import { Icon } from '../src/theme/icon.tsx';
+import { colors, fonts, radius, spacing, text } from '../src/theme/tokens.ts';
 import {
   Badge,
   Button,
   EmptyState,
   ErrorBox,
+  IconButton,
   Label,
   Muted,
   Screen,
-  Title,
-} from '../../src/theme/ui.tsx';
+  TopBar,
+} from '../src/theme/ui.tsx';
 
 export default function History() {
   const { t, locale } = useI18n();
   const auth = useAuth();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const signedIn = auth.status === 'authenticated';
   const sessions = useQuery(
     () => auth.api.get<{ items: Session[] }>('/sessions', { limit: 50 }),
@@ -47,11 +49,8 @@ export default function History() {
     locations.data?.items.find((l) => l.evses.some((e) => e.evseId === session.evseId))?.name ??
     session.chargeBoxId;
 
-  const header = (
-    <View style={{ paddingHorizontal: spacing.list, paddingTop: insets.top + spacing.md }}>
-      <Title>{t('history.activity')}</Title>
-    </View>
-  );
+  const back = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/account'));
+  const header = <TopBar onBack={back} backLabel={t('app.back')} title={t('history.activity')} />;
 
   if (!signedIn) {
     return (
@@ -188,9 +187,25 @@ export default function History() {
                       <Badge tone="warning" icon="schedule" text={t('history.paymentPending')} />
                     ) : null}
                   </View>
-                  <Text style={styles.amount}>
-                    {live ? `${t('session.costSoFar')} ${total}` : total}
-                  </Text>
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <Text style={styles.amount}>
+                      {live ? `${t('session.costSoFar')} ${total}` : total}
+                    </Text>
+                    {session.receipt && !live ? (
+                      <IconButton
+                        icon="download"
+                        label={t('history.pdf')}
+                        onPress={() =>
+                          void downloadReceipt({
+                            api: auth.api,
+                            sessionId: session.id,
+                            number: session.sessionNo,
+                            title: t('history.pdf'),
+                          }).catch(() => undefined)
+                        }
+                      />
+                    ) : null}
+                  </View>
                 </Pressable>
               );
             })}

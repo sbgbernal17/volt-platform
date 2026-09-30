@@ -12,6 +12,7 @@ import {
   endAssignment,
   ensureBaseTariff,
   getEvseByCode,
+  getSessionView,
   getTariff,
   getTariffVersion,
   listAssignments,
@@ -37,6 +38,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
 import { actorOf, serialize } from './routes.ts';
+import { assertInScope } from './staff-auth.ts';
 
 export interface PricingRoutesOptions {
   sql: Sql;
@@ -360,18 +362,22 @@ export async function pricingRoutes(
   });
 
   // ---- Costo de sesiones ----
+  // Mismo alcance por sede que `GET /sessions/:id` (un site_owner solo ve sus sedes).
   app.get('/sessions/:id/cost', async (request) => {
     const { id } = idParams.parse(request.params);
+    assertInScope(request, (await getSessionView(sql, id)).site_id);
     return serialize(await pricing.getSessionCost(sql, id));
   });
   app.post('/sessions/:id/cost/recalculate', async (request) => {
     const { id } = idParams.parse(request.params);
+    assertInScope(request, (await getSessionView(sql, id)).site_id);
     const body = z.object({ reason: z.string().min(1).max(300) }).parse(request.body);
     const result = await pricing.recalculate(id, { reason: body.reason, actor: actorOf(request) });
     return serialize({ created: result.created, calc: result.calc, lines: result.lines });
   });
   app.post('/sessions/:id/settle', async (request) => {
     const { id } = idParams.parse(request.params);
+    assertInScope(request, (await getSessionView(sql, id)).site_id);
     const body = z.object({ force: z.boolean().optional() }).parse(request.body ?? {});
     const outcome = await pricing.settle(id, {
       actor: actorOf(request),

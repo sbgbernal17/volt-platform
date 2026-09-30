@@ -16,6 +16,7 @@ import {
   registerPaymentMethod,
   removePaymentMethod,
   renderReceiptHtml,
+  renderReceiptPdf,
   setDefaultPaymentMethod,
 } from '@volt/csms';
 import { formatScaled } from '@volt/domain';
@@ -243,11 +244,20 @@ export async function billingPrivateRoutes(
       throw new CsmsError(`session ${id} no existe`, 404, 'NOT_FOUND');
     const receipt = await getReceipt(sql, id);
     const query = z
-      .object({ format: z.enum(['json', 'html']).default('json') })
+      .object({ format: z.enum(['json', 'html', 'pdf']).default('json') })
       .parse(request.query ?? {});
     if (query.format === 'html') {
       reply.type('text/html; charset=utf-8');
       return renderReceiptHtml(receipt);
+    }
+    if (query.format === 'pdf') {
+      reply.type('application/pdf');
+      reply.header(
+        'content-disposition',
+        `attachment; filename="${receiptFilename(receipt.invoice.number)}"`,
+      );
+      reply.header('cache-control', 'private, no-store');
+      return Buffer.from(await renderReceiptPdf(receipt));
     }
     return {
       number: receipt.invoice.number,
@@ -272,8 +282,14 @@ export async function billingPrivateRoutes(
       paymentStatus: view.payment_status,
       tariff: { code: view.tariff_code, version: view.tariff_version },
       html: `/v1/sessions/${id}/receipt?format=html`,
+      pdf: `/v1/sessions/${id}/receipt?format=pdf`,
     };
   });
+}
+
+/** Nombre de archivo del recibo: solo letras, dígitos y guiones. */
+export function receiptFilename(number: string): string {
+  return `recibo-${number.replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`;
 }
 
 /** Webhook de Wompi: sin autenticación, verificado por checksum, idempotente. */

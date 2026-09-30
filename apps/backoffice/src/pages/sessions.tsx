@@ -16,14 +16,18 @@ import {
 import { useI18n } from '../i18n/index.tsx';
 import { dateTime, duration, energyKwh, money } from '../lib/format.ts';
 import { useRouter } from '../lib/router.tsx';
-import type { Items, SessionView } from '../lib/types.ts';
+import { summarizeCost } from '../lib/session-cost.ts';
+import type { Items, SessionCostView, SessionView } from '../lib/types.ts';
 import { useMutation, useQuery } from '../lib/use-query.ts';
 
+/** Estados de la máquina de sesión (packages/domain), en el orden del ciclo de vida. */
 const STATES = [
-  'AUTHORIZING',
+  'REQUESTED',
+  'AUTHORIZED',
   'STARTING',
   'CHARGING',
-  'SUSPENDED',
+  'SUSPENDED_EV',
+  'SUSPENDED_EVSE',
   'STOPPING',
   'ENDED',
   'SETTLED',
@@ -32,6 +36,10 @@ const STATES = [
   'EXPIRED',
   'CANCELLED',
 ];
+/** Sesiones abiertas: admiten parada y muestran el costo en curso. */
+const LIVE_STATES = STATES.slice(0, 7);
+/** Antes de que exista transacción OCPP se puede cancelar la solicitud. */
+const CANCELLABLE_STATES = ['REQUESTED', 'AUTHORIZED', 'STARTING'];
 
 export function SessionsPage() {
   const { t, locale } = useI18n();
@@ -188,43 +196,15 @@ interface SessionDetail extends SessionView {
   events: { id: string; type: string; occurred_at: string; payload: unknown }[];
 }
 
-interface CostLine {
-  seq: number;
-  dimension: string;
-  quantity: string;
-  unit: string;
-  unitPrice: string;
-  amount: string;
-  tax: string;
-  total: string;
-  periodStart: string | null;
-  periodEnd: string | null;
-}
-
-interface CostResult {
-  currency: string;
-  lines: CostLine[];
-  subtotal: string;
-  discount: string;
-  tax: string;
-  total: string;
-  totalMinor: string;
-  capped: boolean;
-  flags: string[];
-  alerts: unknown[];
-  summary: Record<string, unknown>;
-  engineVersion: string;
-}
-
 export function SessionDetailPage({ id }: { id: string }) {
-  const { t, locale } = useI18n();
+  const { t, td, locale } = useI18n();
   const api = useApi();
   const auth = useAuth();
   const { navigate } = useRouter();
   const session = useQuery(() => api.get<SessionDetail>(`/sessions/${id}`), [id], {
     refreshMs: 5000,
   });
-  const cost = useQuery(() => api.get<CostResult>(`/sessions/${id}/cost`), [id], {
+  const cost = useQuery(() => api.get<SessionCostView>(`/sessions/${id}/cost`), [id], {
     refreshMs: 15_000,
     enabled: auth.can('sessions:read'),
   });
@@ -244,21 +224,21 @@ export function SessionDetailPage({ id }: { id: string }) {
     void cost.reload();
   };
 
-  const openReceipt = async () => {
-    const html = await fetch(api.url(`/sessions/${id}/receipt?format=html`), {
-      headers: {
-        authorization: `Bearer ${(await (api as unknown as { options: { token: () => Promise<string | null> } }).options?.token?.()) ?? ''}`,
-      },
-    }).then((r) => r.text());
-    const blob = new Blob([html], { type: 'text/html' });
+  /** Abre el recibo (HTML o PDF) en otra pestaña con el token en la cabecera. */
+  const openReceipt = async (format: 'html' | 'pdf') => {
+    const response = await fetch(api.url(`/sessions/${id}/receipt?format=${format}`), {
+      headers: await api.authHeaders(),
+    });
+    const blob = await response.blob();
     window.open(URL.createObjectURL(blob), '_blank', 'noopener');
   };
 
   if (session.error && !session.data) return <ErrorBox error={session.error} />;
   if (!session.data) return <Loading />;
   const s = session.data;
-  const live = ['AUTHORIZING', 'STARTING', 'CHARGING', 'SUSPENDED', 'STOPPING'].includes(s.state);
+  const live = LIVE_STATES.includes(s.state);
   const currency = s.currency ?? 'COP';
+  const summary = cost.data ? summarizeCost(cost.data) : null;
 
   return (
     <>
@@ -269,11 +249,9 @@ export function SessionDetailPage({ id }: { id: string }) {
             <SessionBadge value={s.state} />
             <PaymentBadge value={s.payment_status} />
             {s.is_test ? <Badge tone="info">TEST</Badge> : null}
-            <button type="button" onClick={() => navigate('/sessions')}>
-              {t('app.back')}
-            </button>
           </>
         }
+        onBack={() => navigate('/sessions')}
       />
       <ErrorBox error={mutation.error} />
       {mutation.message ? <Alert tone="ok">{mutation.message}</Alert> : null}
@@ -376,7 +354,7 @@ export function SessionDetailPage({ id }: { id: string }) {
                 {t('sessions.stop')}
               </button>
             ) : null}
-            {auth.can('sessions:operate') && ['AUTHORIZING', 'STARTING'].includes(s.state) ? (
+            {auth.can('sessions:operate') && CANCELLABLE_STATES.includes(s.state) ? (
               <button
                 type="button"
                 onClick={() =>
@@ -429,22 +407,38 @@ export function SessionDetailPage({ id }: { id: string }) {
               </button>
             ) : null}
             {auth.can('billing:read') && s.receipt_id ? (
-              <button type="button" onClick={() => void openReceipt()}>
-                {t('sessions.receipt')}
-              </button>
+              <>
+                <button type="button" onClick={() => void openReceipt('html')}>
+                  {t('sessions.receipt')}
+                </button>
+                <button type="button" onClick={() => void openReceipt('pdf')}>
+                  {t('sessions.receiptPdf')}
+                </button>
+              </>
             ) : null}
           </div>
         </div>
         <div className="card">
           <h2>{t('sessions.costBreakdown')}</h2>
           {cost.error ? <p className="muted small">{cost.error.message}</p> : null}
-          {cost.data ? (
+          {summary?.kind === 'none' ? <p className="muted">{t('sessions.costNone')}</p> : null}
+          {summary && summary.kind !== 'none' ? (
             <>
+              <p className="muted small">
+                {summary.kind === 'final' ? t('sessions.costFinal') : t('sessions.costRunning')}
+                {summary.computedAt
+                  ? ` · ${t('sessions.computedAt')} ${dateTime(summary.computedAt, locale)}`
+                  : ''}
+              </p>
               <DataTable
-                rows={cost.data.lines}
+                rows={summary.lines}
                 rowKey={(l) => String(l.seq)}
                 columns={[
-                  { key: 'dim', header: t('sessions.line.dimension'), render: (l) => l.dimension },
+                  {
+                    key: 'dim',
+                    header: t('sessions.line.dimension'),
+                    render: (l) => td(`sessions.dimension.${l.dimension}`),
+                  },
                   {
                     key: 'period',
                     header: '',
@@ -476,16 +470,18 @@ export function SessionDetailPage({ id }: { id: string }) {
               />
               <div className="row between mt">
                 <span className="muted">
-                  {t('sessions.subtotal')} {cost.data.subtotal} · {t('sessions.discount')}{' '}
-                  {cost.data.discount} · {t('sessions.tax')} {cost.data.tax}
+                  {t('sessions.subtotal')} {money(summary.subtotalMinor, summary.currency, locale)}{' '}
+                  · {t('sessions.discount')}{' '}
+                  {money(summary.discountMinor, summary.currency, locale)} · {t('sessions.tax')}{' '}
+                  {money(summary.taxMinor, summary.currency, locale)}
                 </span>
                 <strong>
-                  {t('sessions.total')}: {money(cost.data.totalMinor, cost.data.currency, locale)}
+                  {t('sessions.total')}: {money(summary.totalMinor, summary.currency, locale)}
                 </strong>
               </div>
-              {cost.data.capped ? <Alert tone="warning">{t('sessions.exposure')}</Alert> : null}
-              {cost.data.flags.length ? (
-                <p className="small muted">{cost.data.flags.join(', ')}</p>
+              {summary.capped ? <Alert tone="warning">{t('sessions.exposure')}</Alert> : null}
+              {summary.flags.length ? (
+                <p className="small muted">{summary.flags.join(', ')}</p>
               ) : null}
             </>
           ) : null}

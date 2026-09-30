@@ -1136,17 +1136,13 @@ export function TariffDetailPage({ id }: { id: string }) {
       <PageHeader
         title={`${tf.code} · ${tf.name}`}
         actions={
-          <>
-            {auth.can('pricing:write') ? (
-              <button type="button" className="primary" onClick={() => setEditing((v) => !v)}>
-                {t('tariffs.newVersion')}
-              </button>
-            ) : null}
-            <button type="button" onClick={() => navigate('/tariffs')}>
-              {t('app.back')}
+          auth.can('pricing:write') ? (
+            <button type="button" className="primary" onClick={() => setEditing((v) => !v)}>
+              {t('tariffs.newVersion')}
             </button>
-          </>
+          ) : null
         }
+        onBack={() => navigate('/tariffs')}
       />
       <ErrorBox error={mutation.error} />
       {notice ? <Alert tone="ok">{notice}</Alert> : null}

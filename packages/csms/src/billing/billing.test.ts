@@ -8,6 +8,7 @@ import { createSql } from '@volt/db';
 import { createTemporaryDatabase, type TemporaryDatabase } from '@volt/db/testing';
 import type { CallOutcome, SendCallInput } from '@volt/gateway-client';
 import { FAKE_ACCEPTANCE_TOKENS, FAKE_CARDS, FakeGateway } from '@volt/payments';
+import { PDFDocument } from 'pdf-lib';
 import type { Sql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CommandService, type GatewaySender } from '../commands.ts';
@@ -22,7 +23,9 @@ import { VOLT_TENANT_ID } from '../types.ts';
 import { BillingAuthorizer } from './authorizer.ts';
 import { BillingService } from './billing-service.ts';
 import { listPaymentMethods, registerPaymentMethod } from './payment-methods.ts';
+import { renderReceiptPdf } from './receipt-pdf.ts';
 import { getReceipt, renderReceiptHtml } from './receipts.ts';
+import { providerStatus, summarizePayments } from './summary.ts';
 
 const baseUrl = process.env.DATABASE_URL;
 
@@ -242,8 +245,28 @@ describe.skipIf(!baseUrl)('cobros con Wompi (emulador)', () => {
       series: 'R',
     });
     expect(receipt.totals.total).toBe('13500');
+    // Resumen de ingresos y estado del proveedor (ADR 0029).
+    const summary = await summarizePayments(sql, {
+      tenantId: VOLT_TENANT_ID,
+      from: new Date(0),
+      to: new Date(Date.now() + 86_400_000 * 400),
+    });
+    expect(summary.totals.collectedMinor).toBe(13_500n);
+    expect(summary.totals.collectedCount).toBe(1);
+    expect(summary.totals.netMinor).toBe(13_500n);
+    expect(summary.byMethod.map((m) => m.method)).toEqual(['CARD']);
+    expect(summary.byDay).toHaveLength(1);
+    const status = await providerStatus(sql, { tenantId: VOLT_TENANT_ID, gateway: psp });
+    expect(status).toMatchObject({ provider: 'FAKE', environment: 'fake', configured: true });
+    expect(status.health?.ok).toBe(true);
+    expect(status.lastCaptureAt).not.toBeNull();
+    expect(status.last24h.approved).toBeGreaterThanOrEqual(1);
     expect(receipt.lines.map((l) => l.dimension)).toEqual(['ENERGY']);
     expect(renderReceiptHtml(receipt)).toContain(session.session_no);
+    // Recibo en PDF (ADR 0028): bytes de PDF con el número como título.
+    const pdf = await renderReceiptPdf(receipt);
+    expect(Buffer.from(pdf.subarray(0, 5)).toString()).toBe('%PDF-');
+    expect((await PDFDocument.load(pdf)).getTitle()).toBe(`Recibo ${session.session_no}`);
     expect(psp.calls.filter((c) => c.method === 'charge')).toHaveLength(1);
     const lastCharge = psp.calls.at(-1)?.input as { reference?: string } | undefined;
     expect(lastCharge?.reference).toBe(`${session.session_no}-1`);
@@ -488,7 +511,8 @@ describe.skipIf(!baseUrl)('cobros con Wompi (emulador)', () => {
     });
 
     const report = await billing.reconcile(clock, VOLT_TENANT_ID);
-    expect(report.day).toBe(clock.toISOString().slice(0, 10));
+    // El día contable es el de Colombia (UTC-5), ADR 0029.
+    expect(report.day).toBe(new Date(clock.getTime() - 5 * 3_600_000).toISOString().slice(0, 10));
     expect(report.counts.debtsOpen).toBe(0);
     expect(report.discrepancies).toEqual([]);
     expect(await listPaymentMethods(sql, carla.id)).toHaveLength(1);

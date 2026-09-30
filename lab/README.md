@@ -18,7 +18,7 @@ export H="Authorization: Bearer $TOKEN"
 # 1. sede, plantilla y cargador en inventario
 SITE=$(curl -s -X POST $API/sites -H "$H" -H 'content-type: application/json' -d '{"code":"LAB","name":"Laboratorio","address":"Calle 1","latitude":4.7,"longitude":-74.1}' | jq -r .id)
 TPL=$(curl -s -X POST $API/config-templates -H "$H" -H 'content-type: application/json' -d '{"name":"DC-180-publico","keys":{"HeartbeatInterval":"300","MeterValueSampleInterval":"15","WebSocketPingInterval":"60"},"optionalKeys":["WebSocketPingInterval"]}' | jq -r .id)
-CP=$(curl -s -X POST $API/charge-points -H "$H" -H 'content-type: application/json' -d "{\"siteId\":\"$SITE\",\"chargeBoxId\":\"SIM-001\",\"vendor\":\"VoltSim\",\"model\":\"SIM-DC180\",\"configTemplateId\":\"$TPL\",\"connectors\":[{\"ocppConnectorId\":1,\"standard\":\"IEC_62196_T2_COMBO\",\"powerType\":\"DC\",\"maxPowerW\":180000},{\"ocppConnectorId\":2,\"standard\":\"IEC_62196_T2_COMBO\",\"powerType\":\"DC\",\"maxPowerW\":180000}]}" | jq -r .id)
+CP=$(curl -s -X POST $API/charge-points -H "$H" -H 'content-type: application/json' -d "{\"siteId\":\"$SITE\",\"chargeBoxId\":\"SIM-001\",\"vendor\":\"VoltSim\",\"model\":\"SIM-DC180\",\"maxPowerW\":180000,\"configTemplateId\":\"$TPL\",\"connectors\":[{\"ocppConnectorId\":1,\"standard\":\"IEC_62196_T2_COMBO\",\"powerType\":\"DC\",\"maxPowerW\":180000},{\"ocppConnectorId\":2,\"standard\":\"IEC_62196_T2_COMBO\",\"powerType\":\"DC\",\"maxPowerW\":180000}]}" | jq -r .id)
 
 # 2. credencial (se muestra una sola vez) -> PROVISIONED
 KEY=$(curl -s -X POST $API/charge-points/$CP/credentials -H "$H" | jq -r .authorizationKey)

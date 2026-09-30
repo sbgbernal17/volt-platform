@@ -1,6 +1,6 @@
 # App Volt (`apps/mobile`)
 
-App del conductor (iteración 7, ADR 0022) con Expo SDK 57 y React Native: registro e inicio de sesión con Identity Platform, consentimientos, mapa y lista de estaciones con estado en vivo, precio desagregado antes de cargar, lectura del QR del conector, inicio y parada de la carga con progreso en vivo, historial y recibos, medios de pago con Wompi (tarjeta con 3DS y Nequi), cobros pendientes con enlace de pago, avisos push y bandeja de avisos; español e inglés; marca VOLT en tema oscuro. El 30-09-2026 (ADR 0025) la interfaz se rehízo a partir del handoff de UI/UX del dueño: sistema de diseño propio en `src/theme`, barra de pestañas con el botón Cargar, mapa a pantalla completa con hoja de estación, flujo de carga con anillo de progreso y modo invitado (explorar sin cuenta).
+App del conductor (iteración 7, ADR 0022) con Expo SDK 57 y React Native: registro e inicio de sesión con Identity Platform, consentimientos, mapa y lista de estaciones con estado en vivo, precio desagregado antes de cargar, lectura del QR del conector, inicio y parada de la carga con progreso en vivo, historial y recibos, medios de pago con Wompi (tarjeta con 3DS y Nequi), cobros pendientes con enlace de pago, avisos push y bandeja de avisos; español e inglés; marca VOLT en tema oscuro. El 30-09-2026 (ADR 0025) la interfaz se rehízo a partir del handoff de UI/UX del dueño: sistema de diseño propio en `src/theme`, barra de pestañas con el botón Cargar, mapa a pantalla completa con hoja de estación, flujo de carga con anillo de progreso y modo invitado (explorar sin cuenta). El mismo día, a pedido del dueño: tres pestañas (Mapa · Cargar · Cuenta, con Actividad dentro de Cuenta), cámara para el QR también en el navegador, "hasta 180 kW" con potencia compartida por gabinete (ADR 0026), documento de identidad y factura electrónica en el perfil (ADR 0027) y recibo en PDF descargable o compartible (ADR 0028).
 
 ## Cómo correrla en desarrollo
 
@@ -8,7 +8,7 @@ App del conductor (iteración 7, ADR 0022) con Expo SDK 57 y React Native: regis
 2. `pnpm --filter @volt/mobile start` y abrir en Expo Go (iOS o Android) o en el navegador (`w`). Sin `EXPO_PUBLIC_API_URL`, en Expo Go la app usa la máquina que sirve el bundle en el puerto 8080; con un túnel o un ambiente desplegado: `EXPO_PUBLIC_API_URL=https://api-staging.supercargadores.co pnpm --filter @volt/mobile start`.
 3. En laboratorio: crear un conductor desde el back-office (Conductores → nuevo) y entrar con su id en la tarjeta "Laboratorio" de la pantalla de entrada; agregar la tarjeta de prueba `4242 4242 4242 4242`; escanear o escribir un `evseId` (por ejemplo `VOLT-BOG01-CP01-1`) y cargar con el simulador embebido.
 
-Lo que no funciona en Expo Go ni en el navegador: los avisos push (hace falta una compilación de desarrollo con EAS y `extra.eas.projectId` en `app.json`); en el navegador tampoco la cámara (entrada manual del identificador). El mapa en el navegador usa Maps JavaScript API con la clave que entrega la API en `GET /v1/config` (`maps.browserKey`, variable `GOOGLE_MAPS_BROWSER_KEY` de la API; en la nube la crea Terraform); sin clave se muestra la lista (iteración 9, ADR 0024).
+Lo que no funciona en Expo Go ni en el navegador: los avisos push (hace falta una compilación de desarrollo con EAS y `extra.eas.projectId` en `app.json`); en el navegador la cámara sí funciona con HTTPS (Chrome en Android usa el detector nativo de códigos; Safari en iOS carga el decodificador WebAssembly de expo-camera); si el sitio no es seguro o el permiso está bloqueado, queda la entrada manual con la explicación. El mapa en el navegador usa Maps JavaScript API con la clave que entrega la API en `GET /v1/config` (`maps.browserKey`, variable `GOOGLE_MAPS_BROWSER_KEY` de la API; en la nube la crea Terraform); sin clave se muestra la lista (iteración 9, ADR 0024).
 
 Rutas públicas de la versión web: `/auth/action` recibe los enlaces de los correos de Identity Platform (verificación, contraseña nueva, restaurar correo, retirar segundo factor) y los aplica con la marca VOLT; las plantillas viven en `infra/identity`. La carpeta `public/` se sirve tal cual en la web (`brand/volt-logo-blanco.png` es el logotipo de esos correos).
 
@@ -19,6 +19,8 @@ pnpm --filter @volt/mobile typecheck   # tsc con la configuración de Expo
 pnpm --filter @volt/mobile test        # módulos puros: formatos, QR, cliente de Wompi, catálogos, estaciones, sesión, actividad
 pnpm --filter @volt/mobile export:web  # bundle web con Metro (lo corre CI)
 ```
+
+El recibo en PDF usa `expo-file-system` y `expo-sharing` (módulo nativo nuevo desde el 30-09-2026): en la web y en Expo Go funciona ya; las compilaciones de EAS anteriores a esa fecha necesitan una nueva (`src/lib/receipt-file.web.ts` descarga el archivo con el token; `receipt-file.native.ts` lo baja a la caché y abre la hoja de compartir).
 
 ## Estructura
 

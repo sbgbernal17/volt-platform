@@ -40,9 +40,16 @@ export interface Profile {
   pendingConsents: ConsentKey[];
   consentVersion: string;
   defaultPaymentMethodId: string | null;
+  /** Documento de identidad y factura electrónica (ADR 0027). */
+  documentType: DocumentType | null;
+  documentNumber: string | null;
+  wantsInvoice: boolean;
   createdAt: string;
   lastLoginAt: string | null;
 }
+
+export type DocumentType = 'CC' | 'CE' | 'NIT' | 'PAS' | 'PPT';
+export const DOCUMENT_TYPES: readonly DocumentType[] = ['CC', 'CE', 'NIT', 'PAS', 'PPT'];
 
 export interface LocationEvse {
   evseId: string;
@@ -51,6 +58,9 @@ export interface LocationEvse {
   standard: string;
   powerType: string;
   maxPowerKw: number | null;
+  /** Potencia del gabinete (kW) y si se reparte entre sus conectores (ADR 0026). */
+  chargerMaxPowerKw: number | null;
+  powerShared: boolean;
   status: string;
 }
 
@@ -254,6 +264,8 @@ export interface Receipt {
   paymentStatus: string;
   tariff: { code: string | null; version: number | null };
   html: string;
+  /** Recibo en PDF (`?format=pdf`), ADR 0028. */
+  pdf: string;
 }
 
 export interface AppNotification {

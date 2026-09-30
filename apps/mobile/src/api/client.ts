@@ -78,6 +78,12 @@ export class ApiClient {
     return this.request<T>('DELETE', path);
   }
 
+  /** Cabecera de autorización actual, para descargas binarias fuera de `request` (recibo en PDF). */
+  async authHeaders(): Promise<Record<string, string>> {
+    const token = await this.options.token();
+    return token ? { authorization: `Bearer ${token}` } : {};
+  }
+
   /** URL absoluta de un recurso de /v1 (p. ej. el recibo HTML para abrirlo en el navegador). */
   url(path: string): string {
     return `${this.options.baseUrl}/v1${path.startsWith('/v1/') ? path.slice(3) : path}`;
