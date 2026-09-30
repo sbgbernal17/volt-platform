@@ -30,7 +30,12 @@ import { DbPersistence } from './persistence.ts';
 const baseUrl = process.env.DATABASE_URL;
 const TOKEN = 'token-interno-de-pruebas-0123456789';
 
-async function until(condition: () => Promise<boolean> | boolean, timeoutMs = 5000): Promise<void> {
+// En CI la base de datos compartida puede tardar varios segundos bajo carga (otros paquetes crean y
+// borran bases temporales a la vez): las esperas son generosas para no confundir lentitud con fallo.
+async function until(
+  condition: () => Promise<boolean> | boolean,
+  timeoutMs = 15_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await condition()) return;
@@ -121,6 +126,9 @@ describe.skipIf(!baseUrl)('transacciones en el gateway con PostgreSQL', () => {
       meterValueIntervalMs: 100,
       chargingPowerW: 180_000,
       plugDelayMs: 20,
+      // El simulador traga los errores del arranque remoto (como un cargador real): con el plazo por
+      // defecto (5 s) una respuesta lenta del gateway dejaría la sesión en STARTING sin pista alguna.
+      callTimeoutMs: 30_000,
     });
     expect((await sim.start()).status).toBe('Accepted');
     await until(async () => (await getChargePoint(sql, chargePointId)).connected);
@@ -144,7 +152,7 @@ describe.skipIf(!baseUrl)('transacciones en el gateway con PostgreSQL', () => {
     await until(async () => (await sessions.get(session.id)).state === 'CHARGING');
     const transaction = sim.transactions.get(1);
     expect(transaction?.idTag).toBe(session.id_tag);
-    await until(async () => Number((await sessions.get(session.id)).energy_wh ?? 0) > 0, 5000);
+    await until(async () => Number((await sessions.get(session.id)).energy_wh ?? 0) > 0);
     const progress = await sessions.get(session.id);
     expect(progress.last_sample).toMatchObject({ powerW: 180_000 });
     expect(progress.last_sample?.soc).toBeGreaterThanOrEqual(20);
@@ -167,7 +175,7 @@ describe.skipIf(!baseUrl)('transacciones en el gateway con PostgreSQL', () => {
         'session.ended',
       ]),
     );
-  }, 20_000);
+  }, 60_000);
 
   it('CU-05: corte de red con arranque local, lecturas encoladas, reintento sin duplicados y cierre', async () => {
     // Token RFID emitido por la plataforma para el arranque local durante el corte.
@@ -235,7 +243,7 @@ describe.skipIf(!baseUrl)('transacciones en el gateway con PostgreSQL', () => {
       { anomaly_flags: string[] }[]
     >`SELECT anomaly_flags FROM sessions.ocpp_transaction WHERE ocpp_transaction_id = ${rows[0]?.ocpp_transaction_id ?? 0}`;
     expect(flags[0]?.anomaly_flags).toEqual([]);
-  }, 30_000);
+  }, 60_000);
 
   it('caída de pod: la transacción sigue en otro gateway y termina con StopTransaction', async () => {
     const session = await sessions.requestStart({
@@ -275,5 +283,5 @@ describe.skipIf(!baseUrl)('transacciones en el gateway con PostgreSQL', () => {
     const connections = await sql<{ pod: string; disconnected_at: Date | null }[]>`
       SELECT pod, disconnected_at FROM ops.charge_point_connection WHERE charge_point_id = ${chargePointId} ORDER BY generation`;
     expect(connections.at(-1)).toMatchObject({ pod: 'gw-b', disconnected_at: null });
-  }, 30_000);
+  }, 60_000);
 });

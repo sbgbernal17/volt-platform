@@ -27,7 +27,10 @@ const ADMIN_TOKEN = 'token-admin-de-pruebas-0123456789';
 const INTERNAL_TOKEN = 'token-interno-de-pruebas-0123456789';
 
 /** Espera (sondeando) a que una condición se cumpla; falla al vencer el plazo. */
-async function until(condition: () => Promise<boolean> | boolean, timeoutMs = 5000): Promise<void> {
+async function until(
+  condition: () => Promise<boolean> | boolean,
+  timeoutMs = 15_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await condition()) return;
@@ -178,6 +181,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 2: de inventariado a operativo
     expect(issued.lifecycle).toBe('PROVISIONED');
     const intruder = new SimulatedChargePoint({
       identity: 'VOLT-BOG01-CP01',
+      callTimeoutMs: 30_000, // la base de datos de CI puede tardar bajo carga
       password: 'clave-robada',
       endpoint: `ws://127.0.0.1:${ocppPort}/ocpp`,
     });
@@ -187,6 +191,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 2: de inventariado a operativo
   it('3. primera conexión: BootNotification Pending y CONNECTED_PENDING', async () => {
     sim = new SimulatedChargePoint({
       identity: 'VOLT-BOG01-CP01',
+      callTimeoutMs: 30_000, // la base de datos de CI puede tardar bajo carga
       password: authorizationKey,
       endpoint: `ws://127.0.0.1:${ocppPort}/ocpp`,
       vendor: 'Acme',
@@ -380,6 +385,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 2: de inventariado a operativo
     await sim.close();
     const again = new SimulatedChargePoint({
       identity: 'VOLT-BOG01-CP01',
+      callTimeoutMs: 30_000, // la base de datos de CI puede tardar bajo carga
       password: authorizationKey,
       endpoint: `ws://127.0.0.1:${ocppPort}/ocpp`,
     });

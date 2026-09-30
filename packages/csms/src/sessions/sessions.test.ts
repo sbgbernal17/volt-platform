@@ -21,6 +21,9 @@ const baseUrl = process.env.DATABASE_URL;
 class FakeGateway implements GatewaySender {
   readonly calls: SendCallInput[] = [];
   remoteStartStatus: 'Accepted' | 'Rejected' = 'Accepted';
+  remoteStopStatus: 'Accepted' | 'Rejected' = 'Accepted';
+  /** Simula un cargador rápido que ejecuta la parada antes de responder al comando. */
+  beforeRemoteStop: (() => Promise<void>) | undefined = undefined;
   connected = true;
   async sendCall(input: SendCallInput): Promise<CallOutcome> {
     this.calls.push(input);
@@ -34,6 +37,16 @@ class FakeGateway implements GatewaySender {
         rttMs: 1,
         podId: 'fake',
         result: { status: this.remoteStartStatus },
+      };
+    }
+    if (input.action === 'RemoteStopTransaction') {
+      await this.beforeRemoteStop?.();
+      return {
+        ok: true,
+        uniqueId,
+        rttMs: 1,
+        podId: 'fake',
+        result: { status: this.remoteStopStatus },
       };
     }
     return { ok: true, uniqueId, rttMs: 1, podId: 'fake', result: { status: 'Accepted' } };
@@ -285,6 +298,56 @@ describe.skipIf(!baseUrl)('sesiones y transacciones', () => {
       'session.stop_requested',
       'session.ended',
     ]);
+  });
+
+  it('CU-04: la parada conserva la atribución de quien la pidió aunque el cargador se adelante', async () => {
+    const session = await sessions.requestStart({
+      tenantId: VOLT_TENANT_ID,
+      evseCode: 'CP-SES-1-1',
+      channel: 'OPERATOR',
+      requestedBy: 'staff:test',
+    });
+    expect(session.state).toBe('STARTING');
+    const start = await transactions.startTransaction(ctx(), {
+      connectorId: 1,
+      idTag: session.id_tag,
+      meterStart: 0,
+      timestamp: new Date().toISOString(),
+    });
+    expect((await sessions.get(session.id)).state).toBe('CHARGING');
+
+    // Rechazo del cargador: la reserva de la atribución se libera y la parada puede pedirse de nuevo.
+    gateway.remoteStopStatus = 'Rejected';
+    await expect(sessions.requestStop(session.id, 'system:exposure-limit')).rejects.toMatchObject({
+      code: 'REMOTE_STOP_REJECTED',
+    });
+    expect((await sessions.get(session.id)).stop_requested_by).toBeNull();
+    gateway.remoteStopStatus = 'Accepted';
+
+    // Cargador rápido: Finishing y StopTransaction llegan antes de que se registre la solicitud.
+    gateway.beforeRemoteStop = async () => {
+      await transactions.onConnectorStatus(ctx(), 1, 'Finishing', 'Charging');
+      await transactions.stopTransaction(ctx(), {
+        transactionId: start.transactionId,
+        meterStop: 1000,
+        timestamp: new Date().toISOString(),
+        reason: 'Remote',
+      });
+    };
+    try {
+      expect((await sessions.requestStop(session.id, 'system:exposure-limit')).state).toBe('ENDED');
+    } finally {
+      gateway.beforeRemoteStop = undefined;
+    }
+    const ended = await sessions.get(session.id);
+    expect(ended).toMatchObject({
+      stop_requested_by: 'system:exposure-limit',
+      stop_reason: 'Remote',
+    });
+    expect(ended.remote_stop_command_id).not.toBeNull();
+    const events = (await listAggregateEvents(sql, 'session', session.id)).map((e) => e.type);
+    expect(events.filter((e) => e === 'session.stop_requested')).toHaveLength(1);
+    expect(events.at(-1)).toBe('session.ended');
   });
 
   it('CU-05: transacción offline no solicitada, StopTransaction huérfano y de otro cargador', async () => {

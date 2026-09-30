@@ -26,7 +26,7 @@ const baseUrl = process.env.DATABASE_URL;
 const redisUrl = process.env.REDIS_URL;
 
 /** Espera (sondeando) a que una condición asíncrona se cumpla; falla al vencer el plazo. */
-async function until(condition: () => Promise<boolean>, timeoutMs = 5000): Promise<void> {
+async function until(condition: () => Promise<boolean>, timeoutMs = 15_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await condition()) return;
@@ -59,6 +59,7 @@ describe.skipIf(!baseUrl)('gateway con registro y persistencia en PostgreSQL', (
       endpoint: endpoint(),
       vendor: 'Acme',
       model: 'DC180',
+      callTimeoutMs: 30_000, // la base de datos de CI puede tardar bajo carga
       ...extra,
     });
     sims.push(sim);

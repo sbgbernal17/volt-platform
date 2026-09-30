@@ -1,6 +1,6 @@
 import { assertSessionTransition, type SessionState } from '@volt/domain';
 import type { ISql, Sql } from 'postgres';
-import type { CommandService } from '../commands.ts';
+import type { CommandResult, CommandService } from '../commands.ts';
 import { ChargePointOfflineError, ConflictError, NotFoundError } from '../errors.ts';
 import { NoTariffError } from '../pricing/assignments.ts';
 import { segmentSchema } from '../pricing/schema.ts';
@@ -233,15 +233,38 @@ export class SessionService {
     }
     const transaction = await this.getTransaction(session);
     const chargeBoxId = await this.chargeBoxIdOf(session.charge_point_id);
-    const result = await this.commands.send({
-      chargePointId: session.charge_point_id,
-      action: 'RemoteStopTransaction',
-      payload: { transactionId: transaction.ocpp_transaction_id },
-      requestedBy,
-      correlationId: session.id,
-    });
+    // La atribución se reserva antes de enviar el comando: un cargador rápido responde con
+    // StatusNotification(Finishing) y StopTransaction antes de que se registre la solicitud, y la
+    // parada quedaría atribuida al cargador (`charge_point`) en lugar de a quien la pidió. Si el
+    // comando no sale o el cargador lo rechaza, la reserva se libera para poder pedirla de nuevo
+    // (el barrido de límites solo reintenta sesiones sin `stop_requested_by`, TAR §3.3).
+    const claimed = await this.sql`
+      UPDATE sessions.charging_session SET stop_requested_by = ${requestedBy}, updated_at = now()
+      WHERE id = ${sessionId} AND stop_requested_by IS NULL
+        AND state IN ('CHARGING', 'SUSPENDED_EV', 'SUSPENDED_EVSE')`;
+    const release = async (): Promise<void> => {
+      if (claimed.count === 0) return;
+      await this.sql`
+        UPDATE sessions.charging_session SET stop_requested_by = NULL, updated_at = now()
+        WHERE id = ${sessionId} AND stop_requested_by = ${requestedBy}
+          AND state IN ('CHARGING', 'SUSPENDED_EV', 'SUSPENDED_EVSE')`;
+    };
+    let result: CommandResult;
+    try {
+      result = await this.commands.send({
+        chargePointId: session.charge_point_id,
+        action: 'RemoteStopTransaction',
+        payload: { transactionId: transaction.ocpp_transaction_id },
+        requestedBy,
+        correlationId: session.id,
+      });
+    } catch (error) {
+      await release();
+      throw error;
+    }
     const outcome = result.outcome;
     if (!outcome.ok) {
+      await release();
       if (outcome.error.code === 'NOT_CONNECTED' || outcome.error.code === 'UNAVAILABLE') {
         throw new ChargePointOfflineError(chargeBoxId, outcome.error.description);
       }
@@ -252,6 +275,7 @@ export class SessionService {
       );
     }
     if (outcome.result.status !== 'Accepted') {
+      await release();
       throw new ConflictError('El cargador rechazó la parada remota', 'REMOTE_STOP_REJECTED');
     }
     await this.sql.begin(async (tx) => {
@@ -259,17 +283,26 @@ export class SessionService {
         ChargingSessionRow[]
       >`SELECT * FROM sessions.charging_session WHERE id = ${sessionId} FOR UPDATE`;
       const current = rows[0];
+      if (!current) return;
       if (
-        !current ||
-        (current.state !== 'CHARGING' &&
-          current.state !== 'SUSPENDED_EV' &&
-          current.state !== 'SUSPENDED_EVSE')
-      )
+        current.state !== 'CHARGING' &&
+        current.state !== 'SUSPENDED_EV' &&
+        current.state !== 'SUSPENDED_EVSE'
+      ) {
+        // El cargador se adelantó (ya está en STOPPING o ENDED con la atribución reservada): solo
+        // queda anotar el comando que provocó la parada.
+        if (current.stop_requested_by === requestedBy && current.remote_stop_command_id === null) {
+          await tx`
+            UPDATE sessions.charging_session SET remote_stop_command_id = ${result.command.id}, updated_at = now()
+            WHERE id = ${sessionId}`;
+        }
         return;
+      }
       assertSessionTransition(current.state, 'STOPPING');
       await tx`
         UPDATE sessions.charging_session SET state = 'STOPPING', state_changed_at = ${this.now()},
-               stop_requested_by = ${requestedBy}, remote_stop_command_id = ${result.command.id},
+               stop_requested_by = COALESCE(stop_requested_by, ${requestedBy}),
+               remote_stop_command_id = ${result.command.id},
                app_seq = app_seq + 1, updated_at = now()
         WHERE id = ${sessionId}`;
       await this.emit(tx, current, 'session.stop_requested', chargeBoxId, this.now(), {

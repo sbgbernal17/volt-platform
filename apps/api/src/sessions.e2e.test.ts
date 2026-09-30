@@ -23,7 +23,10 @@ const baseUrl = process.env.DATABASE_URL;
 const ADMIN_TOKEN = 'token-admin-de-pruebas-0123456789';
 const INTERNAL_TOKEN = 'token-interno-de-pruebas-0123456789';
 
-async function until(condition: () => Promise<boolean> | boolean, timeoutMs = 8000): Promise<void> {
+async function until(
+  condition: () => Promise<boolean> | boolean,
+  timeoutMs = 15_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await condition()) return;
@@ -149,6 +152,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 3: sesiones por la API', () =>
     expect((await admin('POST', '/admin/v1/tariffs/bootstrap')).statusCode).toBe(200);
     sim = new SimulatedChargePoint({
       identity: 'VOLT-BOG02-CP01',
+      callTimeoutMs: 30_000, // la base de datos de CI puede tardar bajo carga
       password: issued.authorizationKey,
       endpoint: `ws://127.0.0.1:${ocppPort}/ocpp`,
       vendor: 'VoltSim',

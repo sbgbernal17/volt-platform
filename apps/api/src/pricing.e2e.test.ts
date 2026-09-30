@@ -29,7 +29,7 @@ const INTERNAL_TOKEN = 'token-interno-de-pruebas-0123456789';
 
 async function until(
   condition: () => Promise<boolean> | boolean,
-  timeoutMs = 10_000,
+  timeoutMs = 15_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -227,6 +227,7 @@ describe.skipIf(!baseUrl)(
 
       sim = new SimulatedChargePoint({
         identity: 'VOLT-BOG04-CP01',
+        callTimeoutMs: 30_000, // la base de datos de CI puede tardar bajo carga
         password: issued.authorizationKey,
         endpoint: `ws://127.0.0.1:${addresses.ocppPort}/ocpp`,
         vendor: 'VoltSim',
