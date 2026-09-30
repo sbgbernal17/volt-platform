@@ -8,5 +8,7 @@ export default function Index() {
     return <Redirect href={auth.guest ? '/(tabs)' : '/(auth)'} />;
   if (auth.profileError === 'EMAIL_NOT_VERIFIED') return <Redirect href="/verify-email" />;
   if ((auth.profile?.pendingConsents.length ?? 0) > 0) return <Redirect href="/consents" />;
+  if (auth.config?.phone.required && auth.profile && !auth.profile.phoneVerified)
+    return <Redirect href="/verify-phone" />;
   return <Redirect href="/(tabs)" />;
 }

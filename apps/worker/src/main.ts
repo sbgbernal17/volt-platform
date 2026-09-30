@@ -13,7 +13,7 @@ import {
   StaticConnectionDirectory,
 } from '@volt/gateway-client';
 import { createLogger } from '@volt/logging';
-import { WompiGateway } from '@volt/payments';
+import { FakeGateway, WompiGateway } from '@volt/payments';
 import { Redis } from 'ioredis';
 import { loadConfig } from './config.ts';
 import { startHealthServer } from './health.ts';
@@ -149,16 +149,23 @@ if (sql) {
   } else {
     logger.warn('notificaciones push deshabilitadas (PUSH_PROVIDER=none)');
   }
-  // Cobros: solo con la pasarela real; el emulador (`fake`) vive en el proceso de la API y se ejecuta
-  // desde POST /admin/v1/billing/jobs/run (laboratorio y pruebas).
-  if (config.PAYMENTS_PROVIDER === 'wompi') {
-    const gateway = new WompiGateway({
-      environment: config.WOMPI_ENVIRONMENT,
-      publicKey: config.WOMPI_PUBLIC_KEY as string,
-      privateKey: config.WOMPI_PRIVATE_KEY as string,
-      integritySecret: config.WOMPI_INTEGRITY_SECRET as string,
-      eventsSecret: config.WOMPI_EVENTS_SECRET as string,
-    });
+  // Cobros con la pasarela real o con el emulador (`fake`, ambiente dev): el emulador es determinista
+  // por identificador, así que este proceso cobra fuentes que creó la API sin compartir memoria.
+  // POST /admin/v1/billing/jobs/run sigue sirviendo para forzar un ciclo desde el laboratorio.
+  if (config.PAYMENTS_PROVIDER === 'wompi' || config.PAYMENTS_PROVIDER === 'fake') {
+    const gateway =
+      config.PAYMENTS_PROVIDER === 'wompi'
+        ? new WompiGateway({
+            environment: config.WOMPI_ENVIRONMENT,
+            publicKey: config.WOMPI_PUBLIC_KEY as string,
+            privateKey: config.WOMPI_PRIVATE_KEY as string,
+            integritySecret: config.WOMPI_INTEGRITY_SECRET as string,
+            eventsSecret: config.WOMPI_EVENTS_SECRET as string,
+          })
+        : new FakeGateway();
+    if (gateway.environment === 'fake') {
+      logger.warn('cobros con el emulador de pagos (PAYMENTS_PROVIDER=fake): solo desarrollo');
+    }
     const billing = new BillingService(sql, gateway, { logger });
     jobs.push(
       {
@@ -175,7 +182,7 @@ if (sql) {
   } else {
     logger.warn(
       { provider: config.PAYMENTS_PROVIDER },
-      'cobros deshabilitados en el worker (PAYMENTS_PROVIDER distinto de wompi)',
+      'cobros deshabilitados en el worker (PAYMENTS_PROVIDER=none)',
     );
   }
 }

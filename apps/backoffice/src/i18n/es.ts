@@ -540,6 +540,8 @@ export const es = {
   'drivers.new': 'Nuevo conductor',
   'drivers.email': 'Correo',
   'drivers.phone': 'Teléfono',
+  'drivers.phoneVerified': 'Celular verificado',
+  'drivers.phoneUnverified': 'Celular sin verificar',
   'drivers.name': 'Nombre',
   'drivers.billing': 'Cobro',
   'drivers.block': 'Bloquear',

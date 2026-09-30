@@ -34,6 +34,8 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0028](0028-recibo-en-pdf-generado-en-la-api.md) | Recibo de carga en PDF generado en la API con pdf-lib (JavaScript puro, sin archivos en tiempo de ejecución), descargable desde la app web, compartible en iOS y Android con expo-file-system y expo-sharing, y abierto desde el back-office |
 | [0029](0029-resumen-de-ingresos-estado-del-proveedor-y-dia-contable.md) | Resumen de ingresos por período y medio de pago, estado del proveedor (salud de la pasarela más señales de la base) y día contable en hora de Colombia para conciliación y filtros |
 | [0030](0030-el-back-office-adopta-el-sistema-de-diseno-de-la-app.md) | El back-office adopta el sistema de diseño de la app: tokens compartidos, selector de tema (sistema, claro, oscuro), Material Icons, estados por palabra, ícono y color desde un solo módulo, botones, insignias, avisos, KPI y barra lateral como en la app |
+| [0031](0031-celular-verificado-por-sms.md) | Celular verificado por SMS con código de un solo uso gestionado por la plataforma (puerto `SmsSender`, emulador, Twilio y Brevo), obligatorio para pagar y cargar después del correo y los consentimientos; un celular verificado por cuenta |
+| [0032](0032-correos-de-identidad-con-envio-propio.md) | Correos de verificación y contraseña con envío propio: la API genera el enlace de Identity Platform con su cuenta de servicio y lo envía en la plantilla con la marca (botón) por Resend o Brevo; sin proveedor sigue el correo genérico de Google |
 
 ```markdown
 # NNNN. Título de la decisión

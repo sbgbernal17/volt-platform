@@ -8,6 +8,8 @@ export interface DriverRow {
   idp_subject: string | null;
   email: string | null;
   phone: string | null;
+  /** Celular verificado por SMS (ADR 0031); NULL si no se ha verificado o cambió después. */
+  phone_verified_at: Date | null;
   display_name: string | null;
   locale: string;
   segment: string;

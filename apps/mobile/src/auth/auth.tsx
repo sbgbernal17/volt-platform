@@ -12,11 +12,14 @@ import {
   confirmPasswordReset,
   createUserWithEmailAndPassword,
   deleteUser,
+  EmailAuthProvider,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  updatePassword,
   updateProfile,
   verifyPasswordResetCode,
 } from 'firebase/auth';
@@ -62,6 +65,8 @@ export interface AuthState {
   signInDev: (driverId: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  /** Cambia la contraseña desde la cuenta: vuelve a autenticar con la actual y guarda la nueva. */
+  changePassword: (current: string, next: string) => Promise<void>;
   resendVerification: () => Promise<void>;
   /** Recarga el usuario y el token y vuelve a leer el perfil; devuelve si el correo ya está verificado. */
   checkVerification: () => Promise<boolean>;
@@ -216,15 +221,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithEmailAndPassword(requireAuth(authRef), email.trim(), password);
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string, name: string) => {
-    const credential = await createUserWithEmailAndPassword(
-      requireAuth(authRef),
-      email.trim(),
-      password,
-    );
-    if (name.trim()) await updateProfile(credential.user, { displayName: name.trim() });
-    await sendEmailVerification(credential.user).catch(() => undefined);
-  }, []);
+  // Correos de identidad (ADR 0032): con proveedor propio la API envía el cuerpo con la marca; si
+  // falla o no hay proveedor, Identity Platform envía el suyo desde el SDK.
+  const customEmail = config?.email.custom ?? false;
+
+  const signUp = useCallback(
+    async (email: string, password: string, name: string) => {
+      const credential = await createUserWithEmailAndPassword(
+        requireAuth(authRef),
+        email.trim(),
+        password,
+      );
+      if (name.trim()) await updateProfile(credential.user, { displayName: name.trim() });
+      if (customEmail) {
+        await api
+          .post('/auth/send-verification', {})
+          .catch(() => sendEmailVerification(credential.user).catch(() => undefined));
+      } else {
+        await sendEmailVerification(credential.user).catch(() => undefined);
+      }
+    },
+    [api, customEmail],
+  );
 
   const signInDev = useCallback(async (driverId: string) => {
     const token = `dev:${driverId.trim()}`;
@@ -244,14 +262,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('anonymous');
   }, []);
 
-  const resetPassword = useCallback(async (email: string) => {
-    await sendPasswordResetEmail(requireAuth(authRef), email.trim());
+  const resetPassword = useCallback(
+    async (email: string) => {
+      if (customEmail) {
+        try {
+          await publicApi.post('/auth/password-reset', { email: email.trim() });
+          return;
+        } catch (error) {
+          // Límite de envíos: se informa; otros fallos caen al correo de Identity Platform.
+          if (error instanceof ApiError && error.status === 429) throw error;
+        }
+      }
+      await sendPasswordResetEmail(requireAuth(authRef), email.trim());
+    },
+    [customEmail, publicApi],
+  );
+
+  const changePassword = useCallback(async (current: string, next: string) => {
+    const user = requireAuth(authRef).currentUser;
+    if (!user?.email) throw new Error('identity-unavailable');
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, current));
+    await updatePassword(user, next);
   }, []);
 
   const resendVerification = useCallback(async () => {
     const current = authRef.current?.currentUser;
-    if (current) await sendEmailVerification(current);
-  }, []);
+    if (!current) return;
+    if (customEmail) {
+      try {
+        await api.post('/auth/send-verification', {});
+        return;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 429) throw error;
+      }
+    }
+    await sendEmailVerification(current);
+  }, [api, customEmail]);
 
   const emailAction = useMemo<AuthState['emailAction']>(
     () => ({
@@ -335,6 +381,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInDev,
       signOut,
       resetPassword,
+      changePassword,
       resendVerification,
       checkVerification,
       refreshProfile,
@@ -360,6 +407,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInDev,
       signOut,
       resetPassword,
+      changePassword,
       resendVerification,
       checkVerification,
       refreshProfile,

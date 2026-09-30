@@ -75,8 +75,25 @@ describe('configuración y política', () => {
       WOMPI_PRIVATE_KEY: 'prv_prod_xxxxxxxx',
       WOMPI_INTEGRITY_SECRET: 'prod_integrity_xxxx',
       WOMPI_EVENTS_SECRET: 'prod_events_xxxx',
+      // Celular verificado por SMS (ADR 0031): en producción hace falta un proveedor real.
+      SMS_PROVIDER: 'twilio',
+      TWILIO_ACCOUNT_SID: 'ACxxxxxxxxxxxxxxxx',
+      SMS_SENDER: '+15005550006',
+      SMS_PROVIDER_API_KEY: 'twilio-auth-token-xxxx',
     };
     expect(() => loadConfig(base)).toThrow(/IDENTITY_PLATFORM_PROJECT_ID/);
+    expect(() =>
+      loadConfig({ ...base, IDENTITY_PLATFORM_PROJECT_ID: 'volt-prod', SMS_PROVIDER: 'fake' }),
+    ).toThrow(/SMS_PROVIDER/);
+    expect(() =>
+      loadConfig({ ...base, IDENTITY_PLATFORM_PROJECT_ID: 'volt-prod', EMAIL_PROVIDER: 'fake' }),
+    ).toThrow(/EMAIL_PROVIDER/);
+    expect(() =>
+      loadConfig({ ...base, IDENTITY_PLATFORM_PROJECT_ID: 'volt-prod', EMAIL_PROVIDER: 'resend' }),
+    ).toThrow(/EMAIL_PROVIDER_API_KEY/);
+    expect(() => loadConfig({ SMS_PROVIDER: 'brevo', SMS_SENDER: 'VOLT' })).toThrow(
+      /SMS_PROVIDER_API_KEY/,
+    );
     expect(() =>
       loadConfig({
         ...base,

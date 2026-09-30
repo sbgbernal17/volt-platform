@@ -124,6 +124,44 @@ variable "push_provider" {
   default     = "expo"
 }
 
+variable "google_maps_map_id" {
+  description = "Map ID de Google Maps Platform (Map Management, tipo JavaScript, vector) del proyecto: estilos en la nube y marcadores avanzados en el back-office y la app web; vacío = marcadores clásicos. Público."
+  type        = string
+  default     = ""
+}
+
+# --- Correos de identidad con la marca (ADR 0032) ---
+variable "email_provider" {
+  description = "resend o brevo (clave en el secreto email-provider-api-key): la API envía los correos de verificación y contraseña con la marca; none = los envía Identity Platform (correo genérico de Google)."
+  type        = string
+  default     = "none"
+}
+
+variable "email_from" {
+  description = "Remitente de los correos propios (dominio verificado en el proveedor)."
+  type        = string
+  default     = "VOLT <noreply@supercargadores.co>"
+}
+
+# --- Celular verificado por SMS (ADR 0031) ---
+variable "sms_provider" {
+  description = "fake (emulador: el código vuelve en la respuesta; solo dev y staging), twilio o brevo (clave en el secreto sms-provider-api-key) o none."
+  type        = string
+  default     = "fake"
+}
+
+variable "sms_sender" {
+  description = "Remitente de los SMS: número E.164 o Messaging Service (MG…) en Twilio; nombre de hasta 11 caracteres o número en Brevo."
+  type        = string
+  default     = "VOLT"
+}
+
+variable "twilio_account_sid" {
+  description = "Account SID de Twilio (solo con sms_provider = twilio; el token va en el secreto sms-provider-api-key)."
+  type        = string
+  default     = ""
+}
+
 variable "staff_bootstrap_email" {
   description = "Primer administrador del back-office (API_STAFF_BOOTSTRAP_EMAIL)."
   type        = string

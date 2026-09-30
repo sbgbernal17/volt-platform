@@ -543,6 +543,8 @@ export const en: Record<MessageKey, string> = {
   'drivers.new': 'New driver',
   'drivers.email': 'Email',
   'drivers.phone': 'Phone',
+  'drivers.phoneVerified': 'Mobile verified',
+  'drivers.phoneUnverified': 'Mobile not verified',
   'drivers.name': 'Name',
   'drivers.billing': 'Billing',
   'drivers.block': 'Block',

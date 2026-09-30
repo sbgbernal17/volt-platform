@@ -1,6 +1,7 @@
-# Diagnóstico del worker (solo lectura): trabajos fallidos, errores y avisos, alarmas y sesiones de
-# prueba del cargador sintético en las últimas horas de un ambiente. Sirve para leer desde GitHub lo
-# que las alertas por correo de Cloud Monitoring anuncian ("Trabajo del worker fallido", alarmas).
+# Diagnóstico del worker (solo lectura): trabajos fallidos, errores y avisos, cobros (aprobados,
+# rechazados, fallos técnicos), avisos de la API, alarmas y sesiones de prueba del cargador sintético en
+# las últimas horas de un ambiente. Sirve para leer desde GitHub lo que las alertas por correo de Cloud
+# Monitoring anuncian ("Trabajo del worker fallido", alarmas) y para seguir una prueba de cobro.
 name: Diagnóstico del worker
 
 on:
@@ -93,6 +94,18 @@ jobs:
           gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=(\"api\" OR \"synthetic-charger\") AND severity>=ERROR" \
             --project "$PROJECT_ID" --freshness="$fresh" --limit 30 \
             --format 'value(timestamp,resource.labels.service_name,jsonPayload.message,jsonPayload.err.message,textPayload)'
+          echo "::endgroup::"
+
+          echo "::group::Cobros: aprobados, rechazados, fallos técnicos y sin cobro (últimas ${HOURS} h, 40 más recientes)"
+          gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=(\"worker\" OR \"api\") AND jsonPayload.message=(\"cobro aprobado\" OR \"cobro rechazado; deuda registrada\" OR \"fallo técnico al cobrar; se reintentará\" OR \"sesión sin cobro\" OR \"pasarela de pago configurada\" OR \"cobros con el emulador de pagos (PAYMENTS_PROVIDER=fake): solo desarrollo\" OR \"cobros deshabilitados en el worker (PAYMENTS_PROVIDER=none)\")" \
+            --project "$PROJECT_ID" --freshness="$fresh" --limit 40 \
+            --format 'value(timestamp,resource.labels.service_name,jsonPayload.message,jsonPayload.sessionId,jsonPayload.paymentId,jsonPayload.amount,jsonPayload.code,jsonPayload.attempts,jsonPayload.reason,jsonPayload.err.message)'
+          echo "::endgroup::"
+
+          echo "::group::Avisos de la API: identidad, pagos y peticiones rechazadas (últimas ${HOURS} h, 40 más recientes)"
+          gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"api\" AND severity>=WARNING" \
+            --project "$PROJECT_ID" --freshness="$fresh" --limit 40 \
+            --format 'value(timestamp,severity,jsonPayload.message,jsonPayload.err.message,jsonPayload.err.code,jsonPayload.req.method,jsonPayload.req.url,jsonPayload.res.statusCode,textPayload)'
           echo "::endgroup::"
 
           echo "::group::Alarmas abiertas y resueltas (últimas ${HOURS} h)"

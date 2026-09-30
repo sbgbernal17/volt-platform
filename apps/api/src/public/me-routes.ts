@@ -5,6 +5,7 @@
  */
 import {
   anonymizeDriver,
+  CsmsError,
   countUnreadNotifications,
   currentConsentVersion,
   DEVICE_PLATFORMS,
@@ -17,9 +18,11 @@ import {
   getDriver,
   listDriverNotifications,
   markNotificationsRead,
+  type PhoneVerificationService,
   pendingConsents,
   recordDriverConsents,
   registerDriverDevice,
+  resolveParam,
   unregisterDriverDevice,
   updateDriverProfile,
 } from '@volt/csms';
@@ -48,8 +51,15 @@ export interface AppConfigStatic {
     apiBaseUrl: string | null;
   };
   legal: { termsUrl: string; privacyUrl: string; supportEmail: string | null };
-  /** Clave de navegador de Google Maps para la versión web (null: la web muestra solo la lista). */
-  maps: { browserKey: string | null };
+  /** Clave de navegador de Google Maps para la versión web (null: la web muestra solo la lista) y Map ID (9c). */
+  maps: { browserKey: string | null; mapId: string | null };
+  /**
+   * Verificación del celular por SMS (ADR 0031): `fake` devuelve el código en la respuesta (solo
+   * pruebas), `live` lo envía de verdad, `none` no está disponible. `required` se añade en la ruta.
+   */
+  phone: { provider: 'none' | 'fake' | 'live' };
+  /** Correos de identidad con la marca (ADR 0032): `custom` = la app pide el envío a la API. */
+  email: { custom: boolean };
 }
 
 const profilePatch = z.object({
@@ -89,6 +99,8 @@ export function toPublicProfile(driver: DriverRow, consentVersion: string) {
     emailVerified: driver.email_verified,
     displayName: driver.display_name,
     phone: driver.phone,
+    phoneVerified: driver.phone_verified_at !== null,
+    phoneVerifiedAt: driver.phone_verified_at?.toISOString() ?? null,
     locale: driver.locale,
     status: driver.status,
     billingStatus: driver.billing_status,
@@ -129,18 +141,40 @@ export async function appConfigRoute(
   app.get('/config', async () => ({
     version: options.version,
     ...options.appConfig,
+    phone: {
+      ...options.appConfig.phone,
+      required: await resolveParam<boolean>(options.sql, 'auth.driver_require_verified_phone', {
+        tenantId: options.tenantId,
+      }),
+    },
     consentVersion: await currentConsentVersion(options.sql, options.tenantId),
   }));
 }
 
 /** Rutas privadas de la cuenta (dentro del ámbito autenticado de /v1). */
+const phoneSendBody = z.object({
+  phone: z.string().trim().min(7).max(24),
+  locale: z.enum(DRIVER_LOCALES).optional(),
+});
+const phoneVerifyBody = z.object({ code: z.string().trim().min(4).max(12) });
+
 export async function meRoutes(
   app: FastifyInstance,
-  options: { sql: Sql; tenantId: string },
+  options: { sql: Sql; tenantId: string; phoneVerification?: PhoneVerificationService | undefined },
 ): Promise<void> {
   const { sql, tenantId } = options;
   const profile = async (driverId: string) =>
     toPublicProfile(await getDriver(sql, driverId), await currentConsentVersion(sql, tenantId));
+  const requirePhoneVerification = (): PhoneVerificationService => {
+    if (!options.phoneVerification) {
+      throw new CsmsError(
+        'La verificación por SMS no está disponible en este ambiente',
+        503,
+        'SMS_UNAVAILABLE',
+      );
+    }
+    return options.phoneVerification;
+  };
 
   app.get('/me', async (request) => profile(driverOf(request).driverId));
 
@@ -148,6 +182,33 @@ export async function meRoutes(
     const driver = driverOf(request);
     const body = profilePatch.parse(request.body ?? {});
     await updateDriverProfile(sql, driver.driverId, body);
+    return profile(driver.driverId);
+  });
+
+  // Celular verificado por SMS (ADR 0031): envío del código y confirmación.
+  app.post('/me/phone/send-code', async (request, reply) => {
+    const driver = driverOf(request);
+    const body = phoneSendBody.parse(request.body ?? {});
+    const service = requirePhoneVerification();
+    const current = await getDriver(sql, driver.driverId);
+    const sent = await service.sendCode(
+      driver.driverId,
+      body.phone,
+      body.locale ?? (current.locale === 'en' ? 'en' : 'es'),
+    );
+    reply.code(202);
+    return {
+      phone: sent.phone,
+      expiresAt: sent.expiresAt.toISOString(),
+      resendAfterS: sent.resendAfterS,
+      devCode: sent.devCode,
+    };
+  });
+
+  app.post('/me/phone/verify', async (request) => {
+    const driver = driverOf(request);
+    const body = phoneVerifyBody.parse(request.body ?? {});
+    await requirePhoneVerification().verifyCode(driver.driverId, body.code);
     return profile(driver.driverId);
   });
 

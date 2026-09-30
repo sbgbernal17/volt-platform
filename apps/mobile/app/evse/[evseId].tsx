@@ -138,6 +138,11 @@ export default function EvseScreen() {
           router.replace('/consents');
           return;
         }
+        if (caught.code === 'PHONE_NOT_VERIFIED') {
+          await auth.refreshProfile();
+          router.push('/verify-phone');
+          return;
+        }
         if (
           caught.status === 409 &&
           caught.body &&

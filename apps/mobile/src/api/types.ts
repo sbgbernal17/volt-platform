@@ -16,9 +16,22 @@ export interface AppConfig {
     apiBaseUrl: string | null;
   };
   legal: { termsUrl: string; privacyUrl: string; supportEmail: string | null };
-  /** Clave de navegador de Google Maps para la versión web (null: la web muestra solo la lista). */
-  maps: { browserKey: string | null };
+  /** Clave de navegador de Google Maps para la versión web (null: la web muestra solo la lista) y Map ID (9c). */
+  maps: { browserKey: string | null; mapId: string | null };
+  /** Verificación del celular por SMS (ADR 0031): `fake` devuelve el código de prueba en la respuesta. */
+  phone: { provider: 'none' | 'fake' | 'live'; required: boolean };
+  /** Correos de identidad con la marca (ADR 0032): la app pide el envío a la API cuando `custom`. */
+  email: { custom: boolean };
   consentVersion: string;
+}
+
+/** Respuesta de POST /me/phone/send-code. */
+export interface PhoneCodeSent {
+  phone: string;
+  expiresAt: string;
+  resendAfterS: number;
+  /** Solo con el emulador de SMS (ambientes de prueba). */
+  devCode: string | null;
 }
 
 export type ConsentKey = 'terms' | 'data_processing' | 'marketing';
@@ -28,7 +41,10 @@ export interface Profile {
   email: string | null;
   emailVerified: boolean;
   displayName: string | null;
+  /** Celular en E.164 (+57…), verificado por SMS cuando `phoneVerified` (ADR 0031). */
   phone: string | null;
+  phoneVerified: boolean;
+  phoneVerifiedAt: string | null;
   locale: 'es' | 'en';
   status: 'ACTIVE' | 'BLOCKED' | 'DELETED';
   billingStatus: 'OK' | 'BLOCKED_DEBT' | 'BLOCKED_MANUAL';

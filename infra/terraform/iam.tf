@@ -40,6 +40,14 @@ resource "google_project_iam_member" "trace_agents" {
   member   = google_service_account.svc[each.key].member
 }
 
+# La API genera los enlaces de verificación y contraseña de Identity Platform con su propia cuenta de
+# servicio (accounts:sendOobCode con returnOobLink, ADR 0032): rol de administración de Firebase Auth.
+resource "google_project_iam_member" "api_identity_links" {
+  project = var.project_id
+  role    = "roles/firebaseauth.admin"
+  member  = google_service_account.svc["api"].member
+}
+
 resource "google_pubsub_topic_iam_member" "worker_publisher" {
   topic      = google_pubsub_topic.domain_events.name
   role       = "roles/pubsub.publisher"

@@ -66,6 +66,15 @@ describe.skipIf(!baseUrl)('migración inicial del modelo de datos', () => {
         'document_type',
         'wants_invoice',
       ]);
+      // Migración 0013 (celular verificado por SMS, ADR 0031).
+      const phoneColumns = await sql<{ column_name: string }[]>`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'auth' AND table_name = 'driver' AND column_name = 'phone_verified_at'`;
+      expect(phoneColumns.map((c) => c.column_name)).toEqual(['phone_verified_at']);
+      const phoneCodes = await sql<{ table_name: string }[]>`
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'auth' AND table_name = 'driver_phone_code'`;
+      expect(phoneCodes).toHaveLength(1);
       const commissioningTables = await sql<{ table_name: string }[]>`
         SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'assets'

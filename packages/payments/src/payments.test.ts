@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  decodeFakeSourceId,
+  decodeFakeTransactionId,
   FAKE_ACCEPTANCE_TOKENS,
   FAKE_CARDS,
   FakeGateway,
@@ -458,5 +460,125 @@ describe('adaptador de Wompi contra un servidor simulado', () => {
       timeoutMs: 500,
     });
     await expect(unreachable.getTransaction('x')).rejects.toMatchObject({ code: 'NETWORK' });
+  });
+});
+
+describe('emulador determinista entre procesos (dev: API y worker separados)', () => {
+  it('un emulador cobra una fuente creada por otro con el resultado que declara el identificador', async () => {
+    const api = new FakeGateway();
+    const worker = new FakeGateway();
+    const approvedToken = api.tokenizeCard({
+      number: FAKE_CARDS.approved,
+      expMonth: '12',
+      expYear: '30',
+      cvc: '123',
+      cardHolder: 'ANA',
+    });
+    // El token lleva la tarjeta: otro proceso lo entiende sin memoria compartida.
+    const source = await worker.createPaymentSource({
+      type: 'CARD',
+      token: approvedToken,
+      customerEmail: 'ana@example.com',
+      acceptanceToken: FAKE_ACCEPTANCE_TOKENS.acceptanceToken,
+      personalDataAuthToken: FAKE_ACCEPTANCE_TOKENS.personalDataAuthToken,
+    });
+    expect(source.publicData).toMatchObject({ brand: 'VISA', last_four: '4242' });
+    expect(decodeFakeSourceId(source.id)).toEqual({
+      kind: 'CARD',
+      outcome: 'APPROVED',
+      threeDs: false,
+    });
+    const other = new FakeGateway();
+    const approved = await other.charge({
+      reference: 'X-1',
+      amountMinor: 1_000n,
+      currency: 'COP',
+      currencyExponent: 0,
+      customerEmail: 'ana@example.com',
+      paymentSourceId: source.id,
+    });
+    expect(approved.status).toBe('APPROVED');
+    expect(decodeFakeTransactionId(approved.id)).toBe('APPROVED');
+    // La transacción se consulta, anula y reembolsa desde un cuarto proceso.
+    const admin = new FakeGateway();
+    expect((await admin.getTransaction(approved.id)).status).toBe('APPROVED');
+    expect(
+      (
+        await admin.refund({
+          transactionId: approved.id,
+          amountMinor: 500n,
+          currency: 'COP',
+          currencyExponent: 0,
+        })
+      ).status,
+    ).toBe('APPROVED');
+    expect((await admin.voidTransaction(approved.id)).status).toBe('VOIDED');
+
+    const declinedSource = await api.createPaymentSource({
+      type: 'CARD',
+      token: api.tokenizeCard({
+        number: FAKE_CARDS.declined,
+        expMonth: '12',
+        expYear: '30',
+        cvc: '123',
+        cardHolder: 'LUIS',
+      }),
+      customerEmail: 'luis@example.com',
+      acceptanceToken: FAKE_ACCEPTANCE_TOKENS.acceptanceToken,
+      personalDataAuthToken: FAKE_ACCEPTANCE_TOKENS.personalDataAuthToken,
+    });
+    const declined = await worker.charge({
+      reference: 'X-2',
+      amountMinor: 1_000n,
+      currency: 'COP',
+      currencyExponent: 0,
+      customerEmail: 'luis@example.com',
+      paymentSourceId: declinedSource.id,
+    });
+    expect(declined.status).toBe('DECLINED');
+    expect(decodeFakeTransactionId(declined.id)).toBe('DECLINED');
+    await expect(new FakeGateway().voidTransaction(declined.id)).rejects.toMatchObject({
+      code: 'VALIDATION',
+    });
+
+    const nequi = await worker.createPaymentSource({
+      type: 'NEQUI',
+      token: api.tokenizeNequi('3001234567'),
+      customerEmail: 'n@example.com',
+      acceptanceToken: FAKE_ACCEPTANCE_TOKENS.acceptanceToken,
+      personalDataAuthToken: FAKE_ACCEPTANCE_TOKENS.personalDataAuthToken,
+    });
+    expect(nequi).toMatchObject({ type: 'NEQUI', publicData: { phone_number: '3001234567' } });
+    expect(decodeFakeSourceId(nequi.id)).toMatchObject({ kind: 'NEQUI', outcome: 'APPROVED' });
+  });
+
+  it('los identificadores del emulador anterior valen como tarjeta aprobada y los tokens ajenos se rechazan', async () => {
+    const fake = new FakeGateway();
+    expect(decodeFakeSourceId(1002)).toEqual({ kind: 'CARD', outcome: 'APPROVED', threeDs: false });
+    expect((await fake.getPaymentSource(1002)).status).toBe('AVAILABLE');
+    const tx = await fake.charge({
+      reference: 'L-1',
+      amountMinor: 700n,
+      currency: 'COP',
+      currencyExponent: 0,
+      customerEmail: 'a@b.c',
+      paymentSourceId: 1002,
+    });
+    expect(tx.status).toBe('APPROVED');
+    expect(decodeFakeTransactionId('fake-1759000000000-7')).toBe('APPROVED');
+    expect(decodeFakeTransactionId('fake-E-1759000000000-7')).toBe('ERROR');
+    expect(decodeFakeTransactionId('tok_test_x')).toBeNull();
+    await expect(new FakeGateway().getTransaction('123-abc')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    await expect(
+      fake.createPaymentSource({
+        type: 'CARD',
+        token: 'tok_test_abc',
+        customerEmail: 'a@b.c',
+        acceptanceToken: FAKE_ACCEPTANCE_TOKENS.acceptanceToken,
+        personalDataAuthToken: FAKE_ACCEPTANCE_TOKENS.personalDataAuthToken,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION', status: 422 });
   });
 });

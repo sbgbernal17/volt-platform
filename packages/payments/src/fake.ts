@@ -1,10 +1,16 @@
 /**
- * Emulador de pasarela en memoria para pruebas y laboratorio: reproduce los estados de Wompi
+ * Emulador de pasarela para pruebas, laboratorio y el ambiente dev: reproduce los estados de Wompi
  * (fuentes AVAILABLE/PENDING por 3DS, transacciones APPROVED/DECLINED/ERROR, anulación, reembolso,
  * enlaces de pago) y genera eventos de webhook firmados con el mismo checksum que Wompi, de modo que
  * la API y el worker se prueban de punta a punta sin red. Nunca se usa en producción.
+ *
+ * Es determinista por identificador: en la nube la API y el worker son procesos distintos (y la API
+ * puede reiniciarse o escalar), así que el resultado de una tarjeta viaja dentro del token, de la
+ * fuente de pago y de la transacción. Un emulador que no creó una fuente la cobra igual con el
+ * resultado que su identificador declara; los identificadores antiguos (sin resultado) se tratan
+ * como tarjeta aprobada.
  */
-import { createHash } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import { webhookChecksum } from './signature.ts';
 import {
   type AcceptanceTokens,
@@ -17,6 +23,7 @@ import {
   type PaymentLink,
   type PaymentLinkInput,
   type PaymentSource,
+  type PaymentSourceType,
   type RefundInput,
   type RefundResult,
   type TransactionStatus,
@@ -55,11 +62,34 @@ export interface FakeGatewayOptions {
   clock?: (() => Date) | undefined;
 }
 
-interface FakeToken {
-  kind: 'CARD' | 'NEQUI';
-  outcome: TransactionStatus;
-  threeDs: boolean;
-  publicData: Record<string, string>;
+type Outcome = Exclude<TransactionStatus, 'PENDING' | 'VOIDED'>;
+type OutcomeLetter = 'A' | 'D' | 'E';
+
+const OUTCOME_LETTER: Record<Outcome, OutcomeLetter> = { APPROVED: 'A', DECLINED: 'D', ERROR: 'E' };
+const LETTER_OUTCOME: Record<OutcomeLetter, Outcome> = {
+  A: 'APPROVED',
+  D: 'DECLINED',
+  E: 'ERROR',
+};
+
+/** Lo que viaja dentro de un token del emulador (`tok_fake_…` o `nequi_fake_…`). */
+interface TokenPayload {
+  k: PaymentSourceType;
+  o: OutcomeLetter;
+  /** Reto 3DS pendiente al crear la fuente (titular con "3DS" en el nombre). */
+  t?: 1;
+  b?: string;
+  l4?: string;
+  bin?: string;
+  m?: string;
+  y?: string;
+  h?: string;
+  p?: string;
+}
+
+interface SourceEntry {
+  source: PaymentSource;
+  outcome: Outcome;
 }
 
 interface FakeLink extends PaymentLink {
@@ -69,6 +99,73 @@ interface FakeLink extends PaymentLink {
   paid: boolean;
 }
 
+type FakeTransaction = GatewayTransaction & { outcome: Outcome };
+
+/**
+ * Identificadores de fuente: a partir de SOURCE_BASE el último dígito declara tipo y resultado. Los
+ * menores (emulador anterior, que numeraba desde 1001) no declaran nada y valen como tarjeta aprobada.
+ */
+const SOURCE_BASE = 10_000_000;
+const SOURCE_CODES = {
+  1: { kind: 'CARD', outcome: 'APPROVED', threeDs: false },
+  2: { kind: 'CARD', outcome: 'DECLINED', threeDs: false },
+  3: { kind: 'CARD', outcome: 'ERROR', threeDs: false },
+  4: { kind: 'NEQUI', outcome: 'APPROVED', threeDs: false },
+  5: { kind: 'NEQUI', outcome: 'DECLINED', threeDs: false },
+  6: { kind: 'CARD', outcome: 'APPROVED', threeDs: true },
+} as const satisfies Record<
+  number,
+  { kind: PaymentSourceType; outcome: Outcome; threeDs: boolean }
+>;
+type SourceCode = keyof typeof SOURCE_CODES;
+
+function sourceCodeOf(kind: PaymentSourceType, outcome: Outcome, threeDs: boolean): SourceCode {
+  if (kind === 'NEQUI') return outcome === 'APPROVED' ? 4 : 5;
+  if (threeDs) return 6;
+  return outcome === 'APPROVED' ? 1 : outcome === 'DECLINED' ? 2 : 3;
+}
+
+/** Tipo y resultado declarados por un identificador de fuente (los antiguos: tarjeta aprobada). */
+export function decodeFakeSourceId(id: number): {
+  kind: PaymentSourceType;
+  outcome: Outcome;
+  threeDs: boolean;
+} {
+  if (!Number.isInteger(id) || id < SOURCE_BASE) {
+    return { kind: 'CARD', outcome: 'APPROVED', threeDs: false };
+  }
+  const code = SOURCE_CODES[(id % 10) as SourceCode];
+  return code ?? { kind: 'CARD', outcome: 'APPROVED', threeDs: false };
+}
+
+function encodeToken(prefix: 'tok' | 'nequi', payload: TokenPayload): string {
+  return `${prefix}_fake_${Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')}`;
+}
+
+function decodeToken(token: string): TokenPayload | null {
+  const match = /^(?:tok|nequi)_fake_([A-Za-z0-9_-]+)$/.exec(token);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(match[1] as string, 'base64url').toString('utf8'),
+    ) as Partial<TokenPayload> | null;
+    if (!parsed || (parsed.k !== 'CARD' && parsed.k !== 'NEQUI')) return null;
+    if (parsed.o !== 'A' && parsed.o !== 'D' && parsed.o !== 'E') return null;
+    return parsed as TokenPayload;
+  } catch {
+    return null;
+  }
+}
+
+/** Estado final que declara un identificador de transacción del emulador (`fake-A-…`). */
+export function decodeFakeTransactionId(id: string): TransactionStatus | null {
+  if (!id.startsWith('fake-')) return null;
+  const letter = id.slice(5, 6);
+  if (id.charAt(6) !== '-') return 'APPROVED'; // formato antiguo `fake-<ts>-<n>`
+  if (letter === 'P') return 'PENDING';
+  return LETTER_OUTCOME[letter as OutcomeLetter] ?? null;
+}
+
 export class FakeGateway implements PaymentGateway {
   readonly provider: string;
   readonly environment = 'fake' as const;
@@ -76,17 +173,12 @@ export class FakeGateway implements PaymentGateway {
   readonly eventsSecret: string;
   private readonly asyncTransactions: boolean;
   private readonly now: () => Date;
-  private readonly tokens = new Map<string, FakeToken>();
-  private readonly sources = new Map<
-    number,
-    { source: PaymentSource; outcome: TransactionStatus }
-  >();
-  private readonly transactions = new Map<
-    string,
-    GatewayTransaction & { outcome: TransactionStatus }
-  >();
+  private readonly sources = new Map<number, SourceEntry>();
+  private readonly transactions = new Map<string, FakeTransaction>();
   private readonly links = new Map<string, FakeLink>();
   private readonly references = new Set<string>();
+  /** Tokens ya consumidos en este proceso (Wompi los acepta una sola vez). */
+  private readonly usedTokens = new Set<string>();
   private seq = 0;
 
   constructor(options: FakeGatewayOptions = {}) {
@@ -99,42 +191,31 @@ export class FakeGateway implements PaymentGateway {
   /** Lo que haría el widget de Wompi en la app: el número nunca llega al backend, solo el token. */
   tokenizeCard(card: FakeCard): string {
     const digits = card.number.replace(/\s+/g, '');
-    const outcome: TransactionStatus =
+    const outcome: Outcome =
       digits === FAKE_CARDS.declined
         ? 'DECLINED'
         : digits === FAKE_CARDS.error
           ? 'ERROR'
           : 'APPROVED';
-    const token = `tok_fake_${createHash('sha256')
-      .update(`${digits}:${++this.seq}`)
-      .digest('hex')
-      .slice(0, 24)}`;
-    this.tokens.set(token, {
-      kind: 'CARD',
-      outcome,
-      threeDs: /3DS/i.test(card.cardHolder),
-      publicData: {
-        type: 'CARD',
-        brand: digits.startsWith('4') ? 'VISA' : digits.startsWith('5') ? 'MASTERCARD' : 'OTHER',
-        last_four: digits.slice(-4),
-        bin: digits.slice(0, 6),
-        exp_month: card.expMonth,
-        exp_year: card.expYear,
-        card_holder: card.cardHolder,
-      },
+    return encodeToken('tok', {
+      k: 'CARD',
+      o: OUTCOME_LETTER[outcome],
+      ...(/3DS/i.test(card.cardHolder) ? { t: 1 as const } : {}),
+      b: digits.startsWith('4') ? 'VISA' : digits.startsWith('5') ? 'MASTERCARD' : 'OTHER',
+      l4: digits.slice(-4),
+      bin: digits.slice(0, 6),
+      m: card.expMonth,
+      y: card.expYear,
+      h: card.cardHolder.trim(),
     });
-    return token;
   }
 
   tokenizeNequi(phoneNumber: string): string {
-    const token = `nequi_fake_${++this.seq}`;
-    this.tokens.set(token, {
-      kind: 'NEQUI',
-      outcome: phoneNumber.endsWith('0') ? 'DECLINED' : 'APPROVED',
-      threeDs: false,
-      publicData: { type: 'NEQUI', phone_number: phoneNumber },
+    return encodeToken('nequi', {
+      k: 'NEQUI',
+      o: phoneNumber.endsWith('0') ? 'D' : 'A',
+      p: phoneNumber,
     });
-    return token;
   }
 
   async health(): Promise<GatewayHealth> {
@@ -156,35 +237,35 @@ export class FakeGateway implements PaymentGateway {
         messages: { acceptance_token: ['inválido'] },
       });
     }
-    const token = this.tokens.get(input.token);
-    if (!token || token.kind !== input.type) {
+    const token = decodeToken(input.token);
+    if (!token || token.k !== input.type || this.usedTokens.has(input.token)) {
       throw new PaymentGatewayError('Token de pago inválido o vencido', 'VALIDATION', 422, {
         messages: { token: ['inválido'] },
       });
     }
-    const id = 1000 + ++this.seq;
-    const raw = {
-      id,
-      type: token.kind,
-      status: token.threeDs ? 'PENDING' : 'AVAILABLE',
-      customer_email: input.customerEmail,
-      public_data: token.publicData,
-      ...(token.threeDs
-        ? {
-            extra: {
-              is_three_ds: true,
-              three_ds_auth: {
-                current_step: 'CHALLENGE',
-                current_step_status: 'PENDING',
-                three_ds_method_data: '&lt;iframe&gt;',
-              },
-            },
-          }
-        : {}),
-    };
-    const source = mapSource(raw);
-    this.sources.set(id, { source, outcome: token.outcome });
-    this.tokens.delete(input.token);
+    this.usedTokens.add(input.token);
+    const outcome = LETTER_OUTCOME[token.o];
+    const threeDs = token.t === 1;
+    const id = SOURCE_BASE + randomInt(1, 1e11) * 10 + sourceCodeOf(token.k, outcome, threeDs);
+    const publicData =
+      token.k === 'NEQUI'
+        ? { type: 'NEQUI', phone_number: token.p ?? '' }
+        : {
+            type: 'CARD',
+            brand: token.b ?? 'VISA',
+            last_four: token.l4 ?? '0000',
+            bin: token.bin ?? '',
+            exp_month: token.m ?? '',
+            exp_year: token.y ?? '',
+            card_holder: token.h ?? '',
+          };
+    const source = mapSource(
+      this.rawSource(id, token.k, threeDs ? 'PENDING' : 'AVAILABLE', input.customerEmail, {
+        publicData,
+        threeDsPending: threeDs,
+      }),
+    );
+    this.sources.set(id, { source, outcome });
     return source;
   }
 
@@ -210,18 +291,12 @@ export class FakeGateway implements PaymentGateway {
 
   async getPaymentSource(id: number): Promise<PaymentSource> {
     this.calls.push({ method: 'getPaymentSource', input: id });
-    const entry = this.sources.get(id);
-    if (!entry) throw new PaymentGatewayError('Fuente de pago desconocida', 'NOT_FOUND', 404);
-    return entry.source;
+    return this.sourceEntry(id).source;
   }
 
   async charge(input: ChargeInput): Promise<GatewayTransaction> {
     this.calls.push({ method: 'charge', input });
-    const entry = this.sources.get(input.paymentSourceId);
-    if (!entry)
-      throw new PaymentGatewayError('Fuente de pago desconocida', 'VALIDATION', 422, {
-        messages: { payment_source_id: ['no existe'] },
-      });
+    const entry = this.sourceEntry(input.paymentSourceId);
     if (entry.source.status !== 'AVAILABLE') {
       throw new PaymentGatewayError(
         `La fuente de pago está ${entry.source.status}`,
@@ -237,16 +312,13 @@ export class FakeGateway implements PaymentGateway {
     this.references.add(input.reference);
     if (input.amountMinor <= 0n)
       throw new PaymentGatewayError('Importe inválido', 'VALIDATION', 422);
-    const id = `fake-${this.now().getTime()}-${++this.seq}`;
     const pending = this.asyncTransactions;
-    const transaction = {
+    const id = this.transactionId(pending ? 'P' : OUTCOME_LETTER[entry.outcome]);
+    const transaction: FakeTransaction = {
       id,
-      status: (pending ? 'PENDING' : entry.outcome) as TransactionStatus,
-      statusMessage: pending
-        ? null
-        : entry.outcome === 'DECLINED'
-          ? 'Transacción rechazada por el emisor'
-          : null,
+      status: pending ? 'PENDING' : entry.outcome,
+      statusMessage:
+        !pending && entry.outcome === 'DECLINED' ? 'Transacción rechazada por el emisor' : null,
       reference: input.reference,
       amountMinor: input.amountMinor,
       currency: input.currency,
@@ -256,7 +328,7 @@ export class FakeGateway implements PaymentGateway {
       customerEmail: input.customerEmail,
       createdAt: this.now().toISOString(),
       finalizedAt: pending ? null : this.now().toISOString(),
-      raw: null as unknown,
+      raw: null,
       outcome: entry.outcome,
     };
     transaction.raw = this.rawOf(transaction);
@@ -300,15 +372,12 @@ export class FakeGateway implements PaymentGateway {
 
   async getTransaction(id: string): Promise<GatewayTransaction> {
     this.calls.push({ method: 'getTransaction', input: id });
-    const transaction = this.transactions.get(id);
-    if (!transaction) throw new PaymentGatewayError('Transacción desconocida', 'NOT_FOUND', 404);
-    return this.snapshot(transaction);
+    return this.snapshot(this.transactionEntry(id));
   }
 
   async voidTransaction(id: string): Promise<GatewayTransaction> {
     this.calls.push({ method: 'voidTransaction', input: id });
-    const transaction = this.transactions.get(id);
-    if (!transaction) throw new PaymentGatewayError('Transacción desconocida', 'NOT_FOUND', 404);
+    const transaction = this.transactionEntry(id);
     if (transaction.status !== 'APPROVED')
       throw new PaymentGatewayError('Solo se anula una transacción aprobada', 'VALIDATION', 422);
     transaction.status = 'VOIDED';
@@ -318,15 +387,14 @@ export class FakeGateway implements PaymentGateway {
 
   async refund(input: RefundInput): Promise<RefundResult> {
     this.calls.push({ method: 'refund', input });
-    const transaction = this.transactions.get(input.transactionId);
-    if (!transaction) throw new PaymentGatewayError('Transacción desconocida', 'NOT_FOUND', 404);
+    const transaction = this.transactionEntry(input.transactionId);
     if (transaction.status !== 'APPROVED')
       throw new PaymentGatewayError(
         'Solo se reembolsa una transacción aprobada',
         'VALIDATION',
         422,
       );
-    if (input.amountMinor > transaction.amountMinor)
+    if (transaction.amountMinor > 0n && input.amountMinor > transaction.amountMinor)
       throw new PaymentGatewayError('El reembolso supera el importe', 'VALIDATION', 422);
     return {
       id: `refund-${++this.seq}`,
@@ -359,8 +427,9 @@ export class FakeGateway implements PaymentGateway {
   ): Record<string, unknown> {
     const link = this.links.get(linkId);
     if (!link) throw new PaymentGatewayError('Enlace desconocido', 'NOT_FOUND', 404);
-    const id = `fake-link-${this.now().getTime()}-${++this.seq}`;
-    const transaction = {
+    const outcome: Outcome = status === 'PENDING' || status === 'VOIDED' ? 'APPROVED' : status;
+    const id = this.transactionId(status === 'PENDING' ? 'P' : OUTCOME_LETTER[outcome]);
+    const transaction: FakeTransaction = {
       id,
       status,
       statusMessage: null,
@@ -373,8 +442,8 @@ export class FakeGateway implements PaymentGateway {
       customerEmail,
       createdAt: this.now().toISOString(),
       finalizedAt: this.now().toISOString(),
-      raw: null as unknown,
-      outcome: status,
+      raw: null,
+      outcome,
     };
     transaction.raw = this.rawOf(transaction);
     this.transactions.set(id, transaction);
@@ -418,9 +487,9 @@ export class FakeGateway implements PaymentGateway {
     const timestamp = typeof event.timestamp === 'number' ? event.timestamp : null;
     return {
       event: String(event.event ?? 'unknown'),
-      environment: event.environment ? String(event.environment) : null,
+      environment: typeof event.environment === 'string' ? event.environment : null,
       timestamp,
-      sentAt: event.sent_at ? String(event.sent_at) : null,
+      sentAt: typeof event.sent_at === 'string' ? event.sent_at : null,
       checksumValid,
       dedupeKey: `${transaction?.id ?? 'unknown'}:${transaction?.status ?? ''}:${timestamp ?? ''}`,
       transaction,
@@ -428,7 +497,99 @@ export class FakeGateway implements PaymentGateway {
     };
   }
 
-  private rawOf(transaction: GatewayTransaction): Record<string, unknown> {
+  private transactionId(letter: OutcomeLetter | 'P'): string {
+    return `fake-${letter}-${this.now().getTime()}-${++this.seq}`;
+  }
+
+  /** Fuente conocida en este proceso o reconstruida a partir de su identificador. */
+  private sourceEntry(id: number): SourceEntry {
+    const known = this.sources.get(id);
+    if (known) return known;
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new PaymentGatewayError('Fuente de pago desconocida', 'VALIDATION', 422, {
+        messages: { payment_source_id: ['no existe'] },
+      });
+    }
+    const decoded = decodeFakeSourceId(id);
+    const publicData =
+      decoded.kind === 'NEQUI'
+        ? { type: 'NEQUI', phone_number: '3000000000' }
+        : { type: 'CARD', brand: 'VISA', last_four: '4242' };
+    const entry: SourceEntry = {
+      source: mapSource(
+        this.rawSource(id, decoded.kind, decoded.threeDs ? 'PENDING' : 'AVAILABLE', null, {
+          publicData,
+          threeDsPending: decoded.threeDs,
+        }),
+      ),
+      outcome: decoded.outcome,
+    };
+    this.sources.set(id, entry);
+    return entry;
+  }
+
+  /** Transacción conocida en este proceso o reconstruida a partir de su identificador. */
+  private transactionEntry(id: string): FakeTransaction {
+    const known = this.transactions.get(id);
+    if (known) return known;
+    const status = decodeFakeTransactionId(id);
+    if (!status) throw new PaymentGatewayError('Transacción desconocida', 'NOT_FOUND', 404);
+    const outcome: Outcome = status === 'PENDING' || status === 'VOIDED' ? 'APPROVED' : status;
+    const transaction: FakeTransaction = {
+      id,
+      status,
+      statusMessage: status === 'DECLINED' ? 'Transacción rechazada por el emisor' : null,
+      reference: '',
+      amountMinor: 0n,
+      currency: 'COP',
+      paymentSourceId: null,
+      paymentLinkId: null,
+      paymentMethodType: null,
+      customerEmail: null,
+      createdAt: null,
+      finalizedAt: status === 'PENDING' ? null : this.now().toISOString(),
+      raw: null,
+      outcome,
+    };
+    transaction.raw = this.rawOf(transaction);
+    this.transactions.set(id, transaction);
+    return transaction;
+  }
+
+  private rawSource(
+    id: number,
+    kind: PaymentSourceType,
+    status: 'AVAILABLE' | 'PENDING',
+    customerEmail: string | null,
+    options: { publicData: Record<string, string>; threeDsPending: boolean },
+  ): Record<string, unknown> {
+    return {
+      id,
+      type: kind,
+      status,
+      customer_email: customerEmail,
+      public_data: options.publicData,
+      ...(options.threeDsPending
+        ? {
+            extra: {
+              is_three_ds: true,
+              three_ds_auth: {
+                current_step: 'CHALLENGE',
+                current_step_status: 'PENDING',
+                three_ds_method_data: '&lt;iframe&gt;',
+              },
+            },
+          }
+        : {}),
+    };
+  }
+
+  private snapshot(transaction: FakeTransaction): GatewayTransaction {
+    const { outcome: _outcome, ...rest } = transaction;
+    return { ...rest, raw: this.rawOf(transaction) };
+  }
+
+  private rawOf(transaction: FakeTransaction): Record<string, unknown> {
     return {
       id: transaction.id,
       created_at: transaction.createdAt,
@@ -444,12 +605,5 @@ export class FakeGateway implements PaymentGateway {
       payment_source_id: transaction.paymentSourceId,
       payment_link_id: transaction.paymentLinkId,
     };
-  }
-
-  private snapshot(
-    transaction: GatewayTransaction & { outcome?: TransactionStatus },
-  ): GatewayTransaction {
-    const { outcome: _ignored, ...rest } = transaction;
-    return { ...rest, raw: this.rawOf(transaction) };
   }
 }

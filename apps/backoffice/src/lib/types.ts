@@ -242,6 +242,8 @@ export interface Driver {
   id: string;
   email: string | null;
   phone: string | null;
+  /** Celular verificado por SMS (ADR 0031). */
+  phone_verified_at: string | null;
   display_name: string | null;
   locale: string;
   segment: string;

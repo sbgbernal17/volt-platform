@@ -139,3 +139,78 @@ export const DARK_MAP_STYLE = [
     stylers: [{ color: '#2a2a2b' }],
   },
 ];
+
+/**
+ * Marcadores en la web: con Map ID (`maps.mapId` en GET /v1/config) se usan los marcadores avanzados
+ * (`AdvancedMarkerElement`); sin él, los clásicos. La misma interfaz sirve para los dos.
+ */
+export interface WebMarkerHandle {
+  remove(): void;
+  setPosition(position: google.maps.LatLngLiteral): void;
+  onClick(listener: () => void): void;
+}
+
+export function createWebMarker(
+  maps: typeof google.maps,
+  options: {
+    map: google.maps.Map;
+    position: google.maps.LatLngLiteral;
+    title?: string | undefined;
+    icon: PillIcon;
+    zIndex?: number | undefined;
+    clickable?: boolean | undefined;
+    advanced: boolean;
+  },
+): WebMarkerHandle {
+  const { icon } = options;
+  const Advanced = options.advanced ? maps.marker?.AdvancedMarkerElement : undefined;
+  if (Advanced) {
+    const img = document.createElement('img');
+    img.src = icon.url;
+    img.width = icon.width;
+    img.height = icon.height;
+    img.alt = '';
+    img.draggable = false;
+    img.style.display = 'block';
+    // El marcador avanzado ancla el contenido por su base; la píldora se centra en la coordenada.
+    img.style.transform = 'translateY(50%)';
+    const marker = new Advanced({
+      map: options.map,
+      position: options.position,
+      ...(options.title ? { title: options.title } : {}),
+      content: img,
+      ...(options.zIndex !== undefined ? { zIndex: options.zIndex } : {}),
+      gmpClickable: options.clickable ?? true,
+    });
+    return {
+      remove: () => {
+        marker.map = null;
+      },
+      setPosition: (position) => {
+        marker.position = position;
+      },
+      onClick: (listener) => {
+        marker.addListener('click', listener);
+      },
+    };
+  }
+  const marker = new maps.Marker({
+    map: options.map,
+    position: options.position,
+    ...(options.title ? { title: options.title } : {}),
+    ...(options.zIndex !== undefined ? { zIndex: options.zIndex } : {}),
+    clickable: options.clickable ?? true,
+    icon: {
+      url: icon.url,
+      scaledSize: new maps.Size(icon.width, icon.height),
+      anchor: new maps.Point(icon.width / 2, icon.height / 2),
+    },
+  });
+  return {
+    remove: () => marker.setMap(null),
+    setPosition: (position) => marker.setPosition(position),
+    onClick: (listener) => {
+      marker.addListener('click', listener);
+    },
+  };
+}

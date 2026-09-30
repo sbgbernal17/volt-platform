@@ -1,6 +1,7 @@
 # Secretos en Secret Manager: los generados aquí (contraseña de la base, URL de Redis, token interno
 # del gateway, token estático de administración fuera de prod) y los que llena el dueño o el flujo de
-# despliegue (Wompi, Expo). Las apps los reciben como variables de entorno (Cloud Run) o archivos (GKE).
+# despliegue (Wompi, Expo, proveedor de SMS). Las apps los reciben como variables de entorno (Cloud Run)
+# o archivos (GKE).
 locals {
   generated_secrets = merge(
     {
@@ -17,6 +18,8 @@ locals {
     "wompi-integrity-secret",
     "wompi-events-secret",
     "expo-access-token",
+    "sms-provider-api-key",
+    "email-provider-api-key",
   ]
   # Qué cuenta de servicio puede leer cada secreto.
   secret_readers = {
@@ -30,6 +33,8 @@ locals {
     "wompi-integrity-secret"      = ["api", "worker"]
     "wompi-events-secret"         = ["api", "worker"]
     "expo-access-token"           = ["worker"]
+    "sms-provider-api-key"        = ["api"]
+    "email-provider-api-key"      = ["api"]
   }
   all_secret_ids = concat(keys(local.generated_secrets), local.external_secrets)
   secret_bindings = flatten([

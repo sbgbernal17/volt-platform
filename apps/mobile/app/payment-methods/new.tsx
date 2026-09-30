@@ -111,6 +111,10 @@ export default function NewPaymentMethod() {
         router.push('/verify-email');
         return;
       }
+      if (caught instanceof ApiError && caught.code === 'PHONE_NOT_VERIFIED') {
+        router.push('/verify-phone');
+        return;
+      }
       setError(
         caught instanceof WompiError ? caught.message : errorMessage(caught, t('app.offline')),
       );

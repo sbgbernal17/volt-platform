@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+/** El marcador `unset` (versión inicial de los secretos en Secret Manager) y el vacío equivalen a ausente. */
+const optionalSecret = z.preprocess(
+  (value) => (value === '' || value === 'unset' ? undefined : value),
+  z.string().min(8).optional(),
+);
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   /**
@@ -87,6 +93,35 @@ const schema = z.object({
    * expone en `GET /v1/config`; sin ella la app muestra la lista en el navegador.
    */
   GOOGLE_MAPS_BROWSER_KEY: z.string().min(8).optional(),
+  /** Map ID de Google Maps para la app web (estilos en la nube y marcadores avanzados); público. */
+  GOOGLE_MAPS_MAP_ID: z.string().min(4).max(64).optional(),
+  /**
+   * SMS para verificar el celular del conductor (ADR 0031): `fake` (emulador: el código vuelve en la
+   * respuesta y va al log; solo ambientes de prueba), `twilio`, `brevo` o `none` (sin verificación
+   * disponible; si el parámetro la exige, la app no puede pagar ni cargar). En producción es
+   * obligatorio un proveedor real.
+   */
+  SMS_PROVIDER: z.enum(['none', 'fake', 'twilio', 'brevo']).default('none'),
+  /** Remitente: número E.164 o Messaging Service (MG…) en Twilio; nombre de hasta 11 caracteres o número en Brevo. */
+  SMS_SENDER: z.string().min(1).max(40).optional(),
+  TWILIO_ACCOUNT_SID: z.string().min(8).max(64).optional(),
+  /** Token de autenticación de Twilio o clave de API de Brevo (secreto `sms-provider-api-key`). */
+  SMS_PROVIDER_API_KEY: optionalSecret,
+  /**
+   * Correos de identidad con la marca (ADR 0032): `resend` o `brevo` (clave en `email-provider-api-key`)
+   * envían el cuerpo propio con botón; `fake` (pruebas) los guarda en memoria; `none` deja que
+   * Identity Platform envíe su correo genérico desde el SDK de la app.
+   */
+  EMAIL_PROVIDER: z.enum(['none', 'fake', 'resend', 'brevo']).default('none'),
+  EMAIL_FROM: z.string().min(3).max(120).default('VOLT <noreply@supercargadores.co>'),
+  EMAIL_PROVIDER_API_KEY: optionalSecret,
+  /** URL pública de la app web (host del logotipo en los correos y `continueUrl` de los enlaces). */
+  APP_WEB_URL: z.string().url().optional(),
+  /**
+   * De dónde salen los enlaces de Identity Platform: `metadata` (token de la cuenta de servicio del
+   * contenedor en Cloud Run) o `fake` (local y pruebas). Por defecto, metadata en dev/staging/prod.
+   */
+  IDENTITY_LINKS_SOURCE: z.enum(['metadata', 'fake']).optional(),
 });
 
 export type ApiConfig = z.infer<typeof schema>;
@@ -128,6 +163,41 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       if (!result.data[key])
         throw new Error(`Configuración inválida: falta ${key} para PAYMENTS_PROVIDER=wompi`);
     }
+  }
+  if (isProd && (result.data.SMS_PROVIDER === 'fake' || result.data.SMS_PROVIDER === 'none')) {
+    throw new Error('Configuración inválida: en producción SMS_PROVIDER debe ser twilio o brevo');
+  }
+  if (result.data.SMS_PROVIDER === 'twilio' || result.data.SMS_PROVIDER === 'brevo') {
+    const required =
+      result.data.SMS_PROVIDER === 'twilio'
+        ? (['TWILIO_ACCOUNT_SID', 'SMS_SENDER', 'SMS_PROVIDER_API_KEY'] as const)
+        : (['SMS_SENDER', 'SMS_PROVIDER_API_KEY'] as const);
+    for (const key of required) {
+      if (!result.data[key])
+        throw new Error(
+          `Configuración inválida: falta ${key} para SMS_PROVIDER=${result.data.SMS_PROVIDER}`,
+        );
+    }
+  }
+  if (isProd && result.data.EMAIL_PROVIDER === 'fake') {
+    throw new Error('Configuración inválida: en producción EMAIL_PROVIDER no puede ser fake');
+  }
+  if (
+    (result.data.EMAIL_PROVIDER === 'resend' || result.data.EMAIL_PROVIDER === 'brevo') &&
+    !result.data.EMAIL_PROVIDER_API_KEY
+  ) {
+    throw new Error(
+      `Configuración inválida: falta EMAIL_PROVIDER_API_KEY para EMAIL_PROVIDER=${result.data.EMAIL_PROVIDER}`,
+    );
+  }
+  if (
+    isProd &&
+    result.data.EMAIL_PROVIDER !== 'none' &&
+    result.data.IDENTITY_LINKS_SOURCE === 'fake'
+  ) {
+    throw new Error(
+      'Configuración inválida: en producción IDENTITY_LINKS_SOURCE debe ser metadata',
+    );
   }
   return result.data;
 }

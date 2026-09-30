@@ -42,7 +42,7 @@ export default function Consents() {
         ...(marketing ? (['marketing'] as const) : []),
       ];
       await auth.acceptConsents(keys, locale);
-      router.replace('/(tabs)');
+      router.replace('/');
     } catch (caught) {
       setError(errorMessage(caught, t('app.offline')));
     } finally {

@@ -72,7 +72,16 @@ resource "google_cloud_run_v2_service" "api" {
           PAYMENTS_REDIRECT_URL         = "https://${local.hosts.app}/pagos/retorno"
           API_CORS_ORIGINS              = "https://${local.hosts.admin},https://${local.hosts.app}"
           GOOGLE_MAPS_BROWSER_KEY       = google_apikeys_key.maps_browser.key_string
-        })
+          SMS_PROVIDER                  = var.sms_provider
+          SMS_SENDER                    = var.sms_sender
+          EMAIL_PROVIDER                = var.email_provider
+          EMAIL_FROM                    = var.email_from
+          APP_WEB_URL                   = "https://${local.hosts.app}"
+          IDENTITY_LINKS_SOURCE         = "metadata"
+          },
+          var.twilio_account_sid != "" ? { TWILIO_ACCOUNT_SID = var.twilio_account_sid } : {},
+          var.google_maps_map_id != "" ? { GOOGLE_MAPS_MAP_ID = var.google_maps_map_id } : {},
+        )
         content {
           name  = env.key
           value = env.value
@@ -89,6 +98,8 @@ resource "google_cloud_run_v2_service" "api" {
           },
           var.payments_provider == "wompi" ? local.wompi_secret_env : {},
           local.api_admin_token_enabled ? { API_ADMIN_TOKEN = "api-admin-token" } : {},
+          contains(["twilio", "brevo"], var.sms_provider) ? { SMS_PROVIDER_API_KEY = "sms-provider-api-key" } : {},
+          contains(["resend", "brevo"], var.email_provider) ? { EMAIL_PROVIDER_API_KEY = "email-provider-api-key" } : {},
         )
         content {
           name = env.key
@@ -217,6 +228,10 @@ resource "google_cloud_run_v2_service" "backoffice" {
       env {
         name  = "GOOGLE_MAPS_BROWSER_KEY"
         value = google_apikeys_key.maps_browser.key_string
+      }
+      env {
+        name  = "GOOGLE_MAPS_MAP_ID"
+        value = var.google_maps_map_id
       }
     }
   }
@@ -412,7 +427,7 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
 
 # Clave de navegador de Maps JavaScript API (iteración 9) para el mapa del back-office y de la app
 # web: pública por diseño, restringida a nuestros orígenes y solo a esa API. Se inyecta en el
-# back-office por config.js (GOOGLE_MAPS_BROWSER_KEY) y en la app por GET /v1/config.
+# back-office por config.js (GOOGLE_MAPS_BROWSER_KEY, GOOGLE_MAPS_MAP_ID) y en la app por GET /v1/config.
 resource "google_apikeys_key" "maps_browser" {
   name         = "maps-browser"
   display_name = "Google Maps (navegador, ${var.env})"

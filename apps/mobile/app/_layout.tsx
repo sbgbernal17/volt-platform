@@ -96,10 +96,12 @@ function Root({ fontsReady }: { fontsReady: boolean }) {
 
   // El invitado que crea su cuenta desde un cargador vuelve a ese cargador al terminar.
   const { returnTo, setReturnTo, status, profileError, profile } = auth;
+  const phoneRequired = Boolean(auth.config?.phone.required);
   const canReturn =
     status === 'authenticated' &&
     profileError !== 'EMAIL_NOT_VERIFIED' &&
-    (profile?.pendingConsents.length ?? 0) === 0;
+    (profile?.pendingConsents.length ?? 0) === 0 &&
+    !(phoneRequired && profile && !profile.phoneVerified);
   useEffect(() => {
     if (!canReturn || !returnTo) return;
     setReturnTo(null);
@@ -111,7 +113,15 @@ function Root({ fontsReady }: { fontsReady: boolean }) {
   const signedIn = auth.status === 'authenticated';
   const needsVerify = signedIn && auth.profileError === 'EMAIL_NOT_VERIFIED';
   const needsConsent = signedIn && !needsVerify && (auth.profile?.pendingConsents.length ?? 0) > 0;
-  const inApp = signedIn && !needsVerify && !needsConsent;
+  // Celular verificado por SMS (ADR 0031): después de los consentimientos y antes de entrar.
+  const needsPhone =
+    signedIn &&
+    !needsVerify &&
+    !needsConsent &&
+    phoneRequired &&
+    Boolean(auth.profile) &&
+    !auth.profile?.phoneVerified;
+  const inApp = signedIn && !needsVerify && !needsConsent && !needsPhone;
   // Invitado: mapa, estaciones y escáner sin cuenta; el resto pide registro (handoff, sección 5).
   const browsing = inApp || (!signedIn && auth.guest);
 
@@ -145,6 +155,10 @@ function Root({ fontsReady }: { fontsReady: boolean }) {
               options={{ title: t('consent.title'), headerBackVisible: false }}
             />
           </Stack.Protected>
+          <Stack.Screen
+            name="verify-phone"
+            options={{ title: t('phone.title'), headerBackVisible: !needsPhone }}
+          />
         </Stack.Protected>
         <Stack.Protected guard={browsing}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -170,6 +184,7 @@ function Root({ fontsReady }: { fontsReady: boolean }) {
             <Stack.Screen name="debts" options={{ title: t('debt.title') }} />
             <Stack.Screen name="notifications" options={{ title: t('notifications.title') }} />
             <Stack.Screen name="profile" options={{ title: t('account.profile') }} />
+            <Stack.Screen name="change-password" options={{ title: t('password.title') }} />
           </Stack.Protected>
         </Stack.Protected>
       </Stack>

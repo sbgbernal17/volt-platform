@@ -1,4 +1,6 @@
 export {
+  decodeFakeSourceId,
+  decodeFakeTransactionId,
   FAKE_ACCEPTANCE_TOKENS,
   FAKE_CARDS,
   type FakeCard,

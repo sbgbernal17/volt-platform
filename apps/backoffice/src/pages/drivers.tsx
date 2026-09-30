@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react';
 import { useApi, useAuth } from '../auth/auth.tsx';
 import { ConfirmDialog } from '../components/confirm-dialog.tsx';
 import { DataTable } from '../components/data-table.tsx';
+import { Icon } from '../components/icon.tsx';
 import {
   Alert,
   BillingBadge,
@@ -123,7 +124,25 @@ export function DriversPage() {
               render: (d) => <strong>{d.display_name ?? '—'}</strong>,
             },
             { key: 'email', header: t('drivers.email'), render: (d) => d.email ?? '—' },
-            { key: 'phone', header: t('drivers.phone'), render: (d) => d.phone ?? '—' },
+            {
+              key: 'phone',
+              header: t('drivers.phone'),
+              render: (d) =>
+                d.phone ? (
+                  <span
+                    title={
+                      d.phone_verified_at
+                        ? t('drivers.phoneVerified')
+                        : t('drivers.phoneUnverified')
+                    }
+                  >
+                    {d.phone}{' '}
+                    <Icon name={d.phone_verified_at ? 'verified' : 'error_outline'} size="sm" />
+                  </span>
+                ) : (
+                  '—'
+                ),
+            },
             { key: 'segment', header: t('drivers.segment'), render: (d) => d.segment },
             {
               key: 'invoice',
@@ -239,6 +258,13 @@ export function DriverDetailPage({ id }: { id: string }) {
             <div>
               <div className="muted small">{t('drivers.phone')}</div>
               {d.phone ?? '—'}
+              {d.phone ? (
+                <div className="muted small">
+                  {d.phone_verified_at
+                    ? `${t('drivers.phoneVerified')} · ${dateTime(d.phone_verified_at)}`
+                    : t('drivers.phoneUnverified')}
+                </div>
+              ) : null}
             </div>
             <div>
               <div className="muted small">{t('drivers.document')}</div>

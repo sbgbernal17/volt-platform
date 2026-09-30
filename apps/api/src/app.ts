@@ -1,3 +1,4 @@
+import type { EmailSender } from '@volt/csms';
 import {
   BillingAuthorizer,
   BillingService,
@@ -5,6 +6,7 @@ import {
   CommandService,
   CommissioningService,
   CsmsError,
+  PhoneVerificationService,
   SessionService,
   VOLT_TENANT_ID,
 } from '@volt/csms';
@@ -25,6 +27,14 @@ import { StaffAuthenticator } from './admin/staff-auth.ts';
 import { type AuthConfig, authConfigRoute } from './admin/staff-routes.ts';
 import type { ApiConfig } from './config.ts';
 import { registerCors } from './cors.ts';
+import { buildEmailSender } from './notifications/email.ts';
+import {
+  FakeIdentityLinks,
+  type IdentityLinkGenerator,
+  IdentityToolkitLinks,
+  MetadataTokenSource,
+} from './notifications/identity-links.ts';
+import { buildSmsSender } from './notifications/sms.ts';
 import { CompositeDriverVerifier, DevDriverVerifier } from './public/auth.ts';
 import { DriverIdentityVerifier } from './public/identity.ts';
 import type { AppConfigStatic } from './public/me-routes.ts';
@@ -34,6 +44,9 @@ export interface AppDependencies {
   config: ApiConfig;
   /** Pasarela inyectada (pruebas: el emulador compartido con los trabajos del worker). */
   gateway?: PaymentGateway | undefined;
+  /** Remitente de correo y generador de enlaces inyectados (pruebas). */
+  emailSender?: EmailSender | undefined;
+  identityLinks?: IdentityLinkGenerator | undefined;
 }
 
 export const API_VERSION = '0.6.0';
@@ -61,7 +74,12 @@ export function buildPaymentGateway(
   return undefined;
 }
 
-export function buildApp({ config, gateway: injectedGateway }: AppDependencies): FastifyInstance {
+export function buildApp({
+  config,
+  gateway: injectedGateway,
+  emailSender: injectedEmail,
+  identityLinks: injectedLinks,
+}: AppDependencies): FastifyInstance {
   const app = Fastify({
     logger: pinoOptions({
       service: 'api',
@@ -207,6 +225,46 @@ export function buildApp({ config, gateway: injectedGateway }: AppDependencies):
       : undefined;
     if (!verifier)
       app.log.warn('sin identidad de conductor: las rutas privadas de /v1 responderán 401');
+    // Celular verificado por SMS (ADR 0031).
+    const sms = buildSmsSender(config, app.log);
+    const phoneVerification = sms ? new PhoneVerificationService(sql, { sender: sms }) : undefined;
+    if (sms) {
+      app.log.info({ provider: sms.provider }, 'verificación del celular por SMS configurada');
+      if (sms.provider === 'fake')
+        app.log.warn(
+          'SMS_PROVIDER=fake: el código de verificación vuelve en la respuesta (solo pruebas)',
+        );
+    } else {
+      app.log.warn('SMS_PROVIDER=none: la verificación del celular no está disponible');
+    }
+    // Correos de identidad con la marca (ADR 0032): proveedor propio y enlaces generados por la API.
+    const appWebUrl =
+      config.APP_WEB_URL ??
+      config.API_CORS_ORIGINS.find((origin) => /\/\/app[-.]/.test(origin)) ??
+      'http://localhost:8081';
+    const emailSender = injectedEmail ?? buildEmailSender(config, app.log);
+    const linksSource =
+      config.IDENTITY_LINKS_SOURCE ??
+      (config.VOLT_ENV && config.VOLT_ENV !== 'local' ? 'metadata' : 'fake');
+    const identityLinks: IdentityLinkGenerator | undefined =
+      injectedLinks ??
+      (emailSender && driverIdentity
+        ? linksSource === 'metadata'
+          ? new IdentityToolkitLinks({
+              tokens: new MetadataTokenSource(),
+              tenantId: config.IDENTITY_PLATFORM_DRIVER_TENANT_ID,
+            })
+          : new FakeIdentityLinks(appWebUrl)
+        : undefined);
+    const customEmail = Boolean(emailSender && identityLinks);
+    if (customEmail) {
+      app.log.info(
+        { provider: emailSender?.provider, links: identityLinks?.source, appWebUrl },
+        'correos de identidad con la marca (envío propio)',
+      );
+    } else {
+      app.log.info('correos de identidad enviados por Identity Platform (EMAIL_PROVIDER=none)');
+    }
     const appConfig: AppConfigStatic = {
       auth: {
         provider: driverIdentity ? 'identity-platform' : devVerifier ? 'dev' : 'none',
@@ -231,7 +289,12 @@ export function buildApp({ config, gateway: injectedGateway }: AppDependencies):
         privacyUrl: config.APP_PRIVACY_URL,
         supportEmail: config.APP_SUPPORT_EMAIL ?? null,
       },
-      maps: { browserKey: config.GOOGLE_MAPS_BROWSER_KEY ?? null },
+      maps: {
+        browserKey: config.GOOGLE_MAPS_BROWSER_KEY ?? null,
+        mapId: config.GOOGLE_MAPS_MAP_ID ?? null,
+      },
+      phone: { provider: sms ? (sms.provider === 'fake' ? 'fake' : 'live') : 'none' },
+      email: { custom: customEmail },
     };
     void app.register(publicRoutes, {
       prefix: '/v1',
@@ -245,6 +308,10 @@ export function buildApp({ config, gateway: injectedGateway }: AppDependencies):
       billing,
       authorizer,
       paymentsRedirectUrl: config.PAYMENTS_REDIRECT_URL,
+      phoneVerification,
+      ...(emailSender && identityLinks
+        ? { authEmail: { email: emailSender, links: identityLinks, appWebUrl } }
+        : {}),
     });
     const authConfig: AuthConfig = {
       provider: staffVerifier ? 'identity-platform' : config.API_ADMIN_TOKEN ? 'token' : 'none',

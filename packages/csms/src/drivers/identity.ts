@@ -19,6 +19,7 @@ import type { DriverRow } from '../sessions/drivers.ts';
 import { appendEvent } from '../sessions/outbox.ts';
 import { toJson } from '../types.ts';
 import { type DriverDocumentType, normalizeDriverDocument } from './document.ts';
+import { normalizePhone } from './phone.ts';
 
 export const DRIVER_CONSENT_KEYS = ['terms', 'data_processing', 'marketing'] as const;
 export type DriverConsentKey = (typeof DRIVER_CONSENT_KEYS)[number];
@@ -103,12 +104,25 @@ export async function resolveDriverIdentity(
       return { driver: rows[0] as DriverRow, created: false, bound: true };
     }
   }
+  // El primer inicio de sesión suele llegar en varias peticiones a la vez (perfil, cobros, avisos):
+  // solo una crea la cuenta; las demás la encuentran recién creada en lugar de chocar con la
+  // restricción única de `idp_subject`.
   const rows = await db<DriverRow[]>`
     INSERT INTO auth.driver (id, tenant_id, idp_subject, idp_provider, email, email_verified, display_name, locale, last_login_at)
     VALUES (${randomUUID()}, ${tenantId}, ${claims.subject}, ${claims.provider ?? null}, ${email ?? null},
             ${claims.emailVerified && Boolean(email)}, ${claims.displayName ?? null}, 'es', ${now})
+    ON CONFLICT (idp_subject) DO NOTHING
     RETURNING *`;
-  return { driver: rows[0] as DriverRow, created: true, bound: false };
+  const inserted = rows[0];
+  if (inserted) return { driver: inserted, created: true, bound: false };
+  const raced = (
+    await db<DriverRow[]>`
+      SELECT * FROM auth.driver WHERE idp_subject = ${claims.subject} AND anonymized_at IS NULL`
+  )[0];
+  if (!raced)
+    throw new ConflictError('No se pudo crear la cuenta; intente de nuevo', 'IDENTITY_RACE');
+  if (raced.tenant_id !== tenantId) throw new ForbiddenError('La cuenta pertenece a otro operador');
+  return { driver: await touchLogin(db, raced, claims, now), created: false, bound: false };
 }
 
 /** Actualiza correo verificado, correo y último acceso (este último a lo sumo una vez cada 5 minutos). */
@@ -204,10 +218,19 @@ export async function updateDriverProfile(
   )[0];
   if (!current) throw new NotFoundError('driver', driverId);
   const document = resolveDriverDocument(current, patch);
+  // El celular se normaliza a E.164; si cambia, deja de estar verificado (ADR 0031).
+  const phone =
+    patch.phone === undefined
+      ? undefined
+      : patch.phone === null || patch.phone.trim() === ''
+        ? null
+        : normalizePhone(patch.phone);
+  const phoneChanged = phone !== undefined && phone !== current.phone;
   const rows = await db<DriverRow[]>`
     UPDATE auth.driver SET
       display_name = CASE WHEN ${patch.displayName !== undefined} THEN ${patch.displayName ?? null} ELSE display_name END,
-      phone = CASE WHEN ${patch.phone !== undefined} THEN ${patch.phone ?? null} ELSE phone END,
+      phone = CASE WHEN ${phone !== undefined} THEN ${phone ?? null} ELSE phone END,
+      phone_verified_at = CASE WHEN ${phoneChanged} THEN NULL ELSE phone_verified_at END,
       locale = COALESCE(${patch.locale ?? null}, locale),
       document_type = ${document.documentType},
       document_number = ${document.documentNumber},
@@ -331,11 +354,12 @@ export async function anonymizeDriver(
       UPDATE auth.driver_device SET status = 'REMOVED', device_name = NULL, updated_at = now()
       WHERE driver_id = ${driverId} AND status <> 'REMOVED'`;
     await tx`DELETE FROM auth.driver_notification WHERE driver_id = ${driverId}`;
+    await tx`DELETE FROM auth.driver_phone_code WHERE driver_id = ${driverId}`;
     await tx`
       UPDATE auth.id_token SET status = 'INVALID' WHERE driver_id = ${driverId} AND status = 'ACTIVE'`;
     const updated = await tx<DriverRow[]>`
       UPDATE auth.driver SET
-        email = NULL, phone = NULL, display_name = NULL, idp_subject = NULL, idp_provider = NULL,
+        email = NULL, phone = NULL, phone_verified_at = NULL, display_name = NULL, idp_subject = NULL, idp_provider = NULL,
         email_verified = false, consents = '{}'::jsonb, default_payment_method_id = NULL,
         document_type = NULL, document_number = NULL, wants_invoice = false,
         status = 'DELETED', anonymized_at = ${now}, updated_at = now()

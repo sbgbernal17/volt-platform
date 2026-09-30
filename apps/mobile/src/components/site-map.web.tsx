@@ -8,7 +8,13 @@ import { View } from 'react-native';
 import { useAuth } from '../auth/auth.tsx';
 import { useI18n } from '../i18n/index.tsx';
 import { formatKw } from '../lib/format.ts';
-import { DARK_MAP_STYLE, loadGoogleMaps, pillIcon } from '../lib/google-maps.ts';
+import {
+  createWebMarker,
+  DARK_MAP_STYLE,
+  loadGoogleMaps,
+  pillIcon,
+  type WebMarkerHandle,
+} from '../lib/google-maps.ts';
 import { availability } from '../lib/stations.ts';
 import { colors } from '../theme/tokens.ts';
 import { Notice } from '../theme/ui.tsx';
@@ -33,10 +39,13 @@ export function SiteMap({
   const auth = useAuth();
   const { locale } = useI18n();
   const apiKey = auth.config?.maps.browserKey ?? '';
+  // Con Map ID (9c): estilo administrado en la nube, modo oscuro y marcadores avanzados.
+  const mapId = auth.config?.maps.mapId ?? '';
+  const advanced = Boolean(mapId);
   const container = useRef<View>(null);
   const map = useRef<google.maps.Map | null>(null);
-  const markers = useRef<google.maps.Marker[]>([]);
-  const userMarker = useRef<google.maps.Marker | null>(null);
+  const markers = useRef<WebMarkerHandle[]>([]);
+  const userMarker = useRef<WebMarkerHandle | null>(null);
   const [lib, setLib] = useState<typeof google.maps | null>(null);
   const [failed, setFailed] = useState(false);
   const selectRef = useRef(onSelect);
@@ -61,8 +70,10 @@ export function SiteMap({
           disableDefaultUI: true,
           clickableIcons: false,
           gestureHandling: 'greedy',
-          styles: DARK_MAP_STYLE as google.maps.MapTypeStyle[],
           backgroundColor: colors.map.bg,
+          ...(mapId
+            ? { mapId, colorScheme: 'DARK' as google.maps.ColorScheme }
+            : { styles: DARK_MAP_STYLE as google.maps.MapTypeStyle[] }),
         });
         map.current.addListener('click', () => deselectRef.current());
         setLib(maps);
@@ -74,11 +85,11 @@ export function SiteMap({
       cancelled = true;
       map.current = null;
     };
-  }, [apiKey, locale]);
+  }, [apiKey, locale, mapId]);
 
   useEffect(() => {
     if (!lib || !map.current) return;
-    for (const marker of markers.current) marker.setMap(null);
+    for (const marker of markers.current) marker.remove();
     markers.current = [];
     const bounds = new lib.LatLngBounds();
     for (const location of locations) {
@@ -98,18 +109,15 @@ export function SiteMap({
         selected && summary.maxPowerKw ? formatKw(summary.maxPowerKw) : undefined,
       );
       const position = { lat: location.latitude, lng: location.longitude };
-      const marker = new lib.Marker({
+      const marker = createWebMarker(lib, {
         map: map.current,
         position,
         title: `${location.name} · ${summary.available}/${summary.total}`,
         zIndex: selected ? 10 : 1,
-        icon: {
-          url: icon.url,
-          scaledSize: new lib.Size(icon.width, icon.height),
-          anchor: new lib.Point(icon.width / 2, icon.height / 2),
-        },
+        icon,
+        advanced,
       });
-      marker.addListener('click', () => selectRef.current(location));
+      marker.onClick(() => selectRef.current(location));
       markers.current.push(marker);
       bounds.extend(position);
     }
@@ -122,26 +130,27 @@ export function SiteMap({
         map.current.fitBounds(bounds, 60);
       }
     }
-  }, [locations, lib, selectedId]);
+  }, [locations, lib, selectedId, advanced]);
 
   useEffect(() => {
     if (!lib || !map.current) return;
     if (!user) {
-      userMarker.current?.setMap(null);
+      userMarker.current?.remove();
       userMarker.current = null;
       return;
     }
     const position = { lat: user.latitude, lng: user.longitude };
     if (userMarker.current) userMarker.current.setPosition(position);
     else
-      userMarker.current = new lib.Marker({
+      userMarker.current = createWebMarker(lib, {
         map: map.current,
         position,
         clickable: false,
         zIndex: 0,
-        icon: { url: USER_DOT, scaledSize: new lib.Size(56, 56), anchor: new lib.Point(28, 28) },
+        icon: { url: USER_DOT, width: 56, height: 56 },
+        advanced,
       });
-  }, [user, lib]);
+  }, [user, lib, advanced]);
 
   useEffect(() => {
     if (!lib || !map.current || !focus) return;

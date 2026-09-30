@@ -2,11 +2,13 @@ import {
   type BillingAuthorizer,
   type BillingService,
   CsmsError,
+  type EmailSender,
   getEvseByCode,
   getSessionView,
   listLocations,
   listSessionViews,
   NoTariffError,
+  type PhoneVerificationService,
   PricingService,
   quoteEvse,
   type SessionService,
@@ -15,7 +17,9 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
+import type { IdentityLinkGenerator } from '../notifications/identity-links.ts';
 import { type DriverVerifier, driverAuthHook, driverOf } from './auth.ts';
+import { createAuthEmailRoutes } from './auth-routes.ts';
 import { billingPrivateRoutes, billingWebhookRoutes } from './billing-routes.ts';
 import { type AppConfigStatic, appConfigRoute, meRoutes } from './me-routes.ts';
 import { assertDriverReady } from './readiness.ts';
@@ -33,6 +37,10 @@ export interface PublicRoutesOptions {
   billing?: BillingService | undefined;
   authorizer?: BillingAuthorizer | undefined;
   paymentsRedirectUrl?: string | undefined;
+  /** Verificación del celular por SMS (ADR 0031); sin ella las rutas responden 503. */
+  phoneVerification?: PhoneVerificationService | undefined;
+  /** Correos de identidad con la marca (ADR 0032); sin proveedor no se registran las rutas. */
+  authEmail?: { email: EmailSender; links: IdentityLinkGenerator; appWebUrl: string } | undefined;
 }
 
 const params = z.object({ id: z.string().uuid() });
@@ -127,6 +135,16 @@ export async function publicRoutes(
   });
 
   await billingWebhookRoutes(app, { billing: options.billing });
+  const authEmail = options.authEmail
+    ? createAuthEmailRoutes({
+        sql,
+        email: options.authEmail.email,
+        links: options.authEmail.links,
+        appWebUrl: options.authEmail.appWebUrl,
+        logger: app.log,
+      })
+    : undefined;
+  if (authEmail) await authEmail.publicRoutes(app);
   await appConfigRoute(app, {
     sql,
     tenantId,
@@ -136,7 +154,8 @@ export async function publicRoutes(
 
   await app.register(async (privateApp) => {
     privateApp.addHook('preHandler', driverAuthHook(options.verifier));
-    await meRoutes(privateApp, { sql, tenantId });
+    await meRoutes(privateApp, { sql, tenantId, phoneVerification: options.phoneVerification });
+    if (authEmail) await authEmail.privateRoutes(privateApp);
     await billingPrivateRoutes(privateApp, {
       sql,
       billing: options.billing,

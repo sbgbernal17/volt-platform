@@ -1,7 +1,8 @@
 /**
  * Condiciones para registrar un medio de pago o iniciar una carga desde la app (ADR 0022): correo
- * verificado (parámetro `auth.driver_require_verified_email`) y consentimientos obligatorios en su
- * versión vigente (`auth.driver_consent_version`). Las identidades de desarrollo no pasan por aquí.
+ * verificado (parámetro `auth.driver_require_verified_email`), consentimientos obligatorios en su
+ * versión vigente (`auth.driver_consent_version`) y celular verificado por SMS (ADR 0031, parámetro
+ * `auth.driver_require_verified_phone`). Las identidades de desarrollo no pasan por aquí.
  */
 import {
   currentConsentVersion,
@@ -30,5 +31,13 @@ export async function assertDriverReady(sql: ISql, identity: DriverIdentity): Pr
       'CONSENT_REQUIRED',
       { pending, version },
     );
+  }
+  // Celular verificado por SMS (ADR 0031): se pide después de los consentimientos (el número es un
+  // dato personal) y antes de pagar o cargar.
+  const requirePhone = await resolveParam<boolean>(sql, 'auth.driver_require_verified_phone', {
+    tenantId: identity.tenantId,
+  });
+  if (requirePhone && !driver.phone_verified_at) {
+    throw new ForbiddenError('Verifique su celular para continuar', 'PHONE_NOT_VERIFIED');
   }
 }

@@ -213,10 +213,14 @@ export default function Account() {
     <Screen dense padded={false}>
       {header}
       <View style={{ paddingHorizontal: spacing.list, gap: spacing.md }}>
-        {profile && (!profile.emailVerified || profile.billingStatus !== 'OK') ? (
+        {profile &&
+        (!profile.emailVerified || !profile.phoneVerified || profile.billingStatus !== 'OK') ? (
           <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
             {!profile.emailVerified ? (
               <Badge tone="warning" icon="email" text={t('account.emailUnverified')} />
+            ) : null}
+            {!profile.phoneVerified ? (
+              <Badge tone="warning" icon="phone-android" text={t('account.phoneUnverified')} />
             ) : null}
             {profile.billingStatus !== 'OK' ? (
               <Badge tone="danger" icon="error" text={t('account.blocked')} />
@@ -228,6 +232,13 @@ export default function Account() {
             title={t('verify.title')}
             variant="secondary"
             onPress={() => router.push('/verify-email')}
+          />
+        ) : null}
+        {profile && !profile.phoneVerified && auth.config?.phone.provider !== 'none' ? (
+          <Button
+            title={t('phone.title')}
+            variant="secondary"
+            onPress={() => router.push('/verify-phone')}
           />
         ) : null}
         {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
@@ -264,6 +275,11 @@ export default function Account() {
             icon="person"
             title={t('account.profile')}
             onPress={() => router.push('/profile')}
+          />
+          <ListRow
+            icon="lock"
+            title={t('password.title')}
+            onPress={() => router.push('/change-password')}
           />
           <ListRow
             icon="language"

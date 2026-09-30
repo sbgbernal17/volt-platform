@@ -13,7 +13,8 @@
       "!**/coverage",
       "!**/.terraform",
       "!packages/ocpp-schemas/schemas",
-      "!pnpm-lock.yaml"
+      "!pnpm-lock.yaml",
+      "!packages/csms/src/notifications/email-templates.generated.ts"
     ]
   },
   "formatter": {

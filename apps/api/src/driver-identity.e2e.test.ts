@@ -8,6 +8,7 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { FakeEmailSender } from '@volt/csms';
 import { createSql } from '@volt/db';
 import { createTemporaryDatabase, type TemporaryDatabase } from '@volt/db/testing';
 import type { FastifyInstance, InjectOptions } from 'fastify';
@@ -15,6 +16,7 @@ import type { Sql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
+import { FakeIdentityLinks } from './notifications/identity-links.ts';
 
 const baseUrl = process.env.DATABASE_URL;
 const ADMIN_TOKEN = 'token-admin-de-pruebas-0123456789';
@@ -67,6 +69,8 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
   let sql: Sql;
   let jwks: Server;
   let app: FastifyInstance;
+  const emailSender = new FakeEmailSender();
+  const identityLinks = new FakeIdentityLinks('https://app-test.supercargadores.co');
 
   const call = (
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
@@ -109,8 +113,12 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
         IDENTITY_PLATFORM_API_KEY: 'AIzaClavePublicaDePrueba',
         IDENTITY_PLATFORM_DRIVER_TENANT_ID: DRIVER_TENANT,
         PAYMENTS_PROVIDER: 'fake',
+        SMS_PROVIDER: 'fake',
         APP_SUPPORT_EMAIL: 'soporte@supercargadores.co',
+        APP_WEB_URL: 'https://app-test.supercargadores.co',
       }),
+      emailSender,
+      identityLinks,
     });
     await app.ready();
   }, 60_000);
@@ -141,7 +149,9 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
         privacyUrl: 'https://supercargadores.co/politica-de-datos',
         supportEmail: 'soporte@supercargadores.co',
       },
-      maps: { browserKey: null },
+      maps: { browserKey: null, mapId: null },
+      phone: { provider: 'fake', required: true },
+      email: { custom: true },
       consentVersion: '2026-09',
     });
     expect(JSON.stringify(json(response))).not.toMatch(/prv_|secret/i);
@@ -220,21 +230,53 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
     expect(
       (await call('POST', '/v1/me/consents', verified, { revoke: ['terms'] })).statusCode,
     ).toBe(400);
+    // Falta el celular verificado por SMS (ADR 0031).
+    const phoneMissing = await call('POST', '/v1/sessions', verified, { evseId: 'X-1' });
+    expect(phoneMissing.statusCode).toBe(403);
+    expect(errorCode(phoneMissing)).toBe('PHONE_NOT_VERIFIED');
+    expect(
+      errorCode(await call('POST', '/v1/me/phone/send-code', verified, { phone: '6041234567' })),
+    ).toBe('PHONE_INVALID');
+    const sent = await call('POST', '/v1/me/phone/send-code', verified, {
+      phone: '300 123 4567',
+      locale: 'es',
+    });
+    expect(sent.statusCode).toBe(202);
+    const code = json<{ phone: string; devCode: string | null; resendAfterS: number }>(sent);
+    expect(code).toMatchObject({ phone: '+573001234567', resendAfterS: 60 });
+    expect(code.devCode).toMatch(/^\d{6}$/);
+    expect(
+      errorCode(await call('POST', '/v1/me/phone/send-code', verified, { phone: '3001234567' })),
+    ).toBe('SMS_TOO_SOON');
+    const wrong = await call('POST', '/v1/me/phone/verify', verified, { code: '000000' });
+    expect(wrong.statusCode).toBe(400);
+    expect(json(wrong)).toMatchObject({
+      error: { code: 'CODE_INVALID', details: { attemptsLeft: 4 } },
+    });
+    const verifiedPhone = await call('POST', '/v1/me/phone/verify', verified, {
+      code: code.devCode,
+    });
+    expect(verifiedPhone.statusCode).toBe(200);
+    expect(json(verifiedPhone)).toMatchObject({ phone: '+573001234567', phoneVerified: true });
     // Ya está lista: la carga pasa la comprobación y llega hasta el gateway (no configurado aquí).
     const ready = await call('POST', '/v1/sessions', verified, { evseId: 'X-1' });
     expect(ready.statusCode).toBe(503);
     expect(errorCode(ready)).toBe('GATEWAY_UNAVAILABLE');
-    // Perfil.
+    // Perfil: cambiar el celular a mano lo deja sin verificar (se normaliza a E.164).
     const patched = await call('PATCH', '/v1/me', verified, {
       displayName: 'Ana Pérez',
-      phone: '+57 300 123 4567',
+      phone: '+57 301 123 4567',
       locale: 'en',
     });
     expect(json(patched)).toMatchObject({
       displayName: 'Ana Pérez',
-      phone: '+57 300 123 4567',
+      phone: '+573011234567',
+      phoneVerified: false,
       locale: 'en',
     });
+    expect(errorCode(await call('POST', '/v1/sessions', verified, { evseId: 'X-1' }))).toBe(
+      'PHONE_NOT_VERIFIED',
+    );
     expect((await call('PATCH', '/v1/me', verified, { locale: 'fr' })).statusCode).toBe(400);
     // Documento de identidad y factura electrónica (ADR 0027).
     expect(errorCode(await call('PATCH', '/v1/me', verified, { wantsInvoice: true }))).toBe(
@@ -275,6 +317,77 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
         }),
       ),
     ).toMatchObject({ documentType: null, documentNumber: null, wantsInvoice: false });
+  });
+
+  it('varias peticiones simultáneas del primer inicio de sesión crean una sola cuenta', async () => {
+    // La app pide perfil, cobros y avisos a la vez al entrar: antes la segunda petición chocaba con la
+    // restricción única de idp_subject y respondía 500.
+    const token = tokenFor('carrera@example.com', 'sub-carrera', { name: 'Carrera' });
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () => call('GET', '/v1/me', token)),
+    );
+    expect(responses.map((r) => r.statusCode)).toEqual([200, 200, 200, 200]);
+    const ids = new Set(responses.map((r) => json<{ id: string }>(r).id));
+    expect(ids.size).toBe(1);
+    const rows = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM auth.driver WHERE idp_subject = 'sub-carrera'`;
+    expect(rows[0]?.n).toBe(1);
+  });
+
+  it('envía los correos de identidad con la marca y sin revelar si la cuenta existe', async () => {
+    // Verificación: enlace generado por la API y cuerpo HTML propio con botón (ADR 0032).
+    const token = tokenFor('correo@example.com', 'sub-correo', { verified: false });
+    expect((await call('GET', '/v1/me', token)).statusCode).toBe(200);
+    const sent = await call('POST', '/v1/auth/send-verification', token, {});
+    expect(sent.statusCode).toBe(202);
+    expect(json(sent)).toEqual({ sent: true });
+    const last = emailSender.sent.at(-1);
+    expect(last?.to).toBe('correo@example.com');
+    expect(last?.subject).toBe('Confirme su correo en VOLT');
+    expect(last?.html).toContain('>Confirmar correo<');
+    expect(last?.html).toContain(
+      'https://app-test.supercargadores.co/auth/action?mode=verifyEmail&amp;oobCode=fake-',
+    );
+    expect(last?.html).toContain('https://app-test.supercargadores.co/brand/volt-logo-blanco.png');
+    expect(identityLinks.generated.at(-1)).toMatchObject({
+      kind: 'VERIFY_EMAIL',
+      email: 'correo@example.com',
+    });
+    // Reenvío inmediato: límite.
+    const again = await call('POST', '/v1/auth/send-verification', token, {});
+    expect(again.statusCode).toBe(429);
+    expect(errorCode(again)).toBe('EMAIL_TOO_SOON');
+    // Ya verificado: no se envía nada.
+    const verifiedToken = tokenFor('correo@example.com', 'sub-correo');
+    expect((await call('GET', '/v1/me', verifiedToken)).statusCode).toBe(200);
+    expect(json(await call('POST', '/v1/auth/send-verification', verifiedToken, {}))).toEqual({
+      sent: false,
+      alreadyVerified: true,
+    });
+    // Contraseña nueva: ruta pública, misma respuesta exista o no la cuenta.
+    const before = emailSender.sent.length;
+    const reset = await call('POST', '/v1/auth/password-reset', null, {
+      email: 'Correo@example.com',
+    });
+    expect(reset.statusCode).toBe(202);
+    expect(emailSender.sent.at(-1)).toMatchObject({
+      to: 'correo@example.com',
+      subject: 'Cree una contraseña nueva en VOLT',
+    });
+    expect(emailSender.sent.at(-1)?.html).toContain('mode=resetPassword');
+    expect(
+      (await call('POST', '/v1/auth/password-reset', null, { email: 'nadie@example.com' }))
+        .statusCode,
+    ).toBe(202);
+    expect(emailSender.sent.length).toBe(before + 2);
+    expect(
+      errorCode(
+        await call('POST', '/v1/auth/password-reset', null, { email: 'nadie@example.com' }),
+      ),
+    ).toBe('EMAIL_TOO_SOON');
+    expect(
+      (await call('POST', '/v1/auth/password-reset', null, { email: 'no-es-correo' })).statusCode,
+    ).toBe(400);
   });
 
   it('vincula una cuenta creada por el personal solo con el correo verificado', async () => {

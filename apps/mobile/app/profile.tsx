@@ -1,15 +1,19 @@
 /**
- * Perfil: nombre, teléfono y, desde el ADR 0027, documento de identidad (opcional) y factura
- * electrónica. Si la persona marca que requiere factura, el documento pasa a ser obligatorio.
+ * Perfil: nombre, celular verificado por SMS (ADR 0031) y, desde el ADR 0027, documento de identidad
+ * (opcional) y factura electrónica. Si la persona marca que requiere factura, el documento pasa a ser
+ * obligatorio.
  */
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { ApiError, errorMessage } from '../src/api/client.ts';
 import { DOCUMENT_TYPES, type DocumentType, type Profile } from '../src/api/types.ts';
 import { useAuth } from '../src/auth/auth.tsx';
 import { useI18n } from '../src/i18n/index.tsx';
+import { formatPhone } from '../src/lib/phone.ts';
 import { spacing } from '../src/theme/tokens.ts';
 import {
+  Badge,
   Body,
   Button,
   Chip,
@@ -25,8 +29,10 @@ import {
 export default function ProfileScreen() {
   const { t, td } = useI18n();
   const auth = useAuth();
+  const router = useRouter();
   const [name, setName] = useState(auth.profile?.displayName ?? '');
-  const [phone, setPhone] = useState(auth.profile?.phone ?? '');
+  const phone = auth.profile?.phone ?? null;
+  const phoneVerified = auth.profile?.phoneVerified ?? false;
   const [documentType, setDocumentType] = useState<DocumentType | null>(
     auth.profile?.documentType ?? null,
   );
@@ -54,7 +60,6 @@ export default function ProfileScreen() {
     try {
       await auth.api.patch<Profile>('/me', {
         displayName: name.trim() || null,
-        phone: phone.trim() || null,
         documentType: documentType ?? null,
         documentNumber: documentType ? documentNumber.trim() : null,
         wantsInvoice,
@@ -80,13 +85,27 @@ export default function ProfileScreen() {
         editable={false}
       />
       <Field label={t('auth.name')} value={name} onChangeText={setName} />
-      <Field
-        label={t('account.phone')}
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
-        placeholder="+57 300 123 4567"
-      />
+      {/* El celular se cambia con un código por SMS (ADR 0031), nunca a mano. */}
+      <View style={{ gap: spacing.sm }}>
+        <Field label={t('account.phone')} value={formatPhone(phone)} editable={false} />
+        <Row style={{ justifyContent: 'space-between' }}>
+          {phone ? (
+            <Badge
+              tone={phoneVerified ? 'success' : 'warning'}
+              icon={phoneVerified ? 'check-circle' : 'phone-android'}
+              text={phoneVerified ? t('phone.verified') : t('phone.unverified')}
+            />
+          ) : (
+            <Muted>{t('phone.none')}</Muted>
+          )}
+          <Button
+            title={phone && phoneVerified ? t('phone.changeNumber') : t('phone.title')}
+            variant="secondary"
+            compact
+            onPress={() => router.push('/verify-phone')}
+          />
+        </Row>
+      </View>
 
       <View style={{ gap: spacing.sm }}>
         <Subtitle>{t('profile.documentSection')}</Subtitle>

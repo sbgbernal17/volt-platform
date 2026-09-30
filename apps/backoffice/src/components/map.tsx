@@ -8,9 +8,11 @@ import { useI18n } from '../i18n/index.tsx';
 import { runtimeConfig } from '../lib/config.ts';
 import {
   circleIcon,
+  createMarker,
   GoogleMapsError,
   loadGoogleMaps,
   type MapsLibrary,
+  type MarkerHandle,
 } from '../lib/google-maps.ts';
 
 export interface MapSite {
@@ -52,6 +54,9 @@ function useGoogleMap(options: {
   const [lib, setLib] = useState<MapsLibrary | null>(null);
   const initialCenter = useRef(options.center ?? DEFAULT_CENTER);
   const initialZoom = useRef(options.zoom ?? DEFAULT_ZOOM);
+  // Con Map ID (9c) el estilo lo administra la nube y los marcadores son avanzados.
+  const mapId = runtimeConfig().googleMapsMapId;
+  const advanced = Boolean(mapId);
 
   useEffect(() => {
     const key = runtimeConfig().googleMapsApiKey;
@@ -74,7 +79,9 @@ function useGoogleMap(options: {
           fullscreenControl: true,
           clickableIcons: false,
           gestureHandling: 'greedy',
-          styles: [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }],
+          ...(mapId
+            ? { mapId }
+            : { styles: [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }] }),
         });
         setLib(maps);
         setStatus('ready');
@@ -87,9 +94,9 @@ function useGoogleMap(options: {
       cancelled = true;
       map.current = null;
     };
-  }, [locale]);
+  }, [locale, mapId]);
 
-  return { container, map, lib, status };
+  return { container, map, lib, status, advanced };
 }
 
 function MapNotice({ status }: { status: Exclude<MapStatus, 'ready'> }) {
@@ -116,8 +123,8 @@ export function SitesMap({
   onSelect?: ((id: string) => void) | undefined;
 }) {
   const { t } = useI18n();
-  const { container, map, lib, status } = useGoogleMap({});
-  const markers = useRef<google.maps.Marker[]>([]);
+  const { container, map, lib, status, advanced } = useGoogleMap({});
+  const markers = useRef<MarkerHandle[]>([]);
   const info = useRef<google.maps.InfoWindow | null>(null);
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
@@ -125,7 +132,7 @@ export function SitesMap({
 
   useEffect(() => {
     if (!lib || !map.current) return;
-    for (const marker of markers.current) marker.setMap(null);
+    for (const marker of markers.current) marker.remove();
     markers.current = [];
     info.current ??= new lib.InfoWindow();
     const bounds = new lib.LatLngBounds();
@@ -133,17 +140,18 @@ export function SitesMap({
     for (const site of sites) {
       if (!Number.isFinite(site.latitude) || !Number.isFinite(site.longitude)) continue;
       const position = { lat: site.latitude, lng: site.longitude };
-      const marker = new lib.Marker({
+      const marker = createMarker(lib, {
         map: map.current,
         position,
         title: site.name,
         icon: {
           url: circleIcon(colorFor(site), `${site.online}/${site.total}`, 34),
-          scaledSize: new lib.Size(34, 34),
-          anchor: new lib.Point(17, 17),
+          width: 34,
+          height: 34,
         },
+        advanced,
       });
-      marker.addListener('click', () => {
+      marker.onClick(() => {
         const content = document.createElement('div');
         content.className = 'map-card';
         const title = document.createElement('strong');
@@ -160,7 +168,7 @@ export function SitesMap({
           content.append(button);
         }
         info.current?.setContent(content);
-        info.current?.open({ map: map.current, anchor: marker });
+        info.current?.open({ map: map.current, anchor: marker.anchor });
       });
       markers.current.push(marker);
       bounds.extend(position);
@@ -172,7 +180,7 @@ export function SitesMap({
     } else if (count > 1) {
       map.current.fitBounds(bounds, 48);
     }
-  }, [sites, lib, map, openLabel]);
+  }, [sites, lib, map, openLabel, advanced]);
 
   return (
     <div className="map">
@@ -193,25 +201,22 @@ export function SiteMarkerMap({
   name: string;
 }) {
   const valid = Number.isFinite(latitude) && Number.isFinite(longitude);
-  const { container, map, lib, status } = useGoogleMap({
+  const { container, map, lib, status, advanced } = useGoogleMap({
     center: valid ? { lat: latitude, lng: longitude } : undefined,
     zoom: valid ? 15 : undefined,
   });
   useEffect(() => {
     if (!lib || !map.current || !valid) return;
-    const marker = new lib.Marker({
+    const marker = createMarker(lib, {
       map: map.current,
       position: { lat: latitude, lng: longitude },
       title: name,
-      icon: {
-        url: circleIcon('#dc2626', '', 26),
-        scaledSize: new lib.Size(26, 26),
-        anchor: new lib.Point(13, 13),
-      },
+      icon: { url: circleIcon('#dc2626', '', 26), width: 26, height: 26 },
+      advanced,
     });
     map.current.setCenter({ lat: latitude, lng: longitude });
-    return () => marker.setMap(null);
-  }, [lib, map, latitude, longitude, name, valid]);
+    return () => marker.remove();
+  }, [lib, map, latitude, longitude, name, valid, advanced]);
   return (
     <div className="map compact">
       <div ref={container} className="map-canvas" />
@@ -232,44 +237,42 @@ export function CoordinatePicker({
 }) {
   const { t } = useI18n();
   const valid = latitude !== null && longitude !== null;
-  const { container, map, lib, status } = useGoogleMap({
+  const { container, map, lib, status, advanced } = useGoogleMap({
     center: valid ? { lat: latitude, lng: longitude } : undefined,
     zoom: valid ? 15 : undefined,
   });
-  const marker = useRef<google.maps.Marker | null>(null);
+  const marker = useRef<MarkerHandle | null>(null);
   const changeRef = useRef(onChange);
   changeRef.current = onChange;
 
   useEffect(() => {
     if (!lib || !map.current) return;
-    marker.current ??= new lib.Marker({
-      map: map.current,
-      draggable: true,
-      icon: {
-        url: circleIcon('#dc2626', '', 26),
-        scaledSize: new lib.Size(26, 26),
-        anchor: new lib.Point(13, 13),
-      },
-    });
-    const emit = (position: google.maps.LatLng | null | undefined) => {
+    const emit = (position: google.maps.LatLngLiteral | null) => {
       if (!position) return;
       changeRef.current({
-        latitude: Number(position.lat().toFixed(6)),
-        longitude: Number(position.lng().toFixed(6)),
+        latitude: Number(position.lat.toFixed(6)),
+        longitude: Number(position.lng.toFixed(6)),
       });
     };
+    if (!marker.current) {
+      marker.current = createMarker(lib, {
+        map: map.current,
+        draggable: true,
+        icon: { url: circleIcon('#dc2626', '', 26), width: 26, height: 26 },
+        advanced,
+      });
+      marker.current.onDragEnd(emit);
+    }
     const clickListener = map.current.addListener('click', (event: google.maps.MapMouseEvent) => {
-      marker.current?.setPosition(event.latLng);
-      emit(event.latLng);
+      const position = event.latLng?.toJSON() ?? null;
+      if (!position) return;
+      marker.current?.setPosition(position);
+      emit(position);
     });
-    const dragListener = marker.current.addListener('dragend', () =>
-      emit(marker.current?.getPosition()),
-    );
     return () => {
       clickListener.remove();
-      dragListener.remove();
     };
-  }, [lib, map]);
+  }, [lib, map, advanced]);
 
   useEffect(() => {
     if (!marker.current || !map.current) return;
