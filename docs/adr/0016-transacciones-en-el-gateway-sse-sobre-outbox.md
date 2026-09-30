@@ -26,3 +26,11 @@ ARQ §2.4 y DAT §3.2 describen el flujo de sesiones: la `api` crea la sesión y
 - El rol de base de datos del gateway necesita escritura en `sessions`, `auth.id_token` (uso) y `ops.event_outbox`; el rol limitado de DAT §7 se define en la iteración 8 con Terraform.
 - Las sesiones `UNSOLICITED` (arranques locales o durante cortes) existen desde ya; su cobro depende de la política `billing.unsolicited_tx_policy` que llega con las iteraciones 4 y 5.
 - `MeterValues` no se acumula en Pub/Sub uno a uno: cada `MeterValues` genera un evento `session.metered` en el outbox (una fila por mensaje, no por medición), suficiente para la app; la serie completa vive en `sessions.meter_value`.
+
+## Adición (2026-09-30)
+
+Tres reglas que faltaban y que salieron al investigar las alertas del worker en dev y staging:
+
+7. **Reinicio del cargador con sesión en curso.** `BootNotification` ya marcaba las sesiones vivas como interrumpidas. Si después el cargador reporta el conector `Available` sin haber enviado `StopTransaction`, perdió la transacción (no persistió el estado): se cierra como `CLOSED_ESTIMATED` con la última lectura, la sesión termina con `end_kind = ESTIMATED` y se abre la alarma `TRANSACTION_ESTIMATED`. Un cargador que conserva la transacción reporta `Charging` o `SuspendedEV` tras el arranque y no entra en la regla. Antes la sesión quedaba en `CHARGING` indefinidamente, con el EVSE ocupado y el barrido de límites enviando `RemoteStopTransaction` en cada ciclo.
+8. **La atribución de la parada se reserva antes de enviar `RemoteStopTransaction`** (`stop_requested_by`) y se libera si el comando no sale o el cargador lo rechaza. Un cargador rápido responde `Finishing` y `StopTransaction` antes de que se registre la solicitud, y la parada quedaba atribuida a `charge_point` en lugar de al tope de exposición, al conductor o al operador.
+9. **El barrido de límites no insiste sobre un rechazo.** Una sesión con un `RemoteStopTransaction` en los últimos 5 minutos (`ops.command`, por `correlation_id`) se salta hasta el siguiente intento.

@@ -7,6 +7,7 @@ import { listAlarms } from '../alarms.ts';
 import { CommandService, type GatewaySender } from '../commands.ts';
 import { createChargePoint, createSite, getChargePoint } from '../inventory.ts';
 import { ensureBaseTariff } from '../pricing/bootstrap.ts';
+import { stopSessionsOverLimits } from '../pricing/limits.ts';
 import { VOLT_TENANT_ID } from '../types.ts';
 import { createDriver } from './drivers.ts';
 import { getEvseByCode, listLocations } from './locations.ts';
@@ -348,6 +349,114 @@ describe.skipIf(!baseUrl)('sesiones y transacciones', () => {
     const events = (await listAggregateEvents(sql, 'session', session.id)).map((e) => e.type);
     expect(events.filter((e) => e === 'session.stop_requested')).toHaveLength(1);
     expect(events.at(-1)).toBe('session.ended');
+  });
+
+  it('barrido de límites: tras un rechazo del cargador no insiste hasta pasados 5 minutos', async () => {
+    const session = await sessions.requestStart({
+      tenantId: VOLT_TENANT_ID,
+      evseCode: 'CP-SES-1-1',
+      channel: 'OPERATOR',
+      requestedBy: 'staff:test',
+    });
+    const start = await transactions.startTransaction(ctx(), {
+      connectorId: 1,
+      idTag: session.id_tag,
+      meterStart: 0,
+      timestamp: new Date().toISOString(),
+    });
+    // Sesión de más de 4 horas (session.max_duration_min = 240 por defecto).
+    await sql`UPDATE sessions.charging_session SET started_at = now() - interval '5 hours' WHERE id = ${session.id}`;
+    gateway.remoteStopStatus = 'Rejected';
+    const before = gateway.calls.length;
+    try {
+      expect(await stopSessionsOverLimits(sql, sessions)).toEqual({
+        exposure: 0,
+        duration: 0,
+        failed: 1,
+      });
+      expect(gateway.calls.length).toBe(before + 1);
+      expect((await sessions.get(session.id)).stop_requested_by).toBeNull();
+      // Barrido inmediato: el rechazo reciente no se reintenta (ni comando ni fallo).
+      expect(await stopSessionsOverLimits(sql, sessions)).toEqual({
+        exposure: 0,
+        duration: 0,
+        failed: 0,
+      });
+      expect(gateway.calls.length).toBe(before + 1);
+    } finally {
+      gateway.remoteStopStatus = 'Accepted';
+    }
+    // Pasados 5 minutos se vuelve a intentar; con el cargador de acuerdo la sesión queda STOPPING.
+    const later = new Date(Date.now() + 6 * 60_000);
+    expect(await stopSessionsOverLimits(sql, sessions, { now: later })).toEqual({
+      exposure: 0,
+      duration: 1,
+      failed: 0,
+    });
+    expect(await sessions.get(session.id)).toMatchObject({
+      state: 'STOPPING',
+      stop_requested_by: 'system:max-duration',
+    });
+    await transactions.stopTransaction(ctx(), {
+      transactionId: start.transactionId,
+      meterStop: 100,
+      timestamp: new Date().toISOString(),
+      reason: 'Remote',
+    });
+    expect((await sessions.get(session.id)).state).toBe('ENDED');
+  });
+
+  it('reinicio del cargador con sesión en curso: al reportar el conector Available la transacción se cierra como estimada', async () => {
+    const session = await sessions.requestStart({
+      tenantId: VOLT_TENANT_ID,
+      evseCode: 'CP-SES-1-1',
+      channel: 'OPERATOR',
+      requestedBy: 'staff:test',
+    });
+    const start = await transactions.startTransaction(ctx(), {
+      connectorId: 1,
+      idTag: session.id_tag,
+      meterStart: 1000,
+      timestamp: new Date().toISOString(),
+    });
+    await transactions.recordMeterValues(ctx(), {
+      connectorId: 1,
+      transactionId: start.transactionId,
+      meterValue: [{ timestamp: new Date().toISOString(), sampledValue: [{ value: '1500' }] }],
+    });
+    // Sin reinicio, un Available inesperado no toca la sesión.
+    expect(await transactions.onConnectorStatus(ctx(), 1, 'Available', 'Charging')).toBeNull();
+    expect((await sessions.get(session.id)).state).toBe('CHARGING');
+
+    // BootNotification: la sesión queda interrumpida; el cargador reporta el conector libre y nunca
+    // enviará StopTransaction (perdió la transacción al reiniciarse).
+    expect(await transactions.onBoot(ctx())).toBe(1);
+    expect((await sessions.get(session.id)).interrupted_at).toBeInstanceOf(Date);
+    expect(await transactions.onConnectorStatus(ctx(), 1, 'Available', null)).toMatchObject({
+      sessionId: session.id,
+      from: 'CHARGING',
+      to: 'ENDED',
+    });
+    const ended = await sessions.get(session.id);
+    expect(ended).toMatchObject({ state: 'ENDED', end_kind: 'ESTIMATED', stop_reason: 'Other' });
+    expect(Number(ended.energy_wh)).toBe(500);
+    const closed = await sql<
+      { state: string; meter_stop_wh: bigint }[]
+    >`SELECT state, meter_stop_wh FROM sessions.ocpp_transaction WHERE ocpp_transaction_id = ${start.transactionId}`;
+    expect(closed[0]).toMatchObject({ state: 'CLOSED_ESTIMATED' });
+    expect(Number(closed[0]?.meter_stop_wh)).toBe(1500);
+    const alarms = await listAlarms(sql, { tenantId: VOLT_TENANT_ID, chargePointId });
+    expect(alarms.some((a) => a.kind === 'TRANSACTION_ESTIMATED')).toBe(true);
+    // Repetir el Available no hace nada más, y el EVSE vuelve a estar libre para otra sesión.
+    expect(await transactions.onConnectorStatus(ctx(), 1, 'Available', 'Available')).toBeNull();
+    const next = await sessions.requestStart({
+      tenantId: VOLT_TENANT_ID,
+      evseCode: 'CP-SES-1-1',
+      channel: 'OPERATOR',
+      requestedBy: 'staff:test',
+    });
+    expect(next.state).toBe('STARTING');
+    expect((await sessions.cancel(next.id, 'staff:test')).state).toBe('CANCELLED');
   });
 
   it('CU-05: transacción offline no solicitada, StopTransaction huérfano y de otro cargador', async () => {

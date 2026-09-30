@@ -546,6 +546,32 @@ export class TransactionService {
       ) {
         target = 'EXPIRED';
         event = 'session.expired';
+      } else if (
+        status === 'Available' &&
+        session.interrupted_at !== null &&
+        (session.state === 'CHARGING' ||
+          session.state === 'SUSPENDED_EV' ||
+          session.state === 'SUSPENDED_EVSE' ||
+          session.state === 'STOPPING')
+      ) {
+        // El cargador se reinició con la sesión en curso (BootNotification la marcó interrumpida) y
+        // ahora reporta el conector libre sin haber enviado StopTransaction: perdió la transacción.
+        // Se cierra como estimada con la última lectura (DAT §5.8); un cargador que la conserva
+        // reporta Charging o SuspendedEV tras el arranque y no entra aquí.
+        const active = await tx<OcppTransactionRow[]>`
+          SELECT * FROM sessions.ocpp_transaction
+          WHERE charge_point_id = ${cp.id} AND ocpp_connector_id = ${connectorId} AND state = 'ACTIVE'
+          FOR UPDATE`;
+        if (active.length === 0) return null;
+        for (const transaction of active) {
+          await this.closeEstimated(
+            tx,
+            transaction,
+            ctx.receivedAt,
+            'conector Available tras reinicio del cargador',
+          );
+        }
+        return { sessionId: session.id, from: session.state, to: 'ENDED' };
       }
       if (!target || !event) return null;
       assertSessionTransition(session.state, target);
