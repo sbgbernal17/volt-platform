@@ -418,6 +418,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 22.20.4
+      fastify:
+        specifier: 'catalog:'
+        version: 5.12.5
       tsx:
         specifier: 'catalog:'
         version: 4.23.13

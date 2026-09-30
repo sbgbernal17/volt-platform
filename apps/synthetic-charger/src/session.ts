@@ -43,9 +43,11 @@ export async function runTestSession(options: TestSessionOptions): Promise<TestS
       };
     }
     await new Promise((resolve) => setTimeout(resolve, options.durationMs));
+    // Fastify rechaza (400) un POST con content-type JSON y sin cuerpo: se envía un objeto vacío.
     const stop = await fetchImpl(`${base}/admin/v1/sessions/${created.id}/stop`, {
       method: 'POST',
       headers,
+      body: '{}',
     });
     if (!stop.ok && stop.status !== 409) {
       const detail = await stop.text().catch(() => '');
