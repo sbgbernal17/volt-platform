@@ -4,12 +4,26 @@
  */
 import {
   activateScheduledVersions,
+  type CsmsLogger,
   type PricingService,
   type SessionService,
   stopSessionsOverLimits,
 } from '@volt/csms';
 import type { ISql } from 'postgres';
 import type { SchedulerLogger } from '../scheduler.ts';
+
+/**
+ * Adapta el logger del planificador (pino) al de `@volt/csms` conservando `this`: los métodos de
+ * pino no pueden pasarse sueltos (`{ info: logger.info }` falla con `this[writeSym] is not a
+ * function` en cada llamada, y así estuvo cayendo el trabajo `session-limits` en la nube).
+ */
+export function csmsLogger(logger: SchedulerLogger): CsmsLogger {
+  return {
+    info: (obj, msg) => logger.info(obj, msg),
+    warn: (obj, msg) => (logger.warn ?? logger.info).call(logger, obj, msg),
+    error: (obj, msg) => logger.error(obj, msg),
+  };
+}
 
 /** Sesiones ENDED listas para liquidar → SETTLED con sus líneas de costo (TAR §3.5). */
 export async function settleSessions(
@@ -35,8 +49,6 @@ export async function enforceSessionLimits(
   sessions: SessionService,
   logger: SchedulerLogger,
 ): Promise<number> {
-  const sweep = await stopSessionsOverLimits(sql, sessions, {
-    logger: { info: logger.info, warn: logger.info, error: logger.error },
-  });
+  const sweep = await stopSessionsOverLimits(sql, sessions, { logger: csmsLogger(logger) });
   return sweep.exposure + sweep.duration;
 }

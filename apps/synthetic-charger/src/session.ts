@@ -48,10 +48,11 @@ export async function runTestSession(options: TestSessionOptions): Promise<TestS
       headers,
     });
     if (!stop.ok && stop.status !== 409) {
+      const detail = await stop.text().catch(() => '');
       return {
         ok: false,
         sessionId: created.id,
-        error: `parada ${stop.status}`,
+        error: `parada ${stop.status}: ${detail.slice(0, 200)}`,
         durationMs: Date.now() - started,
       };
     }
