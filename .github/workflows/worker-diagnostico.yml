@@ -1,0 +1,112 @@
+# Diagnóstico del worker (solo lectura): trabajos fallidos, errores y avisos, alarmas y sesiones de
+# prueba del cargador sintético en las últimas horas de un ambiente. Sirve para leer desde GitHub lo
+# que las alertas por correo de Cloud Monitoring anuncian ("Trabajo del worker fallido", alarmas).
+name: Diagnóstico del worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente'
+        type: choice
+        default: dev
+        options: [dev, staging, prod]
+      hours:
+        description: 'Horas hacia atrás'
+        type: string
+        default: '24'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ENVIRONMENT: ${{ inputs.environment }}
+  HOURS: ${{ inputs.hours }}
+  REGION: us-central1
+
+jobs:
+  diagnose:
+    name: Worker (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Variables del ambiente
+        id: vars
+        run: echo "suffix=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', steps.vars.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Trabajos fallidos, errores y alarmas
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+        run: |
+          set +e
+          fresh="${HOURS}h"
+          echo "::group::Servicio worker (revisiones y estado)"
+          gcloud run services describe worker --region "$REGION" --project "$PROJECT_ID" \
+            --format 'value(status.latestReadyRevisionName,status.conditions[0].status,status.conditions[0].message)'
+          gcloud run revisions list --service worker --region "$REGION" --project "$PROJECT_ID" --limit 5 \
+            --format 'table(metadata.name,metadata.creationTimestamp,status.conditions[0].status)'
+          echo "::endgroup::"
+
+          echo "::group::Trabajos fallidos (últimas ${HOURS} h)"
+          gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker\" AND jsonPayload.message=\"trabajo fallido\"" \
+            --project "$PROJECT_ID" --freshness="$fresh" --limit 200 --format json > /tmp/failed.json
+          python3 - <<'PY'
+          import json, collections
+          entries = json.load(open('/tmp/failed.json'))
+          by_job = collections.defaultdict(list)
+          for e in entries:
+              p = e.get('jsonPayload', {})
+              err = p.get('err') or {}
+              msg = err.get('message') if isinstance(err, dict) else str(err)
+              by_job[p.get('job', '?')].append((e.get('timestamp', ''), msg or p.get('message'), (err.get('stack') or '') if isinstance(err, dict) else ''))
+          summary = []
+          for job, items in sorted(by_job.items(), key=lambda kv: -len(kv[1])):
+              items.sort()
+              first, last = items[0][0], items[-1][0]
+              print(f"== {job}: {len(items)} fallos entre {first} y {last}")
+              print("   último error:", (items[-1][1] or '')[:400])
+              stack = items[-1][2]
+              if stack:
+                  print("   pila:", ' | '.join(stack.splitlines()[:4])[:600])
+              summary.append(f"{job}: {len(items)} (último {last[11:19]} UTC: {(items[-1][1] or '')[:160]})")
+          print("::notice title=Trabajos fallidos del worker (%s, %s h)::%s" % (__import__('os').environ['ENVIRONMENT'], __import__('os').environ['HOURS'], '; '.join(summary) or 'ninguno'))
+          PY
+          echo "::endgroup::"
+
+          echo "::group::Errores y avisos del worker (últimas ${HOURS} h, 40 más recientes)"
+          gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker\" AND severity>=WARNING" \
+            --project "$PROJECT_ID" --freshness="$fresh" --limit 40 \
+            --format 'value(timestamp,severity,jsonPayload.job,jsonPayload.message,jsonPayload.err.message,textPayload)'
+          echo "::endgroup::"
+
+          echo "::group::Errores de la API y del cargador sintético (últimas ${HOURS} h, 30 más recientes)"
+          gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=(\"api\" OR \"synthetic-charger\") AND severity>=ERROR" \
+            --project "$PROJECT_ID" --freshness="$fresh" --limit 30 \
+            --format 'value(timestamp,resource.labels.service_name,jsonPayload.message,jsonPayload.err.message,textPayload)'
+          echo "::endgroup::"
+
+          echo "::group::Alarmas abiertas y resueltas (últimas ${HOURS} h)"
+          gcloud logging read "jsonPayload.event=\"alarm.raised\" OR jsonPayload.event=\"alarm.resolved\"" \
+            --project "$PROJECT_ID" --freshness="$fresh" --limit 40 \
+            --format 'value(timestamp,jsonPayload.event,jsonPayload.kind,jsonPayload.severity,jsonPayload.chargeBoxId,jsonPayload.message)'
+          echo "::endgroup::"
+
+          echo "::group::Sesiones de prueba del cargador sintético (últimas ${HOURS} h)"
+          gcloud logging read "jsonPayload.event=\"synthetic.session\"" \
+            --project "$PROJECT_ID" --freshness="$fresh" --limit 30 \
+            --format 'value(timestamp,jsonPayload.result,jsonPayload.state,jsonPayload.error,jsonPayload.durationMs)'
+          echo "::endgroup::"
+          alarms=$(gcloud logging read "jsonPayload.event=\"alarm.raised\"" --project "$PROJECT_ID" --freshness="$fresh" --limit 20 --format 'value(timestamp,jsonPayload.kind,jsonPayload.chargeBoxId)' 2>/dev/null | tr '\t' ':' | tr '\n' ' ')
+          echo "::notice title=Alarmas abiertas (${ENVIRONMENT}, ${HOURS} h)::${alarms:-ninguna}"
+          sessions=$(gcloud logging read "jsonPayload.event=\"synthetic.session\"" --project "$PROJECT_ID" --freshness="$fresh" --limit 10 --format 'value(timestamp,jsonPayload.result,jsonPayload.error)' 2>/dev/null | tr '\t' ':' | tr '\n' ' ')
+          echo "::notice title=Sesiones de prueba sintéticas (${ENVIRONMENT}, ${HOURS} h)::${sessions:-ninguna}"
