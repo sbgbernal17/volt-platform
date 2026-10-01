@@ -71,6 +71,24 @@ const SOURCE_STATUSES: readonly PaymentSourceStatus[] = [
 
 type Json = Record<string, unknown>;
 
+/** Estado HTTP y un fragmento del cuerpo (sin etiquetas HTML) para diagnosticar respuestas de intermediarios. */
+function describeDetails(error: PaymentGatewayError): string {
+  const details = (error.details ?? {}) as { snippet?: unknown };
+  const snippet =
+    typeof details.snippet === 'string'
+      ? details.snippet
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 160)
+      : '';
+  const parts = [
+    error.status ? `HTTP ${error.status}` : '',
+    snippet ? `cuerpo: ${snippet}` : '',
+  ].filter(Boolean);
+  return parts.length ? ` (${parts.join('; ')})` : '';
+}
+
 export class WompiGateway implements PaymentGateway {
   readonly provider = 'WOMPI';
   readonly environment: 'sandbox' | 'production';
@@ -165,7 +183,7 @@ export class WompiGateway implements PaymentGateway {
         merchant: null,
         error:
           error instanceof PaymentGatewayError
-            ? `${error.code}: ${error.message}`
+            ? `${error.code}: ${error.message}${describeDetails(error)}`
             : (error as Error).message,
       };
     }
@@ -363,7 +381,12 @@ export class WompiGateway implements PaymentGateway {
     path: string,
     options: { auth: 'none' | 'public' | 'private'; body?: unknown },
   ): Promise<T> {
-    const headers: Record<string, string> = { accept: 'application/json' };
+    // Identificación explícita del cliente: algunos intermediarios (WAF, CDN) rechazan peticiones sin
+    // User-Agent o con el genérico de Node y devuelven una página HTML en lugar de JSON.
+    const headers: Record<string, string> = {
+      accept: 'application/json',
+      'user-agent': 'VOLT-CSMS/1.0 (+https://supercargadores.co)',
+    };
     if (options.auth === 'private') headers.authorization = `Bearer ${this.privateKey}`;
     if (options.auth === 'public') headers.authorization = `Bearer ${this.publicKey}`;
     if (options.body !== undefined) headers['content-type'] = 'application/json';
