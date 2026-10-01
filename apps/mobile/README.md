@@ -36,6 +36,8 @@ Desde GitHub también: Actions → *Compilación de la app (EAS)* → Run workfl
 
 Si una compilación falla, Actions → *Diagnóstico de compilación (EAS)* → Run workflow con el id del build (o vacío para el último de Android) imprime el estado, el mensaje de error y las líneas relevantes de sus registros (fases elegibles; sin secretos) en el resumen del trabajo, sin entrar a expo.dev.
 
+Probadores de TestFlight: el flujo *Probadores de TestFlight* de Actions (`.github/workflows/testflight-probadores.yml`) añade correos a un grupo de probadores externos de la app con la API de App Store Connect; necesita los secretos `ASC_KEY_ID`, `ASC_ISSUER_ID` y `ASC_PRIVATE_KEY_P8`. La compilación se asigna al grupo en App Store Connect (TestFlight → grupo → Compilaciones).
+
 El proyecto de EAS ya está enlazado (`extra.eas.projectId` en `app.json`, id `6c086f3f-…`) y `eas.json` trae tres perfiles: `development` (cliente de desarrollo, con avisos push), `preview` (APK e IPA internos para Internal testing y TestFlight, contra staging) y `production` (AAB y IPA para las tiendas). Desde `apps/mobile`, con sesión en Expo (`npx eas-cli login`):
 
 ```bash

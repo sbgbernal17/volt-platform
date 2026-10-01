@@ -1,0 +1,53 @@
+# Probadores de TestFlight: añade correos a un grupo de probadores externos de la app en App Store
+# Connect con la API oficial (script .github/scripts/testflight-testers.mjs). Necesita la clave de API
+# de App Store Connect como secretos de GitHub: ASC_KEY_ID, ASC_ISSUER_ID y ASC_PRIVATE_KEY_P8 (el
+# contenido del archivo .p8; rol App Manager). Crea el grupo si no existe. No toca compilaciones:
+# asignar la compilación al grupo (y la revisión beta de Apple) se hace en App Store Connect →
+# TestFlight → grupo → Compilaciones. Nunca imprime la clave.
+name: Probadores de TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      correos:
+        description: 'Correos de los probadores, separados por comas'
+        type: string
+        required: true
+      grupo:
+        description: 'Nombre del grupo de probadores externos (se crea si no existe)'
+        type: string
+        default: 'Probadores VOLT'
+
+permissions:
+  contents: read
+
+jobs:
+  testers:
+    name: Añadir probadores (${{ inputs.grupo }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Comprobar la clave de API de App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+        run: |
+          for n in ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY_P8; do
+            if [ -z "${!n}" ]; then
+              echo "::error::Falta el secreto $n (App Store Connect → Usuarios y acceso → Integraciones → Claves de API, rol App Manager; el .p8 se descarga una sola vez)."
+              exit 1
+            fi
+          done
+      - name: Añadir los correos al grupo
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+          CORREOS: ${{ inputs.correos }}
+          GRUPO: ${{ inputs.grupo }}
+        run: node .github/scripts/testflight-testers.mjs
