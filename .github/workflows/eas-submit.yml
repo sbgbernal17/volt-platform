@@ -67,13 +67,19 @@ jobs:
           if [ -z "$id" ]; then echo "::error::EAS no devolvió el id del envío (ver el registro)."; exit 1; fi
           link=$(grep -oE 'https://expo.dev/[^ ]*submissions/[0-9a-f-]{36}' submit.log | head -n1)
           echo "Envío $id creado: $link" | tee -a "$GITHUB_STEP_SUMMARY"
+          # Estado del envío por la API de EAS: se listan los últimos envíos de la plataforma del proyecto y
+          # se busca el recién creado (la misma consulta que usa el flujo de diagnóstico).
+          project=$(jq -r '.expo.extra.eas.projectId' app.json)
+          platform_enum=$(echo "$PLATFORM" | tr '[:lower:]' '[:upper:]')
+          query='query($appId: String!, $platform: AppPlatform!) { app { byId(appId: $appId) { submissions(offset: 0, limit: 10, filter: { platform: $platform }) { id status error { errorCode message } completedAt logFiles } } } }'
           status=""
           for i in $(seq 1 110); do
-            jq -cn --arg id "$id" '{query: "query($id: ID!) { submission { byId(submissionId: $id) { id status error { errorCode message } completedAt logFiles } } }", variables: {id: $id}}' > query.json
-            curl -sS --max-time 30 -H "Authorization: Bearer $EXPO_TOKEN" -H 'content-type: application/json' https://api.expo.dev/graphql -d @query.json > sub.json || true
-            if [ "$i" = "1" ] && jq -e '.errors' sub.json >/dev/null 2>&1; then
-              echo "::warning::No se pudo consultar el estado del envío en EAS: $(jq -c '.errors' sub.json | head -c 400). Síguelo en $link"; exit 0
+            jq -cn --arg q "$query" --arg a "$project" --arg p "$platform_enum" '{query: $q, variables: {appId: $a, platform: $p}}' > query.json
+            curl -sS --max-time 30 -H "Authorization: Bearer $EXPO_TOKEN" -H 'content-type: application/json' https://api.expo.dev/graphql -d @query.json > list.json || true
+            if [ "$i" = "1" ] && jq -e '.errors' list.json >/dev/null 2>&1; then
+              echo "::warning::No se pudo consultar el estado del envío en EAS: $(jq -c '.errors' list.json | head -c 400). Síguelo en $link"; exit 0
             fi
+            jq --arg id "$id" '{data: {submission: {byId: (.data.app.byId.submissions[]? | select(.id == $id))}}}' list.json > sub.json 2>/dev/null || echo '{}' > sub.json
             status=$(jq -r '.data.submission.byId.status // empty' sub.json)
             case "$status" in FINISHED|ERRORED|CANCELED) break ;; esac
             [ $((i % 10)) = 0 ] && echo "$(date -u +%H:%M:%S) estado: ${status:-?}"
