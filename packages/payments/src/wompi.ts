@@ -73,7 +73,10 @@ type Json = Record<string, unknown>;
 
 /** Estado HTTP y un fragmento del cuerpo (sin etiquetas HTML) para diagnosticar respuestas de intermediarios. */
 function describeDetails(error: PaymentGatewayError): string {
-  const details = (error.details ?? {}) as { snippet?: unknown };
+  const details = (error.details ?? {}) as {
+    snippet?: unknown;
+    headers?: Record<string, string> | undefined;
+  };
   const snippet =
     typeof details.snippet === 'string'
       ? details.snippet
@@ -82,9 +85,15 @@ function describeDetails(error: PaymentGatewayError): string {
           .trim()
           .slice(0, 160)
       : '';
+  const headers = details.headers
+    ? Object.entries(details.headers)
+        .map(([name, value]) => `${name}=${value}`)
+        .join(' ')
+    : '';
   const parts = [
     error.status ? `HTTP ${error.status}` : '',
     snippet ? `cuerpo: ${snippet}` : '',
+    headers ? `cabeceras: ${headers}` : '',
   ].filter(Boolean);
   return parts.length ? ` (${parts.join('; ')})` : '';
 }
@@ -426,6 +435,20 @@ export class WompiGateway implements PaymentGateway {
           {
             path,
             snippet: text.slice(0, 200),
+            // Cabeceras que identifican al intermediario (CDN, WAF) que respondió en lugar de Wompi.
+            headers: Object.fromEntries(
+              [
+                'server',
+                'via',
+                'cf-ray',
+                'x-cache',
+                'x-amz-cf-id',
+                'x-amzn-requestid',
+                'content-type',
+              ]
+                .map((name) => [name, response.headers.get(name)])
+                .filter(([, value]) => value),
+            ),
           },
         );
       }

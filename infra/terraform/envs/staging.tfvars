@@ -18,6 +18,7 @@ google_maps_map_id            = "daa44820e1adebb18baf61f0" # volt-web-staging (9
 email_provider                = "brevo"                    # clave en email-provider-api-key cargada por el dueño el 01-10-2026 (9d, ADR 0032)
 staff_bootstrap_email         = "santiago.bernal@supercargadores.co"
 cloud_armor_enabled           = true
+static_egress_ip              = true # IP fija de salida (Cloud NAT) desde el 01-10-2026: Wompi rechazaba las IP variables de Cloud Run
 alert_emails                  = ["santiago.bernal@supercargadores.co"]
 public_dns_ready              = true # DNS y certificados activos el 29-09-2026: uptime checks y alertas encendidos
 gateway_replicas              = 2

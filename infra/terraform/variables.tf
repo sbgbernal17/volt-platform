@@ -150,6 +150,18 @@ variable "sms_provider" {
   default     = "fake"
 }
 
+variable "static_egress_ip" {
+  description = "Salida a internet de Cloud Run por Cloud NAT con una IP reservada (fija por ambiente): necesaria cuando un proveedor (Wompi, Brevo, DIAN) filtra por IP. Cuesta unos 35 USD al mes por ambiente."
+  type        = bool
+  default     = false
+}
+
+variable "sms_api_key_secret" {
+  description = "Secreto con la clave del proveedor de SMS. Con Brevo es la misma clave del correo: email-provider-api-key."
+  type        = string
+  default     = "sms-provider-api-key"
+}
+
 variable "sms_sender" {
   description = "Remitente de los SMS: número E.164 o Messaging Service (MG…) en Twilio; nombre de hasta 11 caracteres o número en Brevo."
   type        = string

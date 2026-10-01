@@ -80,3 +80,8 @@ output "gke" {
 output "project_number" {
   value = local.project_number
 }
+
+output "egress_ip" {
+  description = "IP fija de salida de Cloud Run (Cloud NAT) cuando static_egress_ip está activo."
+  value       = var.static_egress_ip ? google_compute_address.egress[0].address : null
+}

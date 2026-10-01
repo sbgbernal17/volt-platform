@@ -79,3 +79,46 @@ resource "google_compute_firewall" "health_checks_to_gateway" {
   source_ranges = ["130.211.0.0/22", "35.191.0.0/16"]
   direction     = "INGRESS"
 }
+
+# Salida a internet con IP fija (opcional, `static_egress_ip`): Cloud Run envía todo su tráfico por la
+# VPC y Cloud NAT lo saca por una dirección reservada, estable por ambiente. Sin esto, Cloud Run sale
+# con direcciones de Google que cambian y algunos proveedores (Wompi, Brevo) las rechazan o filtran.
+locals {
+  run_egress = var.static_egress_ip ? "ALL_TRAFFIC" : "PRIVATE_RANGES_ONLY"
+}
+
+resource "google_compute_address" "egress" {
+  count        = var.static_egress_ip ? 1 : 0
+  name         = "${local.name}-egress-ip"
+  region       = var.region
+  address_type = "EXTERNAL"
+  network_tier = "PREMIUM"
+  labels       = local.labels
+}
+
+resource "google_compute_router" "egress" {
+  count   = var.static_egress_ip ? 1 : 0
+  name    = "${local.name}-egress"
+  region  = var.region
+  network = google_compute_network.vpc.id
+}
+
+resource "google_compute_router_nat" "egress" {
+  count                              = var.static_egress_ip ? 1 : 0
+  name                               = "${local.name}-egress"
+  router                             = google_compute_router.egress[0].name
+  region                             = var.region
+  nat_ip_allocate_option             = "MANUAL_ONLY"
+  nat_ips                            = [google_compute_address.egress[0].self_link]
+  source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
+
+  subnetwork {
+    name                    = google_compute_subnetwork.serverless.id
+    source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
+  }
+
+  log_config {
+    enable = true
+    filter = "ERRORS_ONLY"
+  }
+}

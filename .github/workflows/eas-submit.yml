@@ -1,0 +1,64 @@
+# Envío a las tiendas de una compilación ya terminada en EAS (iteración 7, ADR 0022): Pruebas internas
+# de Google Play o TestFlight. Usa las credenciales guardadas en EAS (cuenta de servicio de Play y
+# clave de API de App Store Connect) y el perfil de envío de eas.json (con `ascAppId` para iOS).
+name: Envío a las tiendas (EAS Submit)
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Plataforma'
+        type: choice
+        default: ios
+        options: [ios, android]
+      profile:
+        description: 'Perfil de envío de eas.json'
+        type: choice
+        default: staging
+        options: [staging, production]
+      build_id:
+        description: 'Id de la compilación en EAS (vacío: la última terminada de esa plataforma)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    name: EAS Submit (${{ inputs.platform }}, ${{ inputs.profile }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Comprobar el token de Expo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Falta el secreto EXPO_TOKEN (expo.dev → Access tokens)."
+            exit 1
+          fi
+      - run: pnpm install --frozen-lockfile --filter "@volt/mobile..."
+      - name: Enviar a la tienda
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          CI: '1'
+          EXPO_NO_TELEMETRY: '1'
+          PLATFORM: ${{ inputs.platform }}
+          PROFILE: ${{ inputs.profile }}
+          BUILD_ID: ${{ inputs.build_id }}
+        run: |
+          if [ "$PLATFORM" = "ios" ] && [ "$(jq -r ".submit.\"$PROFILE\".ios.ascAppId // empty" eas.json)" = "" ]; then
+            echo "::error::Falta ascAppId en el perfil de envío '$PROFILE' de eas.json (número de la app en App Store Connect)."
+            exit 1
+          fi
+          if [ -n "$BUILD_ID" ]; then sel="--id $BUILD_ID"; else sel="--latest"; fi
+          npx eas-cli@latest submit --non-interactive --platform "$PLATFORM" --profile "$PROFILE" $sel
+          echo "Envío terminado: revisa Play Console (Pruebas internas) o App Store Connect (TestFlight)." >> "$GITHUB_STEP_SUMMARY"

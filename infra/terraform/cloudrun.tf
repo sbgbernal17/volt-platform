@@ -41,7 +41,7 @@ resource "google_cloud_run_v2_service" "api" {
         network    = google_compute_network.vpc.id
         subnetwork = google_compute_subnetwork.serverless.id
       }
-      egress = "PRIVATE_RANGES_ONLY"
+      egress = local.run_egress
     }
     max_instance_request_concurrency = 80
     timeout                          = "3600s"
@@ -99,7 +99,7 @@ resource "google_cloud_run_v2_service" "api" {
           },
           var.payments_provider == "wompi" ? local.wompi_secret_env : {},
           local.api_admin_token_enabled ? { API_ADMIN_TOKEN = "api-admin-token" } : {},
-          contains(["twilio", "brevo"], var.sms_provider) ? { SMS_PROVIDER_API_KEY = "sms-provider-api-key" } : {},
+          contains(["twilio", "brevo"], var.sms_provider) ? { SMS_PROVIDER_API_KEY = var.sms_api_key_secret } : {},
           contains(["resend", "brevo"], var.email_provider) ? { EMAIL_PROVIDER_API_KEY = "email-provider-api-key" } : {},
         )
         content {
@@ -140,7 +140,7 @@ resource "google_cloud_run_v2_service" "worker" {
         network    = google_compute_network.vpc.id
         subnetwork = google_compute_subnetwork.serverless.id
       }
-      egress = "PRIVATE_RANGES_ONLY"
+      egress = local.run_egress
     }
     max_instance_request_concurrency = 10
     timeout                          = "300s"
@@ -294,7 +294,7 @@ resource "google_cloud_run_v2_service" "synthetic" {
         network    = google_compute_network.vpc.id
         subnetwork = google_compute_subnetwork.serverless.id
       }
-      egress = "PRIVATE_RANGES_ONLY"
+      egress = local.run_egress
     }
     # Solo atiende /healthz.
     max_instance_request_concurrency = 1
@@ -377,7 +377,7 @@ resource "google_cloud_run_v2_job" "migrate" {
           network    = google_compute_network.vpc.id
           subnetwork = google_compute_subnetwork.serverless.id
         }
-        egress = "PRIVATE_RANGES_ONLY"
+        egress = local.run_egress
       }
       containers {
         image   = var.placeholder_image
