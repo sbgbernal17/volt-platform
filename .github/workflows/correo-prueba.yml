@@ -21,6 +21,10 @@ on:
         description: 'Conservar la cuenta de prueba para seguir el enlace del correo (borrarla después desde la app)'
         type: boolean
         default: false
+      wait_s:
+        description: 'Segundos de espera entre crear la cuenta y pedir la verificación (Google limita los envíos a cuentas recién creadas)'
+        type: string
+        default: '0'
 
 permissions:
   contents: read
@@ -71,8 +75,10 @@ jobs:
       - name: Correo de verificación y correo de contraseña nueva
         env:
           TOKEN: ${{ steps.user.outputs.id_token }}
+          WAIT_S: ${{ inputs.wait_s }}
         run: |
           set +e
+          if [ "${WAIT_S:-0}" -gt 0 ] 2>/dev/null; then echo "Esperando $WAIT_S s antes de pedir la verificación"; sleep "$WAIT_S"; fi
           code=$(curl -sS -o verify.json -w '%{http_code}' --max-time 30 -X POST -H "Authorization: Bearer $TOKEN" \
             -H 'content-type: application/json' "$API/v1/auth/send-verification" -d '{}')
           echo "::notice title=send-verification::$code $(cat verify.json | head -c 300)"
