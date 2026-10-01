@@ -137,5 +137,7 @@ jobs:
             terraform output -json run_services | jq -r 'to_entries[] | "\(.key): \(.value)"'
             echo "registry: $(terraform output -raw registry)"
             echo "cluster: $(terraform output -raw cluster_name) ($(terraform output -raw cluster_location))"
+            egress=$(terraform output -raw egress_ip 2>/dev/null || true)
+            echo "IP fija de salida (Cloud NAT): ${egress:-no activada (static_egress_ip = false)}"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
