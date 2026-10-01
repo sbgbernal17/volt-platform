@@ -290,6 +290,8 @@ export const es = {
   'sessions.dimension.FLAT': 'Cargo por sesión',
   'sessions.dimension.ADJUSTMENT': 'Ajuste',
   'sessions.dimension.CAP': 'Tope',
+  'sessions.cap.minPrice': 'Cobro mínimo por conexión',
+  'sessions.cap.maxPrice': 'Tope de precio',
 
   'tariffs.title': 'Tarifas',
   'tariffs.new': 'Nueva tarifa',
@@ -540,6 +542,8 @@ export const es = {
   'drivers.new': 'Nuevo conductor',
   'drivers.email': 'Correo',
   'drivers.phone': 'Teléfono',
+  'drivers.firstName': 'Nombres',
+  'drivers.lastName': 'Apellidos',
   'drivers.phoneVerified': 'Celular verificado',
   'drivers.phoneUnverified': 'Celular sin verificar',
   'drivers.name': 'Nombre',

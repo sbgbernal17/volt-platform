@@ -10,7 +10,7 @@ El dueño pidió, para los correos de verificación y de contraseña nueva, "en 
 
 1. **La plataforma genera el enlace y envía el correo.** La API pide a Identity Platform el enlace de acción (`accounts:sendOobCode` con `returnOobLink`) con la identidad de la cuenta de servicio de Cloud Run (token del servidor de metadatos; sin claves) y lo inserta en la plantilla HTML propia. El enlace apunta a la misma página de acción de la app web (`/auth/action`) que ya se usa.
 2. **Rutas**: `POST /v1/auth/send-verification` (autenticada; reenvía la verificación al correo de la cuenta) y `POST /v1/auth/password-reset` (pública; nunca revela si el correo existe). Límites en memoria: un envío por minuto y cinco por hora por correo o conductor, veinte por hora por IP.
-3. **Puerto `EmailSender`** en `@volt/csms` con emulador (`fake`, pruebas) y adaptadores en la API para **Resend** y **Brevo** (`EMAIL_PROVIDER`, `EMAIL_FROM`, clave en Secret Manager `email-provider-api-key`). Las plantillas HTML se convierten en un módulo generado (`infra/identity/build-templates.mjs`) y una prueba comprueba que no se desactualice.
+3. **Puerto `EmailSender`** en `@volt/csms` con emulador (`fake`, pruebas) y adaptadores en la API para **Resend** y **Brevo** (`EMAIL_PROVIDER`, `EMAIL_FROM`, clave en Secret Manager `email-provider-api-key`). El dueño eligió Brevo el 01-10-2026 con el remitente verificado `notificaciones@supercargadores.co` (ADR 0019); dev y staging envían con él desde esa fecha. Las plantillas HTML se convierten en un módulo generado (`infra/identity/build-templates.mjs`) y una prueba comprueba que no se desactualice.
 4. **La app decide por la configuración pública** (`GET /v1/config` → `email.custom`): con proveedor, usa las rutas de la API al registrarse, al reenviar la verificación y al olvidar la contraseña; sin proveedor (o si la API falla), el SDK de Firebase envía el correo genérico de Google como hasta ahora.
 5. Los cambios de correo y el segundo factor siguen saliendo de Identity Platform (son flujos del personal, poco frecuentes).
 
@@ -23,5 +23,5 @@ El dueño pidió, para los correos de verificación y de contraseña nueva, "en 
 ## Consecuencias
 
 - La cuenta de servicio de la API recibe `roles/firebaseauth.admin` (Terraform) para generar enlaces.
-- dev y staging siguen con `EMAIL_PROVIDER=none` hasta que el dueño cargue la clave del proveedor elegido; entonces se cambia la variable de Terraform y se despliega, sin tocar la app.
+- Brevo reescribe los enlaces de los correos transaccionales con su dominio de seguimiento de clics cuando el seguimiento está activo en la cuenta; el enlace sigue llegando a la página de acción (redirige), pero conviene desactivar el seguimiento de clics en Brevo (Transaccional → Configuración) para que el botón apunte directo a `app.supercargadores.co`.
 - El cuerpo va solo en español por ahora; la versión en inglés queda para cuando se traduzcan las plantillas.

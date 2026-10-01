@@ -60,6 +60,11 @@ export interface FakeGatewayOptions {
   /** Con `true` las transacciones nacen PENDING y se resuelven con `finalize()` (simula el webhook). */
   asyncTransactions?: boolean | undefined;
   clock?: (() => Date) | undefined;
+  /**
+   * Base de la URL de los enlaces de pago: la API sirve un checkout emulado en
+   * `/v1/pay/emulado/<id>` para que "Pagar ahora" funcione en dev; sin ella, un dominio ficticio.
+   */
+  checkoutBaseUrl?: string | undefined;
 }
 
 type Outcome = Exclude<TransactionStatus, 'PENDING' | 'VOIDED'>;
@@ -97,6 +102,36 @@ interface FakeLink extends PaymentLink {
   currency: string;
   reference: string;
   paid: boolean;
+}
+
+/** Datos que viajan dentro de un identificador de enlace de pago (`link_<base64url>`). */
+interface LinkPayload {
+  a: string;
+  c: string;
+  r: string;
+  n: number;
+}
+
+/** Importe, moneda y referencia declarados por un identificador de enlace del emulador. */
+export function decodeFakeLinkId(
+  id: string,
+): { amountMinor: bigint; currency: string; reference: string } | null {
+  const match = /^link_([A-Za-z0-9_-]+)$/.exec(id);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(match[1] as string, 'base64url').toString('utf8'),
+    ) as Partial<LinkPayload>;
+    if (
+      typeof parsed.a !== 'string' ||
+      typeof parsed.c !== 'string' ||
+      typeof parsed.r !== 'string'
+    )
+      return null;
+    return { amountMinor: BigInt(parsed.a), currency: parsed.c, reference: parsed.r };
+  } catch {
+    return null;
+  }
 }
 
 type FakeTransaction = GatewayTransaction & { outcome: Outcome };
@@ -172,6 +207,7 @@ export class FakeGateway implements PaymentGateway {
   readonly calls: { method: string; input: unknown }[] = [];
   readonly eventsSecret: string;
   private readonly asyncTransactions: boolean;
+  private readonly checkoutBaseUrl: string;
   private readonly now: () => Date;
   private readonly sources = new Map<number, SourceEntry>();
   private readonly transactions = new Map<string, FakeTransaction>();
@@ -185,6 +221,10 @@ export class FakeGateway implements PaymentGateway {
     this.provider = options.provider ?? 'FAKE';
     this.eventsSecret = options.eventsSecret ?? 'fake-events-secret';
     this.asyncTransactions = options.asyncTransactions ?? false;
+    this.checkoutBaseUrl = (options.checkoutBaseUrl ?? 'https://checkout.fake/l').replace(
+      /\/$/,
+      '',
+    );
     this.now = options.clock ?? (() => new Date());
   }
 
@@ -405,10 +445,16 @@ export class FakeGateway implements PaymentGateway {
 
   async createPaymentLink(input: PaymentLinkInput): Promise<PaymentLink> {
     this.calls.push({ method: 'createPaymentLink', input });
-    const id = `link_${++this.seq}`;
+    const payload: LinkPayload = {
+      a: input.amountMinor.toString(),
+      c: input.currency,
+      r: input.reference,
+      n: ++this.seq,
+    };
+    const id = `link_${Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')}`;
     const link: FakeLink = {
       id,
-      url: `https://checkout.fake/l/${id}`,
+      url: `${this.checkoutBaseUrl}/${id}`,
       raw: { id },
       amountMinor: input.amountMinor,
       currency: input.currency,
@@ -419,14 +465,36 @@ export class FakeGateway implements PaymentGateway {
     return { id: link.id, url: link.url, raw: link.raw };
   }
 
+  /** Enlace conocido en este proceso o reconstruido a partir de su identificador. */
+  linkInfo(linkId: string): {
+    amountMinor: bigint;
+    currency: string;
+    reference: string;
+    paid: boolean;
+  } {
+    const known = this.links.get(linkId);
+    if (known) return known;
+    const decoded = decodeFakeLinkId(linkId);
+    if (!decoded) throw new PaymentGatewayError('Enlace desconocido', 'NOT_FOUND', 404);
+    const link: FakeLink = {
+      id: linkId,
+      url: `${this.checkoutBaseUrl}/${linkId}`,
+      raw: { id: linkId },
+      ...decoded,
+      paid: false,
+    };
+    this.links.set(linkId, link);
+    return link;
+  }
+
   /** El conductor paga el enlace (tarjeta, PSE o Nequi): transacción con `payment_link_id` y su webhook. */
   payLink(
     linkId: string,
     status: TransactionStatus = 'APPROVED',
     customerEmail = 'pagador@example.com',
   ): Record<string, unknown> {
-    const link = this.links.get(linkId);
-    if (!link) throw new PaymentGatewayError('Enlace desconocido', 'NOT_FOUND', 404);
+    this.linkInfo(linkId);
+    const link = this.links.get(linkId) as FakeLink;
     const outcome: Outcome = status === 'PENDING' || status === 'VOIDED' ? 'APPROVED' : status;
     const id = this.transactionId(status === 'PENDING' ? 'P' : OUTCOME_LETTER[outcome]);
     const transaction: FakeTransaction = {

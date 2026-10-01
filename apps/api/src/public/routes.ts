@@ -134,7 +134,10 @@ export async function publicRoutes(
     };
   });
 
-  await billingWebhookRoutes(app, { billing: options.billing });
+  await billingWebhookRoutes(app, {
+    billing: options.billing,
+    redirectUrl: options.paymentsRedirectUrl,
+  });
   const authEmail = options.authEmail
     ? createAuthEmailRoutes({
         sql,

@@ -87,6 +87,8 @@ const schema = z.object({
   WOMPI_EVENTS_SECRET: z.string().min(8).optional(),
   /** URL a la que Wompi devuelve al conductor tras pagar un enlace de deuda (app web, iteración 7). */
   PAYMENTS_REDIRECT_URL: z.string().url().optional(),
+  /** URL pública de esta API (enlaces del checkout emulado en dev); en local, http://localhost:<puerto>. */
+  API_PUBLIC_URL: z.string().url().optional(),
   /**
    * Iteración 9: clave de navegador de Maps JavaScript API para el mapa de la app web (pública por
    * diseño: va restringida por referrer y solo a esa API; la crea Terraform por ambiente). Se
@@ -113,7 +115,7 @@ const schema = z.object({
    * Identity Platform envíe su correo genérico desde el SDK de la app.
    */
   EMAIL_PROVIDER: z.enum(['none', 'fake', 'resend', 'brevo']).default('none'),
-  EMAIL_FROM: z.string().min(3).max(120).default('VOLT <noreply@supercargadores.co>'),
+  EMAIL_FROM: z.string().min(3).max(120).default('VOLT <notificaciones@supercargadores.co>'),
   EMAIL_PROVIDER_API_KEY: optionalSecret,
   /** URL pública de la app web (host del logotipo en los correos y `continueUrl` de los enlaces). */
   APP_WEB_URL: z.string().url().optional(),

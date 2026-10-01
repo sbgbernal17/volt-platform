@@ -27,6 +27,17 @@
       },
       "environment": "preview"
     },
+    "staging": {
+      "autoIncrement": true,
+      "channel": "staging",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api-staging.supercargadores.co"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "environment": "preview"
+    },
     "production": {
       "autoIncrement": true,
       "channel": "production",
@@ -40,6 +51,11 @@
     }
   },
   "submit": {
+    "staging": {
+      "android": {
+        "track": "internal"
+      }
+    },
     "production": {
       "android": {
         "track": "internal"

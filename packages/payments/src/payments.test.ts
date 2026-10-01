@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  decodeFakeLinkId,
   decodeFakeSourceId,
   decodeFakeTransactionId,
   FAKE_ACCEPTANCE_TOKENS,
@@ -550,6 +551,35 @@ describe('emulador determinista entre procesos (dev: API y worker separados)', (
     });
     expect(nequi).toMatchObject({ type: 'NEQUI', publicData: { phone_number: '3001234567' } });
     expect(decodeFakeSourceId(nequi.id)).toMatchObject({ kind: 'NEQUI', outcome: 'APPROVED' });
+  });
+
+  it('un enlace de pago creado por la API se paga desde otro proceso con su importe y referencia', async () => {
+    const api = new FakeGateway({ checkoutBaseUrl: 'https://api-dev.example/v1/pay/emulado/' });
+    const link = await api.createPaymentLink({
+      name: 'Volt VO-1',
+      description: 'Pago pendiente',
+      amountMinor: 6_755n,
+      currency: 'COP',
+      currencyExponent: 0,
+      reference: 'DEBT-abc',
+    });
+    expect(link.url).toBe(`https://api-dev.example/v1/pay/emulado/${link.id}`);
+    expect(decodeFakeLinkId(link.id)).toEqual({
+      amountMinor: 6_755n,
+      currency: 'COP',
+      reference: 'DEBT-abc',
+    });
+    const other = new FakeGateway({ eventsSecret: 'fake-events-secret' });
+    const parsed = other.parseWebhook(other.payLink(link.id, 'APPROVED', 'ana@example.com'));
+    expect(parsed.checksumValid).toBe(true);
+    expect(parsed.transaction).toMatchObject({
+      status: 'APPROVED',
+      paymentLinkId: link.id,
+      amountMinor: 6_755n,
+      reference: 'DEBT-abc-LINK',
+    });
+    expect(decodeFakeLinkId('link_1')).toBeNull();
+    expect(() => other.payLink('link_1')).toThrow(/Enlace desconocido/);
   });
 
   it('los identificadores del emulador anterior valen como tarjeta aprobada y los tokens ajenos se rechazan', async () => {

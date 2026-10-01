@@ -33,6 +33,25 @@ export interface EnsureBaseTariffResult {
   version: TariffVersionRow;
   assignment: TariffAssignmentRow;
   created: { tariff: boolean; version: boolean; assignment: boolean };
+  /** Se publicó una versión nueva para añadir el cobro mínimo por conexión (ADR 0033). */
+  upgraded: boolean;
+}
+
+/**
+ * Cobro mínimo por conexión (ADR 0033): si la versión vigente de la tarifa base no lo tiene, se
+ * publica una versión nueva que conserva los precios actuales y añade `min_price` y los textos de
+ * la tarifa base. Devuelve la definición nueva o null si no hace falta.
+ */
+export function upgradedBaseDefinition(current: unknown): Record<string, unknown> | null {
+  const definition = current as { min_price?: unknown } | null;
+  if (!definition || typeof definition !== 'object') return null;
+  if (definition.min_price || !VOLT_BASE_TARIFF.min_price) return null;
+  return {
+    ...definition,
+    min_price: VOLT_BASE_TARIFF.min_price,
+    tariff_alt_text: VOLT_BASE_TARIFF.tariff_alt_text,
+    last_updated: VOLT_BASE_TARIFF.last_updated,
+  };
 }
 
 export async function ensureBaseTariff(
@@ -43,6 +62,7 @@ export async function ensureBaseTariff(
   const code = input.code ?? VOLT_BASE_TARIFF.id;
   const definition = input.definition ?? VOLT_BASE_TARIFF;
   const created = { tariff: false, version: false, assignment: false };
+  let upgraded = false;
   let tariff = await findTariffByCode(sql, input.tenantId, code);
   if (!tariff) {
     tariff = await createTariff(sql, {
@@ -71,6 +91,25 @@ export async function ensureBaseTariff(
       now,
     });
     created.version = true;
+  } else if (!input.definition) {
+    const upgrade = upgradedBaseDefinition(version.definition);
+    if (upgrade) {
+      const draft = await createTariffVersion(sql, {
+        tariffId: tariff.id,
+        definition: upgrade,
+        taxIncluded: version.tax_included,
+        notes: 'cobro mínimo por conexión de 2.000 COP (ADR 0033)',
+        createdBy: input.actor,
+      });
+      version = await publishTariffVersion(sql, {
+        tariffId: tariff.id,
+        version: draft.version,
+        validFrom: now,
+        approvedBy: input.actor,
+        now,
+      });
+      upgraded = true;
+    }
   }
   const assignments = await listAssignments(sql, input.tenantId, {
     scopeType: 'PLATFORM',
@@ -89,5 +128,5 @@ export async function ensureBaseTariff(
     });
     created.assignment = true;
   }
-  return { tariff, version, assignment, created };
+  return { tariff, version, assignment, created, upgraded };
 }

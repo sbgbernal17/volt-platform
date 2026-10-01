@@ -43,13 +43,15 @@ export async function issueReceipt(
           {
             email: string | null;
             display_name: string | null;
+            first_name: string | null;
+            last_name: string | null;
             phone: string | null;
             document_type: string | null;
             document_number: string | null;
             wants_invoice: boolean;
           }[]
         >`
-        SELECT email, display_name, phone, document_type, document_number, wants_invoice
+        SELECT email, display_name, first_name, last_name, phone, document_type, document_number, wants_invoice
         FROM auth.driver WHERE id = ${session.driver_id}`
       )[0]
     : undefined;
@@ -76,6 +78,8 @@ export async function issueReceipt(
             ${toJson(db as never, {
               email: driver?.email ?? null,
               name: driver?.display_name ?? null,
+              firstName: driver?.first_name ?? null,
+              lastName: driver?.last_name ?? null,
               phone: driver?.phone ?? null,
               // Base del adquiriente para la factura electrónica (DIAN, iteración 10; ADR 0027).
               documentType: driver?.document_type ?? null,
@@ -167,7 +171,7 @@ export function renderReceiptHtml(receipt: Receipt): string {
   const rows = lines
     .map(
       (l) =>
-        `<tr><td>${escapeHtml(dimensionLabel(l.dimension))}</td><td>${escapeHtml(l.quantity)} ${escapeHtml(l.unit)}</td><td>${escapeHtml(l.unitPrice)}</td><td class="n">${escapeHtml(fmt(l.total))}</td></tr>`,
+        `<tr><td>${escapeHtml(lineLabel(l))}</td><td>${l.dimension === 'CAP' ? '' : `${escapeHtml(l.quantity)} ${escapeHtml(l.unit)}`}</td><td>${l.dimension === 'CAP' ? '' : escapeHtml(l.unitPrice)}</td><td class="n">${escapeHtml(fmt(l.total))}</td></tr>`,
     )
     .join('');
   const taxLine =
@@ -190,6 +194,15 @@ ${taxLine}
 ${paymentLine}
 <p class="muted">Tarifa ${escapeHtml(session.tariff_code ?? '')} v${escapeHtml(session.tariff_version ?? '')} · emitido ${escapeHtml(invoice.issued_at.toISOString())}</p>
 </body></html>`;
+}
+
+/** Etiqueta de una línea: el tope y el mínimo de la tarifa se nombran por su `element_ref` (ADR 0033). */
+export function lineLabel(line: { dimension: string; elementRef: string | null }): string {
+  if (line.dimension === 'CAP') {
+    if (line.elementRef === 'min_price') return 'Cobro mínimo por conexión';
+    if (line.elementRef === 'max_price') return 'Tope de precio';
+  }
+  return dimensionLabel(line.dimension);
 }
 
 function dimensionLabel(dimension: string): string {

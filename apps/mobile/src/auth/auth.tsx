@@ -61,7 +61,11 @@ export interface AuthState {
   email: string | null;
   emailVerifiedInIdp: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, name: string) => Promise<void>;
+  signUp: (
+    email: string,
+    password: string,
+    name: { firstName: string; lastName: string },
+  ) => Promise<void>;
   signInDev: (driverId: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -226,13 +230,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const customEmail = config?.email.custom ?? false;
 
   const signUp = useCallback(
-    async (email: string, password: string, name: string) => {
+    async (email: string, password: string, name: { firstName: string; lastName: string }) => {
       const credential = await createUserWithEmailAndPassword(
         requireAuth(authRef),
         email.trim(),
         password,
       );
-      if (name.trim()) await updateProfile(credential.user, { displayName: name.trim() });
+      const firstName = name.firstName.trim();
+      const lastName = name.lastName.trim();
+      const displayName = [firstName, lastName].filter(Boolean).join(' ');
+      if (displayName) await updateProfile(credential.user, { displayName });
+      // Nombre y apellidos separados en la cuenta (adquiriente de la factura electrónica).
+      if (firstName || lastName) {
+        await api
+          .patch('/me', { firstName: firstName || null, lastName: lastName || null })
+          .catch(() => undefined);
+      }
       if (customEmail) {
         await api
           .post('/auth/send-verification', {})

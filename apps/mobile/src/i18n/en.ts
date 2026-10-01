@@ -395,6 +395,8 @@ export const en: Record<MessageKey, string> = {
   'receipt.dimension.RESERVATION': 'Reservation',
   'receipt.dimension.ADJUSTMENT': 'Adjustment',
   'receipt.dimension.CAP': 'Cap',
+  'receipt.cap.minPrice': 'Minimum charge per connection',
+  'receipt.cap.maxPrice': 'Price cap',
   'receipt.chargeReceipt': 'Charging receipt',
   'receipt.paidOn': 'Paid · {when}',
   'receipt.pendingPayment': 'Payment pending',
@@ -417,7 +419,7 @@ export const en: Record<MessageKey, string> = {
   'account.title': 'Account',
   'account.profile': 'Profile',
   'account.payment': 'Payment methods',
-  'account.debts': 'Pending payments',
+  'account.debts': 'Transactions',
   'account.notifications': 'Notifications',
   'account.delete': 'Delete account',
   'account.deleteHelp':
@@ -501,7 +503,7 @@ export const en: Record<MessageKey, string> = {
   'payment.walletKind': 'Nequi',
   'payment.actions': 'Options',
 
-  'debt.title': 'Pending payments',
+  'debt.title': 'Transactions',
   'debt.empty': 'You have no pending payments.',
   'debt.intro':
     'We could not charge these sessions. Pay the link or update your payment method to charge again.',
@@ -509,7 +511,7 @@ export const en: Record<MessageKey, string> = {
   'debt.attempts': 'Attempts: {n}',
   'debt.nextAttempt': 'Next attempt: {when}',
   'debt.pay': 'Pay now',
-  'debt.payHelp': 'Opens the secure Wompi page.',
+  'debt.payHelp': 'Opens the secure payment page.',
   'debt.paid': 'When the payment is confirmed, the account unblocks automatically.',
 
   'notifications.title': 'Notifications',
@@ -562,4 +564,33 @@ export const en: Record<MessageKey, string> = {
   'password.same': 'The new password must be different from the current one.',
   'password.wrongCurrent': 'The current password is not correct.',
   'password.done': 'Password updated.',
+  // Transactions and payment return
+  'debt.pendingSection': 'Pending payments',
+  'debt.historySection': 'Activity',
+  'debt.historyEmpty': 'No transactions yet.',
+  'payment.kind.CAPTURE': 'Charging session payment',
+  'payment.kind.DEBT': 'Pending payment settled',
+  'payment.kind.REFUND': 'Refund',
+  'payment.kind.VOID': 'Void',
+  'payment.state.SUCCEEDED': 'Approved',
+  'payment.state.PENDING': 'Pending',
+  'payment.state.FAILED': 'Declined',
+  'payment.state.CANCELLED': 'Voided',
+  'payment.removeLocked':
+    'You cannot remove the card while a charging session or a pending payment is open.',
+  'payReturn.approved': 'Payment received',
+  'payReturn.approvedBody':
+    'In a few seconds the account is up to date and the session shows as paid.',
+  'payReturn.declined': 'Payment declined',
+  'payReturn.declinedBody': 'The payment was not approved and the charge is still pending.',
+  'payReturn.pending': 'We are confirming your payment',
+  'payReturn.pendingBody':
+    'Wompi notifies us as soon as it confirms the payment; meanwhile you can go back to the app.',
+  'payReturn.reference': 'Reference {ref}',
+  'payReturn.retry': 'You can try again from Transactions with another payment method.',
+  'payReturn.go': 'View transactions',
+  'payReturn.home': 'Go to the app',
+  'auth.firstName': 'First name',
+  'auth.lastName': 'Last name',
+  'evse.minPrice': 'Minimum charge per session',
 };

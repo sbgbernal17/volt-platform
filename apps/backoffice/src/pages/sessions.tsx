@@ -14,6 +14,7 @@ import {
   SessionBadge,
 } from '../components/ui.tsx';
 import { useI18n } from '../i18n/index.tsx';
+import { costLineLabel } from '../lib/cost-lines.ts';
 import { dateTime, duration, energyKwh, money } from '../lib/format.ts';
 import { useRouter } from '../lib/router.tsx';
 import { summarizeCost } from '../lib/session-cost.ts';
@@ -437,7 +438,7 @@ export function SessionDetailPage({ id }: { id: string }) {
                   {
                     key: 'dim',
                     header: t('sessions.line.dimension'),
-                    render: (l) => td(`sessions.dimension.${l.dimension}`),
+                    render: (l) => costLineLabel(l, td),
                   },
                   {
                     key: 'period',

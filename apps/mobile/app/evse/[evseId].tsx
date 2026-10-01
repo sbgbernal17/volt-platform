@@ -328,6 +328,12 @@ export default function EvseScreen() {
                   <Body>{formatMoney(tariff.sessionFee, tariff.currency)}</Body>
                 </Row>
               ) : null}
+              {tariff.minPrice ? (
+                <Row between>
+                  <Muted>{t('evse.minPrice')}</Muted>
+                  <Body>{formatMoney(tariff.minPrice, tariff.currency)}</Body>
+                </Row>
+              ) : null}
               {tariff.exposureLimit ? (
                 <Muted>
                   {t('evse.limitText', {

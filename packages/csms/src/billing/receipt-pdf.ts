@@ -29,6 +29,14 @@ const MUTED = rgb(0.32, 0.32, 0.32);
 const LINE = rgb(0.9, 0.9, 0.9);
 const RED = rgb(...VOLT_RED);
 
+function lineLabel(line: { dimension: string; elementRef: string | null }): string {
+  if (line.dimension === 'CAP') {
+    if (line.elementRef === 'min_price') return 'Cobro mínimo por conexión';
+    if (line.elementRef === 'max_price') return 'Tope de precio';
+  }
+  return dimensionLabel(line.dimension);
+}
+
 function dimensionLabel(dimension: string): string {
   switch (dimension) {
     case 'ENERGY':
@@ -258,12 +266,14 @@ export async function renderReceiptPdf(
   w.down(14);
   for (const line of lines) {
     const totalMinor = BigInt(line.amountMinor) + BigInt(line.taxMinor);
-    w.text(dimensionLabel(line.dimension), { x: columns.concept, size: 10 });
-    w.text(`${formatDecimal(line.quantity, 3)} ${line.unit}`, { x: columns.quantity, size: 10 });
-    w.text(formatMoney(Math.round(Number(line.unitPrice) * 10 ** exponentOf(currency)), currency), {
-      x: columns.unit,
-      size: 10,
-    });
+    w.text(lineLabel(line), { x: columns.concept, size: 10 });
+    if (line.dimension !== 'CAP') {
+      w.text(`${formatDecimal(line.quantity, 3)} ${line.unit}`, { x: columns.quantity, size: 10 });
+      w.text(
+        formatMoney(Math.round(Number(line.unitPrice) * 10 ** exponentOf(currency)), currency),
+        { x: columns.unit, size: 10 },
+      );
+    }
     w.text(formatMoney(totalMinor, currency), { x: columns.total, size: 10, align: 'right' });
     w.down(16);
   }

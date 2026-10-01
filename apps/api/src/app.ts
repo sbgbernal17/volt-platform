@@ -70,7 +70,11 @@ export function buildPaymentGateway(
       eventsSecret: config.WOMPI_EVENTS_SECRET as string,
     });
   }
-  if (config.PAYMENTS_PROVIDER === 'fake') return new FakeGateway();
+  if (config.PAYMENTS_PROVIDER === 'fake') {
+    // "Pagar ahora" en dev abre el checkout emulado que sirve esta misma API.
+    const base = config.API_PUBLIC_URL ?? `http://localhost:${config.API_PORT}`;
+    return new FakeGateway({ checkoutBaseUrl: `${base.replace(/\/$/, '')}/v1/pay/emulado` });
+  }
   return undefined;
 }
 
@@ -81,6 +85,8 @@ export function buildApp({
   identityLinks: injectedLinks,
 }: AppDependencies): FastifyInstance {
   const app = Fastify({
+    // Los enlaces del checkout emulado (`/v1/pay/emulado/:linkId`) superan los 100 caracteres por defecto.
+    routerOptions: { maxParamLength: 512 },
     logger: pinoOptions({
       service: 'api',
       level: config.LOG_LEVEL,
@@ -125,6 +131,14 @@ export function buildApp({
   });
 
   registerCors(app, config.API_CORS_ORIGINS);
+  // Formularios HTML (checkout emulado): sin dependencias, cuerpo a objeto plano.
+  app.addContentTypeParser(
+    'application/x-www-form-urlencoded',
+    { parseAs: 'string' },
+    (_request, body, done) => {
+      done(null, Object.fromEntries(new URLSearchParams(String(body))));
+    },
+  );
 
   app.get('/healthz', async () => ({ status: 'ok', service: 'api', version: API_VERSION }));
 

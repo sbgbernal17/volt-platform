@@ -30,7 +30,8 @@ export default function ProfileScreen() {
   const { t, td } = useI18n();
   const auth = useAuth();
   const router = useRouter();
-  const [name, setName] = useState(auth.profile?.displayName ?? '');
+  const [firstName, setFirstName] = useState(auth.profile?.firstName ?? '');
+  const [lastName, setLastName] = useState(auth.profile?.lastName ?? '');
   const phone = auth.profile?.phone ?? null;
   const phoneVerified = auth.profile?.phoneVerified ?? false;
   const [documentType, setDocumentType] = useState<DocumentType | null>(
@@ -59,7 +60,8 @@ export default function ProfileScreen() {
     setBusy(true);
     try {
       await auth.api.patch<Profile>('/me', {
-        displayName: name.trim() || null,
+        firstName: firstName.trim() || null,
+        lastName: lastName.trim() || null,
         documentType: documentType ?? null,
         documentNumber: documentType ? documentNumber.trim() : null,
         wantsInvoice,
@@ -84,7 +86,20 @@ export default function ProfileScreen() {
         value={auth.profile?.email ?? auth.email ?? ''}
         editable={false}
       />
-      <Field label={t('auth.name')} value={name} onChangeText={setName} />
+      <Field
+        label={t('auth.firstName')}
+        value={firstName}
+        onChangeText={setFirstName}
+        autoComplete="given-name"
+        textContentType="givenName"
+      />
+      <Field
+        label={t('auth.lastName')}
+        value={lastName}
+        onChangeText={setLastName}
+        autoComplete="family-name"
+        textContentType="familyName"
+      />
       {/* El celular se cambia con un código por SMS (ADR 0031), nunca a mano. */}
       <View style={{ gap: spacing.sm }}>
         <Field label={t('account.phone')} value={formatPhone(phone)} editable={false} />

@@ -10,14 +10,14 @@ on:
         description: 'Perfil de eas.json'
         type: choice
         default: preview
-        options: [development, preview, production]
+        options: [development, preview, staging, production]
       platform:
         description: 'Plataforma'
         type: choice
         default: android
         options: [android, ios, all]
       submit:
-        description: 'Enviar a la tienda al terminar (Internal testing / TestFlight; solo con production)'
+        description: 'Enviar a la tienda al terminar (Pruebas internas de Play / TestFlight; solo con staging o production)'
         type: boolean
         default: false
 
@@ -50,7 +50,7 @@ jobs:
           EXPO_NO_TELEMETRY: '1'
         run: |
           extra=""
-          if [ "${{ inputs.submit }}" = "true" ] && [ "${{ inputs.profile }}" = "production" ]; then
+          if [ "${{ inputs.submit }}" = "true" ] && { [ "${{ inputs.profile }}" = "production" ] || [ "${{ inputs.profile }}" = "staging" ]; }; then
             extra="--auto-submit"
           fi
           npx eas-cli@latest build --non-interactive --no-wait \

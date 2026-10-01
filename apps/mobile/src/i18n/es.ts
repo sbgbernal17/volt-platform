@@ -394,6 +394,8 @@ export const es = {
   'receipt.dimension.RESERVATION': 'Reserva',
   'receipt.dimension.ADJUSTMENT': 'Ajuste',
   'receipt.dimension.CAP': 'Tope',
+  'receipt.cap.minPrice': 'Cobro mínimo por conexión',
+  'receipt.cap.maxPrice': 'Tope de precio',
   'receipt.chargeReceipt': 'Recibo de carga',
   'receipt.paidOn': 'Pagado · {when}',
   'receipt.pendingPayment': 'Pago pendiente',
@@ -416,7 +418,7 @@ export const es = {
   'account.title': 'Cuenta',
   'account.profile': 'Perfil',
   'account.payment': 'Medios de pago',
-  'account.debts': 'Cobros pendientes',
+  'account.debts': 'Transacciones',
   'account.notifications': 'Avisos',
   'account.delete': 'Eliminar cuenta',
   'account.deleteHelp':
@@ -501,7 +503,7 @@ export const es = {
   'payment.walletKind': 'Nequi',
   'payment.actions': 'Opciones',
 
-  'debt.title': 'Cobros pendientes',
+  'debt.title': 'Transacciones',
   'debt.empty': 'No tiene cobros pendientes.',
   'debt.intro':
     'No pudimos cobrar estas sesiones. Pague el enlace o actualice su medio de pago para volver a cargar.',
@@ -509,7 +511,7 @@ export const es = {
   'debt.attempts': 'Intentos: {n}',
   'debt.nextAttempt': 'Próximo intento: {when}',
   'debt.pay': 'Pagar ahora',
-  'debt.payHelp': 'Se abre la página segura de Wompi.',
+  'debt.payHelp': 'Se abre la página segura de pago.',
   'debt.paid': 'Cuando el pago se confirme, la cuenta se desbloquea sola.',
 
   'notifications.title': 'Avisos',
@@ -563,6 +565,35 @@ export const es = {
   'password.same': 'La contraseña nueva debe ser distinta de la actual.',
   'password.wrongCurrent': 'La contraseña actual no es correcta.',
   'password.done': 'Contraseña actualizada.',
+  // Transacciones y retorno del pago
+  'debt.pendingSection': 'Pendientes de pago',
+  'debt.historySection': 'Movimientos',
+  'debt.historyEmpty': 'Aún no hay movimientos.',
+  'payment.kind.CAPTURE': 'Cobro de la carga',
+  'payment.kind.DEBT': 'Pago de cobro pendiente',
+  'payment.kind.REFUND': 'Devolución',
+  'payment.kind.VOID': 'Anulación',
+  'payment.state.SUCCEEDED': 'Aprobado',
+  'payment.state.PENDING': 'Pendiente',
+  'payment.state.FAILED': 'Rechazado',
+  'payment.state.CANCELLED': 'Anulado',
+  'payment.removeLocked':
+    'No puede eliminar la tarjeta mientras tenga una carga en curso o un cobro pendiente.',
+  'payReturn.approved': 'Pago recibido',
+  'payReturn.approvedBody':
+    'En unos segundos la cuenta queda al día y la carga aparece como pagada.',
+  'payReturn.declined': 'Pago rechazado',
+  'payReturn.declinedBody': 'El pago no fue aprobado y el cobro sigue pendiente.',
+  'payReturn.pending': 'Estamos confirmando su pago',
+  'payReturn.pendingBody':
+    'Wompi nos avisa en cuanto confirma el pago; mientras tanto puede volver a la app.',
+  'payReturn.reference': 'Referencia {ref}',
+  'payReturn.retry': 'Puede intentarlo de nuevo desde Transacciones con otro medio de pago.',
+  'payReturn.go': 'Ver transacciones',
+  'payReturn.home': 'Ir a la app',
+  'auth.firstName': 'Nombres',
+  'auth.lastName': 'Apellidos',
+  'evse.minPrice': 'Cobro mínimo por carga',
 } as const;
 
 export type MessageKey = keyof typeof es;

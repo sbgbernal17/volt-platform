@@ -1,4 +1,5 @@
 export {
+  decodeFakeLinkId,
   decodeFakeSourceId,
   decodeFakeTransactionId,
   FAKE_ACCEPTANCE_TOKENS,

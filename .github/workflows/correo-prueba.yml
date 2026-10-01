@@ -1,0 +1,94 @@
+# Prueba de punta a punta del correo transaccional de un ambiente (ADR 0032): crea una cuenta de prueba en
+# Identity Platform con la clave pública que usa la app, pide a la API que envíe el correo de verificación
+# con la plantilla propia (Brevo o Resend) y el de contraseña nueva, y borra la cuenta al terminar. No usa
+# credenciales de Google Cloud ni secretos: solo lo que la app usa. El correo llega al buzón indicado; allí
+# se revisa el remitente, el botón y cómo queda el enlace (Brevo lo reescribe con su dominio de seguimiento).
+name: Prueba del correo transaccional
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente'
+        type: choice
+        default: dev
+        options: [dev, staging]
+      email:
+        description: 'Buzón que recibirá la prueba (se crea una cuenta nueva con ese correo y se borra al final)'
+        type: string
+        required: true
+      keep:
+        description: 'Conservar la cuenta de prueba para seguir el enlace del correo (borrarla después desde la app)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  probar:
+    name: Correos de verificación y contraseña (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      API: https://api-${{ inputs.environment }}.supercargadores.co
+      EMAIL: ${{ inputs.email }}
+      KEEP: ${{ inputs.keep }}
+    steps:
+      - name: Configuración pública de la API
+        id: cfg
+        run: |
+          set -euo pipefail
+          curl -sS --max-time 20 "$API/v1/config" > config.json
+          jq '{auth: .auth.provider, tenantId: .auth.tenantId, email: .email, phone: .phone}' config.json
+          key=$(jq -r '.auth.apiKey // empty' config.json)
+          if [ -z "$key" ]; then echo "::error::La API no expone la clave pública de Identity Platform"; exit 1; fi
+          echo "::add-mask::$key"
+          echo "api_key=$key" >> "$GITHUB_OUTPUT"
+          echo "tenant=$(jq -r '.auth.tenantId // empty' config.json)" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Correo propio::$(jq -c '.email' config.json)"
+      - name: Cuenta de prueba en Identity Platform
+        id: user
+        env:
+          KEY: ${{ steps.cfg.outputs.api_key }}
+          TENANT: ${{ steps.cfg.outputs.tenant }}
+        run: |
+          set -euo pipefail
+          password="Vp-$(openssl rand -base64 18 | tr -d '/+=')"
+          echo "::add-mask::$password"
+          body=$(jq -cn --arg e "$EMAIL" --arg p "$password" --arg t "$TENANT" \
+            '{email: $e, password: $p, returnSecureToken: true} + (if $t != "" then {tenantId: $t} else {} end)')
+          code=$(curl -sS -o signup.json -w '%{http_code}' --max-time 20 -H 'content-type: application/json' \
+            "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$KEY" -d "$body")
+          if [ "$code" != "200" ]; then echo "::error::signUp -> $code $(jq -c '.error.message' signup.json)"; exit 1; fi
+          token=$(jq -r '.idToken' signup.json)
+          echo "::add-mask::$token"
+          echo "id_token=$token" >> "$GITHUB_OUTPUT"
+          echo "Cuenta creada: $(jq -r '.localId' signup.json)"
+      - name: Correo de verificación y correo de contraseña nueva
+        env:
+          TOKEN: ${{ steps.user.outputs.id_token }}
+        run: |
+          set +e
+          code=$(curl -sS -o verify.json -w '%{http_code}' --max-time 30 -X POST -H "Authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' "$API/v1/auth/send-verification" -d '{}')
+          echo "::notice title=send-verification::$code $(cat verify.json | head -c 300)"
+          code=$(curl -sS -o reset.json -w '%{http_code}' --max-time 30 -X POST -H 'content-type: application/json' \
+            "$API/v1/auth/password-reset" -d "$(jq -cn --arg e "$EMAIL" '{email: $e}')")
+          echo "::notice title=password-reset::$code $(cat reset.json | head -c 300)"
+          echo "Revisa el buzón $EMAIL: remitente, botón y destino del enlace (si pasa por el dominio de seguimiento del proveedor)."
+      - name: Borrar la cuenta de prueba
+        if: always() && inputs.keep == false
+        env:
+          TOKEN: ${{ steps.user.outputs.id_token }}
+          KEY: ${{ steps.cfg.outputs.api_key }}
+        run: |
+          set +e
+          [ -z "$TOKEN" ] && exit 0
+          code=$(curl -sS -o delete.json -w '%{http_code}' --max-time 30 -X POST -H "Authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' "$API/v1/me/delete" -d '{"confirm":true}')
+          echo "::notice title=me/delete::$code $(cat delete.json | head -c 200)"
+          # Por si la API no pudo borrarla en Identity Platform: la cuenta puede borrarse a sí misma.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -H 'content-type: application/json' \
+            "https://identitytoolkit.googleapis.com/v1/accounts:delete?key=$KEY" -d "$(jq -cn --arg t "$TOKEN" '{idToken: $t}')")
+          echo "accounts:delete -> $code (400 = ya no existía)"

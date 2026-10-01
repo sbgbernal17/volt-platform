@@ -77,6 +77,7 @@ resource "google_cloud_run_v2_service" "api" {
           EMAIL_PROVIDER                = var.email_provider
           EMAIL_FROM                    = var.email_from
           APP_WEB_URL                   = "https://${local.hosts.app}"
+          API_PUBLIC_URL                = "https://${local.hosts.api}"
           IDENTITY_LINKS_SOURCE         = "metadata"
           },
           var.twilio_account_sid != "" ? { TWILIO_ACCOUNT_SID = var.twilio_account_sid } : {},

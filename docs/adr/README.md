@@ -36,6 +36,8 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0030](0030-el-back-office-adopta-el-sistema-de-diseno-de-la-app.md) | El back-office adopta el sistema de diseño de la app: tokens compartidos, selector de tema (sistema, claro, oscuro), Material Icons, estados por palabra, ícono y color desde un solo módulo, botones, insignias, avisos, KPI y barra lateral como en la app |
 | [0031](0031-celular-verificado-por-sms.md) | Celular verificado por SMS con código de un solo uso gestionado por la plataforma (puerto `SmsSender`, emulador, Twilio y Brevo), obligatorio para pagar y cargar después del correo y los consentimientos; un celular verificado por cuenta |
 | [0032](0032-correos-de-identidad-con-envio-propio.md) | Correos de verificación y contraseña con envío propio: la API genera el enlace de Identity Platform con su cuenta de servicio y lo envía en la plantilla con la marca (botón) por Resend o Brevo; sin proveedor sigue el correo genérico de Google |
+| [0033](0033-cobro-minimo-por-conexion.md) | Cobro mínimo por conexión de 2.000 COP como `min_price` de la tarifa base: línea `CAP` "Cobro mínimo por conexión" en el costo en curso, el recibo, el PDF, la app y el back-office; la versión publicada se actualiza sola |
+| [0034](0034-nombre-y-apellidos-separados-y-datos-del-comprador.md) | Nombre y apellidos separados en el conductor (`first_name`, `last_name`; `display_name` derivado) y datos del comprador para la DIAN según el contador: nombre y apellidos o razón social, cédula o NIT con o sin dígito de verificación, y correo |
 
 ```markdown
 # NNNN. Título de la decisión

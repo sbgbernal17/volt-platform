@@ -11,6 +11,9 @@ export interface DriverRow {
   /** Celular verificado por SMS (ADR 0031); NULL si no se ha verificado o cambió después. */
   phone_verified_at: Date | null;
   display_name: string | null;
+  /** Nombre y apellidos separados (adquiriente de la factura electrónica); display_name los une. */
+  first_name: string | null;
+  last_name: string | null;
   locale: string;
   segment: string;
   status: 'ACTIVE' | 'BLOCKED' | 'DELETED';
@@ -39,8 +42,29 @@ export interface CreateDriverInput {
   email?: string | undefined;
   phone?: string | undefined;
   displayName?: string | undefined;
+  firstName?: string | undefined;
+  lastName?: string | undefined;
   locale?: string | undefined;
   idpSubject?: string | undefined;
+}
+
+/** "Juan Carlos Pérez" → nombres "Juan" y apellidos "Carlos Pérez" (reparto por el primer espacio). */
+export function splitDisplayName(full: string | null | undefined): {
+  firstName: string | null;
+  lastName: string | null;
+} {
+  const trimmed = (full ?? '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) return { firstName: null, lastName: null };
+  const [first, ...rest] = trimmed.split(' ');
+  return { firstName: first ?? null, lastName: rest.length ? rest.join(' ') : null };
+}
+
+export function joinDisplayName(
+  firstName: string | null | undefined,
+  lastName: string | null | undefined,
+): string | null {
+  const joined = [firstName?.trim(), lastName?.trim()].filter(Boolean).join(' ');
+  return joined || null;
 }
 
 export async function createDriver(db: ISql, input: CreateDriverInput): Promise<DriverRow> {
@@ -50,10 +74,15 @@ export async function createDriver(db: ISql, input: CreateDriverInput): Promise<
     if (existing.length > 0)
       throw new ConflictError(`Ya existe un conductor con el correo ${input.email}`);
   }
+  const names =
+    input.firstName !== undefined || input.lastName !== undefined
+      ? { firstName: input.firstName?.trim() || null, lastName: input.lastName?.trim() || null }
+      : splitDisplayName(input.displayName);
+  const displayName = input.displayName?.trim() || joinDisplayName(names.firstName, names.lastName);
   const rows = await db<DriverRow[]>`
-    INSERT INTO auth.driver (id, tenant_id, idp_subject, email, phone, display_name, locale)
+    INSERT INTO auth.driver (id, tenant_id, idp_subject, email, phone, display_name, first_name, last_name, locale)
     VALUES (${randomUUID()}, ${input.tenantId}, ${input.idpSubject ?? null}, ${input.email ?? null},
-            ${input.phone ?? null}, ${input.displayName ?? null}, ${input.locale ?? 'es'})
+            ${input.phone ?? null}, ${displayName}, ${names.firstName}, ${names.lastName}, ${input.locale ?? 'es'})
     RETURNING *`;
   return rows[0] as DriverRow;
 }

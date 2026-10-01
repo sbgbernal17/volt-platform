@@ -1,4 +1,4 @@
-/** Registro (handoff, pantalla 13): nombre, correo y contraseña; los consentimientos se aceptan después (ADR 0022). */
+/** Registro (handoff, pantalla 13): nombres, apellidos, correo y contraseña; los consentimientos se aceptan después (ADR 0022). */
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
@@ -23,7 +23,8 @@ export default function SignUp() {
   const { t } = useI18n();
   const auth = useAuth();
   const router = useRouter();
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,7 +39,7 @@ export default function SignUp() {
     setBusy(true);
     setError(null);
     try {
-      await auth.signUp(email, password, name);
+      await auth.signUp(email, password, { firstName, lastName });
       router.replace('/verify-email');
     } catch (caught) {
       setError(t(authErrorKey(caught)));
@@ -57,11 +58,18 @@ export default function SignUp() {
           <Muted style={{ fontSize: 16, lineHeight: 24 }}>{t('auth.signUpHelp')}</Muted>
         </View>
         <Field
-          label={t('auth.fullName')}
-          value={name}
-          onChangeText={setName}
-          autoComplete="name"
-          textContentType="name"
+          label={t('auth.firstName')}
+          value={firstName}
+          onChangeText={setFirstName}
+          autoComplete="given-name"
+          textContentType="givenName"
+        />
+        <Field
+          label={t('auth.lastName')}
+          value={lastName}
+          onChangeText={setLastName}
+          autoComplete="family-name"
+          textContentType="familyName"
         />
         <Field
           label={t('auth.emailLabel')}
@@ -106,7 +114,7 @@ export default function SignUp() {
           title={t('auth.signUp')}
           onPress={() => void submit()}
           loading={busy}
-          disabled={!email || !password}
+          disabled={!email || !password || !firstName.trim() || !lastName.trim()}
         />
         <Row style={{ justifyContent: 'center' }}>
           <Muted>{t('auth.haveAccount')}</Muted>

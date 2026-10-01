@@ -45,7 +45,10 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
   let gateway: Gateway;
   let app: FastifyInstance;
   let sim: SimulatedChargePoint;
-  const psp = new FakeGateway({ eventsSecret: 'secreto-e2e' });
+  const psp = new FakeGateway({
+    eventsSecret: 'secreto-e2e',
+    checkoutBaseUrl: 'http://localhost:8080/v1/pay/emulado',
+  });
   let anaId = '';
   let luisId = '';
   let anaSessionId = '';
@@ -122,6 +125,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
         API_DEV_DRIVER_AUTH: 'true',
         API_SSE_POLL_MS: '100',
         PAYMENTS_PROVIDER: 'fake',
+        PAYMENTS_REDIRECT_URL: 'https://app-test.supercargadores.co/pagos/retorno',
       }),
       gateway: psp,
     });
@@ -302,10 +306,14 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
     expect(receipt.totals.currency).toBe('COP');
     expect(Number(receipt.totals.total)).toBeGreaterThan(0);
     expect(receipt.payment.provider).toBe('FAKE');
-    expect(receipt.lines.map((l) => l.dimension)).toEqual(['ENERGY']);
+    // Cobro mínimo por conexión (ADR 0033): la carga corta no llega a 2.000 COP y el mínimo completa el total.
+    expect(receipt.lines.map((l) => l.dimension)).toEqual(['ENERGY', 'CAP']);
+    expect(receipt.lines[1]).toMatchObject({ dimension: 'CAP', elementRef: 'min_price' });
+    expect(receipt.totals.total).toBe('2000');
     const html = await as(anaId)('GET', `/v1/sessions/${anaSessionId}/receipt?format=html`);
     expect(html.headers['content-type']).toContain('text/html');
     expect(html.payload).toContain(receipt.number);
+    expect(html.payload).toContain('Cobro mínimo por conexión');
     // Recibo en PDF (ADR 0028): binario, con nombre de archivo y sin caché.
     const pdf = await as(anaId)('GET', `/v1/sessions/${anaSessionId}/receipt?format=pdf`);
     expect(pdf.statusCode).toBe(200);
@@ -415,12 +423,39 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
     expect(denied.statusCode).toBe(409);
     expect((denied.json() as { error: { code: string } }).error.code).toBe('DRIVER_BLOCKED');
 
+    // Con un cobro pendiente la tarjeta no se puede eliminar (regla del dueño, 01-10-2026).
+    const methods = (await luis('GET', '/v1/payment-methods')).json() as {
+      items: { id: string }[];
+    };
+    const locked = await luis('DELETE', `/v1/payment-methods/${methods.items[0]?.id}`);
+    expect(locked.statusCode).toBe(409);
+    expect((locked.json() as { error: { code: string } }).error.code).toBe('PAYMENT_METHOD_IN_USE');
+
     const link = (await luis('POST', `/v1/debts/${billing.debts[0]?.id}/pay-link`)).json() as {
       url: string;
       expiresAt: string;
     };
-    expect(link.url).toMatch(/^https:\/\/checkout\.fake\/l\//);
-    const linkId = link.url.split('/l/')[1] as string;
+    // El emulador enlaza al checkout emulado que sirve la propia API (dev), no a un dominio ficticio.
+    expect(link.url).toMatch(/^http:\/\/localhost:8080\/v1\/pay\/emulado\/link_/);
+    const linkId = link.url.split('/pay/emulado/')[1] as string;
+    const page = await app.inject({ method: 'GET', url: `/v1/pay/emulado/${linkId}` });
+    expect(page.statusCode).toBe(200);
+    expect(page.headers['content-type']).toContain('text/html');
+    expect(page.body).toContain('Pagar');
+    expect(page.body).toContain(`DEBT-${billing.debts[0]?.id}`);
+    // Rechazar desde el checkout: vuelve a la app con el resultado y la deuda sigue abierta.
+    const declined = await app.inject({
+      method: 'POST',
+      url: `/v1/pay/emulado/${linkId}/rechazar`,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: '',
+    });
+    expect(declined.statusCode).toBe(303);
+    expect(declined.headers.location).toContain('/pagos/retorno?resultado=rechazado');
+    expect(
+      ((await luis('GET', '/v1/billing')).json() as { debts: { status: string }[] }).debts[0]
+        ?.status,
+    ).toBe('OPEN');
     const event = psp.payLink(linkId);
     const webhook = await app.inject({ method: 'POST', url: '/v1/webhooks/wompi', payload: event });
     expect(webhook.statusCode).toBe(200);
@@ -448,11 +483,25 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
     const inbox = (await admin('GET', '/admin/v1/billing/webhooks')).json() as {
       items: { outcome: string }[];
     };
-    expect(inbox.items.map((i) => i.outcome)).toEqual(['INVALID_CHECKSUM', 'APPLIED']);
+    // Tres eventos aplicados o rechazados: el rechazo desde el checkout emulado, el pago aprobado y el manipulado.
+    expect(inbox.items.map((i) => i.outcome)).toEqual(['INVALID_CHECKSUM', 'APPLIED', 'APPLIED']);
     const debts = (await admin('GET', '/admin/v1/debts?status=PAID')).json() as {
       items: unknown[];
     };
     expect(debts.items).toHaveLength(1);
+    // Movimientos del conductor (pantalla Transacciones) y tarjeta ya eliminable.
+    const movements = (await luis('GET', '/v1/payments')).json() as {
+      items: { kind: string; status: string; sessionNo: string | null; amount: string }[];
+    };
+    expect(movements.items.map((m) => `${m.kind}:${m.status}`)).toEqual([
+      'DEBT:SUCCEEDED',
+      'DEBT:FAILED',
+      'CAPTURE:FAILED',
+    ]);
+    expect(movements.items[2]?.sessionNo).toBe(failed.sessionNo);
+    expect((await luis('DELETE', `/v1/payment-methods/${methods.items[0]?.id}`)).statusCode).toBe(
+      200,
+    );
   });
 
   it('el back-office devuelve un cobro y concilia el día', async () => {

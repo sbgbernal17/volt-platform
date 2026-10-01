@@ -2,7 +2,7 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
-import { errorMessage } from '../../src/api/client.ts';
+import { ApiError, errorMessage } from '../../src/api/client.ts';
 import { useQuery } from '../../src/api/hooks.ts';
 import type { PaymentMethod } from '../../src/api/types.ts';
 import { useAuth } from '../../src/auth/auth.tsx';
@@ -51,7 +51,11 @@ export default function PaymentMethods() {
       await action();
       await methods.reload();
     } catch (caught) {
-      setError(errorMessage(caught, t('app.offline')));
+      setError(
+        caught instanceof ApiError && caught.code === 'PAYMENT_METHOD_IN_USE'
+          ? t('payment.removeLocked')
+          : errorMessage(caught, t('app.offline')),
+      );
     }
   };
   const remove = (method: PaymentMethod) => {

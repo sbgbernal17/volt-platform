@@ -3,7 +3,8 @@
  * Precios definidos por el dueño el 22 de septiembre de 2026: 1.350 COP por kWh de 05:00 a 20:00 y
  * 1.200 COP por kWh de 20:00 a 05:00; servicio excluido de IVA (sin componente de impuesto); 15 minutos
  * de gracia y luego 1.500 COP por minuto de ocupación (90.000 por hora, semántica OCPI) mientras el
- * vehículo siga conectado, sin tope de tiempo. Todo se cambia publicando una versión nueva.
+ * vehículo siga conectado, sin tope de tiempo. Cobro mínimo por conexión de 2.000 COP (decisión del
+ * dueño del 01-10-2026, ADR 0033): `min_price` de OCPI. Todo se cambia publicando una versión nueva.
  */
 import type { CostPolicy, Tariff } from './types.ts';
 
@@ -17,11 +18,11 @@ export const VOLT_BASE_TARIFF: Tariff = {
   tariff_alt_text: [
     {
       language: 'es',
-      text: 'Energía: 1.350 COP por kWh de 05:00 a 20:00 y 1.200 COP por kWh de 20:00 a 05:00. Tras terminar la carga: 15 minutos de gracia y luego 1.500 COP por minuto de ocupación mientras el vehículo siga conectado. Servicio excluido de IVA.',
+      text: 'Energía: 1.350 COP por kWh de 05:00 a 20:00 y 1.200 COP por kWh de 20:00 a 05:00. Cobro mínimo por conexión: 2.000 COP. Tras terminar la carga: 15 minutos de gracia y luego 1.500 COP por minuto de ocupación mientras el vehículo siga conectado. Servicio excluido de IVA.',
     },
     {
       language: 'en',
-      text: 'Energy: COP 1,350 per kWh from 05:00 to 20:00 and COP 1,200 per kWh from 20:00 to 05:00. After charging ends: 15 minutes grace, then COP 1,500 per minute of occupancy while the vehicle stays plugged in. VAT-exempt service.',
+      text: 'Energy: COP 1,350 per kWh from 05:00 to 20:00 and COP 1,200 per kWh from 20:00 to 05:00. Minimum charge per connection: COP 2,000. After charging ends: 15 minutes grace, then COP 1,500 per minute of occupancy while the vehicle stays plugged in. VAT-exempt service.',
     },
   ],
   elements: [
@@ -39,8 +40,9 @@ export const VOLT_BASE_TARIFF: Tariff = {
       x_volt: { grace_period_s: 900, idle_start: 'EARLIEST' },
     },
   ],
+  min_price: { excl_vat: '2000', incl_vat: '2000' },
   start_date_time: '2026-10-01T05:00:00Z',
-  last_updated: '2026-09-22T00:00:00Z',
+  last_updated: '2026-10-01T00:00:00Z',
 };
 
 export const VOLT_BASE_POLICY: CostPolicy = {

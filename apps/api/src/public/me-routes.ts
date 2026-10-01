@@ -64,6 +64,8 @@ export interface AppConfigStatic {
 
 const profilePatch = z.object({
   displayName: z.string().trim().min(1).max(80).nullable().optional(),
+  firstName: z.string().trim().min(1).max(60).nullable().optional(),
+  lastName: z.string().trim().min(1).max(60).nullable().optional(),
   phone: z
     .string()
     .trim()
@@ -98,6 +100,8 @@ export function toPublicProfile(driver: DriverRow, consentVersion: string) {
     email: driver.email,
     emailVerified: driver.email_verified,
     displayName: driver.display_name,
+    firstName: driver.first_name,
+    lastName: driver.last_name,
     phone: driver.phone,
     phoneVerified: driver.phone_verified_at !== null,
     phoneVerifiedAt: driver.phone_verified_at?.toISOString() ?? null,

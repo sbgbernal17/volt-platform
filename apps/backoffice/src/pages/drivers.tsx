@@ -27,7 +27,7 @@ export function DriversPage() {
   const drivers = useQuery(() => api.get<Items<Driver>>('/drivers'), []);
   const mutation = useMutation();
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ email: '', phone: '', displayName: '' });
+  const [form, setForm] = useState({ email: '', phone: '', firstName: '', lastName: '' });
   const [filter, setFilter] = useState('');
 
   const submit = (event: FormEvent) => {
@@ -37,13 +37,14 @@ export function DriversPage() {
         api.post<Driver>('/drivers', {
           email: form.email.trim() || undefined,
           phone: form.phone.trim() || undefined,
-          displayName: form.displayName.trim() || undefined,
+          firstName: form.firstName.trim() || undefined,
+          lastName: form.lastName.trim() || undefined,
         }),
       )
       .then((created) => {
         if (created) {
           setCreating(false);
-          setForm({ email: '', phone: '', displayName: '' });
+          setForm({ email: '', phone: '', firstName: '', lastName: '' });
           void drivers.reload();
         }
       });
@@ -93,10 +94,16 @@ export function DriversPage() {
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
               />
             </Field>
-            <Field label={t('drivers.name')}>
+            <Field label={t('drivers.firstName')}>
               <input
-                value={form.displayName}
-                onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+                value={form.firstName}
+                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+              />
+            </Field>
+            <Field label={t('drivers.lastName')}>
+              <input
+                value={form.lastName}
+                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
               />
             </Field>
           </div>
@@ -251,6 +258,14 @@ export function DriverDetailPage({ id }: { id: string }) {
         <div className="card">
           <h2>{t('app.details')}</h2>
           <div className="grid cols-2">
+            <div>
+              <div className="muted small">{t('drivers.firstName')}</div>
+              {d.first_name ?? '—'}
+            </div>
+            <div>
+              <div className="muted small">{t('drivers.lastName')}</div>
+              {d.last_name ?? '—'}
+            </div>
             <div>
               <div className="muted small">{t('drivers.email')}</div>
               {d.email ?? '—'}

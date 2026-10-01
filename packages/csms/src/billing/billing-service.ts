@@ -536,13 +536,22 @@ export class BillingService {
       >`SELECT * FROM billing.debt WHERE payment_link_id = ${transaction.paymentLinkId} FOR UPDATE`;
       const debt = debts[0];
       if (!debt) return 'UNKNOWN_LINK';
+      // Un mismo enlace admite varios intentos (rechazado y luego aprobado): cada intento es un pago
+      // propio y la referencia debe ser única por PSP (`payment_reference_uq`).
+      const previous = await tx<{ n: string }[]>`
+        SELECT count(*)::text AS n FROM billing.payment
+        WHERE debt_id = ${debt.id} AND payment_link_id = ${transaction.paymentLinkId}
+          AND psp_reference IS DISTINCT FROM ${transaction.id}`;
+      const linkAttempt = Number(previous[0]?.n ?? 0) + 1;
+      const reference =
+        linkAttempt === 1 ? transaction.reference : `${transaction.reference}-${linkAttempt}`;
       const created = await tx<PaymentRow[]>`
         INSERT INTO billing.payment
           (id, tenant_id, session_id, driver_id, kind, amount_minor, currency, status, psp, psp_reference, idempotency_key, reference,
            attempt, psp_status, psp_environment, payment_link_id, debt_id, requested_by, created_at, updated_at)
         VALUES (${randomUUID()}, ${debt.tenant_id}, ${debt.session_id}, ${debt.driver_id}, 'DEBT', ${transaction.amountMinor.toString()}::bigint,
-                ${transaction.currency}, 'PENDING', ${this.gateway.provider}, ${transaction.id}, ${`link:${transaction.id}`}, ${transaction.reference},
-                ${debt.attempts + 1}, 'PENDING', ${this.gateway.environment}, ${transaction.paymentLinkId}, ${debt.id}, 'driver:link', ${this.now()}, ${this.now()})
+                ${transaction.currency}, 'PENDING', ${this.gateway.provider}, ${transaction.id}, ${`link:${transaction.id}`}, ${reference},
+                ${debt.attempts + linkAttempt}, 'PENDING', ${this.gateway.environment}, ${transaction.paymentLinkId}, ${debt.id}, 'driver:link', ${this.now()}, ${this.now()})
         ON CONFLICT (idempotency_key) DO UPDATE SET updated_at = now()
         RETURNING *`;
       await this.applyOutcome(tx, (created[0] as PaymentRow).id, transaction, 'link');

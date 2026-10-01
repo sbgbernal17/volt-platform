@@ -204,7 +204,8 @@ describe.skipIf(!baseUrl)(
       );
       expect(published.statusCode).toBe(200);
       expect((published.json() as { status: string }).status).toBe('ACTIVE');
-      // Liquidación inmediata y tope de exposición de 200 COP en el conector 2.
+      // Liquidación inmediata y tope de exposición de 2.100 COP en el conector 2: apenas por encima del
+      // cobro mínimo por conexión (2.000 COP, ADR 0033) para que la proyección lo agote en la primera lectura.
       expect(
         (
           await admin('PUT', '/admin/v1/parameters/session.settle_delay_s', {
@@ -219,7 +220,7 @@ describe.skipIf(!baseUrl)(
           await admin('PUT', '/admin/v1/parameters/pricing.exposure_limit_minor', {
             scopeType: 'CONNECTOR',
             scopeId: connector2Id,
-            value: 200,
+            value: 2100,
             reason: 'prueba de tope',
           })
         ).statusCode,
@@ -377,7 +378,9 @@ describe.skipIf(!baseUrl)(
         final: { lines: { dimension: string }[]; total: string };
         tariff: { snapshot_hash: string };
       };
-      expect(cost.final.lines.map((l) => l.dimension)).toEqual(['ENERGY', 'PARKING_TIME']);
+      // La carga corta no alcanza el mínimo por conexión: el motor añade la línea CAP `min_price` (ADR 0033).
+      expect(cost.final.lines.map((l) => l.dimension)).toEqual(['ENERGY', 'PARKING_TIME', 'CAP']);
+      expect(settled.calc.total_minor).toBe(2000);
       expect(cost.final.total).toBe(String(settled.calc.total_minor));
       expect(cost.tariff.snapshot_hash).toMatch(/^[0-9a-f]{64}$/);
       const recalc = (
@@ -390,7 +393,11 @@ describe.skipIf(!baseUrl)(
         final: { lines: { dimension: string }[]; totalMinor: string; flags: string[] } | null;
         calcs: unknown[];
       };
-      expect(adminCost.final?.lines.map((l) => l.dimension)).toEqual(['ENERGY', 'PARKING_TIME']);
+      expect(adminCost.final?.lines.map((l) => l.dimension)).toEqual([
+        'ENERGY',
+        'PARKING_TIME',
+        'CAP',
+      ]);
       expect(adminCost.final?.totalMinor).toBe(String(settled.calc.total_minor));
       expect(Array.isArray(adminCost.calcs)).toBe(true);
       const detail = await adminSession(body.id);
@@ -408,7 +415,7 @@ describe.skipIf(!baseUrl)(
       const started = await driver('POST', '/v1/sessions', { evseId: 'VOLT-BOG04-CP01-2' });
       expect(started.statusCode).toBe(202);
       const body = started.json() as { id: string; exposureLimit: string };
-      expect(body.exposureLimit).toBe('200');
+      expect(body.exposureLimit).toBe('2100');
       await until(async () => (await session(body.id)).state === 'ACTIVE');
       await until(async () => {
         const cost = (await session(body.id)).cost as { alerts: string[] } | null;
@@ -427,8 +434,8 @@ describe.skipIf(!baseUrl)(
         stop_reason: 'Remote',
       });
       const events = (ended.events as { type: string }[]).map((e) => e.type);
-      // Con 180 kW y muestras cada 200 ms la proyección agota el tope en la primera lectura: el aviso
-      // previo puede no existir, pero nunca se repite; el agotamiento se emite exactamente una vez.
+      // Con el mínimo por conexión (2.000) y la proyección a 180 kW, el tope de 2.100 se agota en la primera
+      // lectura: el aviso previo puede no existir, pero nunca se repite; el agotamiento se emite exactamente una vez.
       expect(events.filter((e) => e === 'session.exposure_warning').length).toBeLessThanOrEqual(1);
       expect(events.filter((e) => e === 'session.exposure_exhausted')).toHaveLength(1);
       expect(events.filter((e) => e === 'session.stop_requested')).toHaveLength(1);
@@ -442,7 +449,9 @@ describe.skipIf(!baseUrl)(
       };
       expect(settled.status).toBe('settled');
       expect(settled.calc.total_minor).toBeGreaterThan(0);
-      expect(settled.calc.total_minor).toBeLessThan(600);
+      // La sesión se detuvo antes de consumir 2.000 COP de energía: se cobra el mínimo y no se supera el tope.
+      expect(settled.calc.total_minor).toBe(2000);
+      expect(settled.calc.total_minor).toBeLessThanOrEqual(2100);
       // En FINAL las alertas comparan solo el total (sin proyección): el rastro del agotamiento queda en la sesión.
       expect((await adminSession(body.id)).exposure_exhausted_at).not.toBeNull();
     }, 40_000);
@@ -505,7 +514,7 @@ describe.skipIf(!baseUrl)(
           `/admin/v1/parameters/pricing.exposure_limit_minor/effective?connectorId=${connector2Id}`,
         )
       ).json() as { value: number };
-      expect(effective.value).toBe(200);
+      expect(effective.value).toBe(2100);
       const audit = (await admin('GET', '/admin/v1/pricing/audit')).json() as {
         items: { entity: string; action: string }[];
       };

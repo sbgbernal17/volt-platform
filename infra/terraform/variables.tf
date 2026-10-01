@@ -138,9 +138,9 @@ variable "email_provider" {
 }
 
 variable "email_from" {
-  description = "Remitente de los correos propios (dominio verificado en el proveedor)."
+  description = "Remitente de los correos propios (remitente verificado en Brevo: notificaciones@supercargadores.co, ADR 0019)."
   type        = string
-  default     = "VOLT <noreply@supercargadores.co>"
+  default     = "VOLT <notificaciones@supercargadores.co>"
 }
 
 # --- Celular verificado por SMS (ADR 0031) ---

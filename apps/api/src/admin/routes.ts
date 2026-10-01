@@ -72,6 +72,8 @@ const driverBody = z.object({
   email: z.string().email().max(120).optional(),
   phone: z.string().max(32).optional(),
   displayName: z.string().max(120).optional(),
+  firstName: z.string().max(60).optional(),
+  lastName: z.string().max(60).optional(),
   locale: z.enum(['es', 'en']).optional(),
 });
 

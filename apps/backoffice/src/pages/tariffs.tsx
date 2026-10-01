@@ -9,6 +9,7 @@ import { ConfirmDialog } from '../components/confirm-dialog.tsx';
 import { DataTable } from '../components/data-table.tsx';
 import { Alert, Badge, ErrorBox, Field, JsonView, Loading, PageHeader } from '../components/ui.tsx';
 import { type MessageKey, useI18n } from '../i18n/index.tsx';
+import { costLineLabel } from '../lib/cost-lines.ts';
 import { connectorStandard, dateTime, money, moneyMajor } from '../lib/format.ts';
 import { useRouter } from '../lib/router.tsx';
 import {
@@ -69,7 +70,14 @@ interface TariffDetail extends Omit<Tariff, 'versions' | 'active_version'> {
 
 interface SimulationResult {
   currency: string;
-  lines: { seq: number; dimension: string; quantity: string; unit: string; total: string }[];
+  lines: {
+    seq: number;
+    dimension: string;
+    elementRef?: string | null;
+    quantity: string;
+    unit: string;
+    total: string;
+  }[];
   total: string;
   totalMinor: string;
   capped: boolean;
@@ -1076,7 +1084,7 @@ function VersionEditor({
               <ul className="summary small">
                 {example.lines.map((line) => (
                   <li key={line.seq}>
-                    {td(`sessions.dimension.${line.dimension}`)}: {quantity(line, locale)} ·{' '}
+                    {costLineLabel(line, td)}: {quantity(line, locale)} ·{' '}
                     {moneyMajor(line.total, example.currency, locale)}
                   </li>
                 ))}

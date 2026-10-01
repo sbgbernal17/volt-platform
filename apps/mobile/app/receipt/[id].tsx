@@ -139,7 +139,17 @@ export default function ReceiptScreen() {
           {data.lines.map((line) => (
             <DataRow
               key={line.seq}
-              label={`${td(`receipt.dimension.${line.dimension}`)} · ${line.quantity.replace('.', ',')} ${line.unit} × ${formatMoney(line.unitPrice, currency)}`}
+              label={
+                line.dimension === 'CAP'
+                  ? td(
+                      line.elementRef === 'min_price'
+                        ? 'receipt.cap.minPrice'
+                        : line.elementRef === 'max_price'
+                          ? 'receipt.cap.maxPrice'
+                          : 'receipt.dimension.CAP',
+                    )
+                  : `${td(`receipt.dimension.${line.dimension}`)} · ${line.quantity.replace('.', ',')} ${line.unit} × ${formatMoney(line.unitPrice, currency)}`
+              }
               value={formatMoney(line.total, currency)}
             />
           ))}

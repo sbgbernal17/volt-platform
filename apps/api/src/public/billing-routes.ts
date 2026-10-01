@@ -220,6 +220,51 @@ export async function billingPrivateRoutes(
     };
   });
 
+  // Movimientos del conductor (pantalla Transacciones): cobros, pagos de deuda, devoluciones.
+  app.get('/payments', async (request) => {
+    const driver = driverOf(request);
+    const query = z
+      .object({ limit: z.coerce.number().int().min(1).max(100).optional() })
+      .parse(request.query ?? {});
+    const rows = await requireBilling().listPayments({
+      tenantId,
+      driverId: driver.driverId,
+      limit: query.limit ?? 50,
+    });
+    const sessionIds = [...new Set(rows.map((r) => r.session_id).filter((s): s is string => !!s))];
+    const methodIds = [
+      ...new Set(rows.map((r) => r.payment_method_id).filter((m): m is string => !!m)),
+    ];
+    const sessions = sessionIds.length
+      ? await sql<
+          { id: string; session_no: string }[]
+        >`SELECT id, session_no FROM sessions.charging_session WHERE id = ANY(${sessionIds}::uuid[])`
+      : [];
+    const methods = methodIds.length
+      ? await sql<
+          { id: string; label: string | null }[]
+        >`SELECT id, label FROM billing.payment_method WHERE id = ANY(${methodIds}::uuid[])`
+      : [];
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        status: r.status,
+        pspStatus: r.psp_status,
+        statusMessage: r.status_message,
+        amount: formatScaled(BigInt(r.amount_minor), currencyExponent(r.currency)),
+        currency: r.currency,
+        sessionId: r.session_id,
+        sessionNo: sessions.find((s) => s.id === r.session_id)?.session_no ?? null,
+        methodLabel: methods.find((m) => m.id === r.payment_method_id)?.label ?? null,
+        reference: r.reference,
+        pspReference: r.psp_reference,
+        createdAt: r.created_at.toISOString(),
+        finalizedAt: r.finalized_at?.toISOString() ?? null,
+      })),
+    };
+  });
+
   app.post('/debts/:id/pay-link', async (request) => {
     const driver = driverOf(request);
     const { id } = params.parse(request.params);
@@ -295,7 +340,7 @@ export function receiptFilename(number: string): string {
 /** Webhook de Wompi: sin autenticación, verificado por checksum, idempotente. */
 export async function billingWebhookRoutes(
   app: FastifyInstance,
-  options: { billing: BillingService | undefined },
+  options: { billing: BillingService | undefined; redirectUrl?: string | undefined },
 ): Promise<void> {
   app.post('/webhooks/wompi', async (request, reply) => {
     if (!options.billing) {
@@ -308,4 +353,94 @@ export async function billingWebhookRoutes(
     );
     return { received: result.accepted, outcome: result.outcome };
   });
+
+  // Checkout emulado (solo con PAYMENTS_PROVIDER=fake): la página que abre "Pagar ahora" en dev.
+  // Reproduce lo que hace el checkout de Wompi: cobra el enlace, dispara el webhook y vuelve a la app.
+  const fakeGateway = (): FakeGateway | undefined => {
+    const gateway = options.billing?.gateway as FakeGateway | undefined;
+    return gateway && gateway.environment === 'fake' && typeof gateway.payLink === 'function'
+      ? gateway
+      : undefined;
+  };
+  const linkParams = z.object({ linkId: z.string().min(6).max(400) });
+  app.get('/pay/emulado/:linkId', async (request, reply) => {
+    const gateway = fakeGateway();
+    if (!gateway)
+      throw new CsmsError('El checkout emulado no existe en este ambiente', 404, 'NOT_FOUND');
+    const { linkId } = linkParams.parse(request.params);
+    let info: { amountMinor: bigint; currency: string; reference: string; paid: boolean };
+    try {
+      info = gateway.linkInfo(linkId);
+    } catch {
+      throw new CsmsError('El enlace de pago no existe', 404, 'NOT_FOUND');
+    }
+    reply.type('text/html; charset=utf-8');
+    return renderFakeCheckout(linkId, info);
+  });
+  app.post('/pay/emulado/:linkId/:outcome', async (request, reply) => {
+    const gateway = fakeGateway();
+    if (!gateway || !options.billing)
+      throw new CsmsError('El checkout emulado no existe en este ambiente', 404, 'NOT_FOUND');
+    const { linkId, outcome } = linkParams
+      .extend({ outcome: z.enum(['aprobar', 'rechazar']) })
+      .parse(request.params);
+    const status = outcome === 'aprobar' ? 'APPROVED' : 'DECLINED';
+    let event: Record<string, unknown>;
+    try {
+      event = gateway.payLink(linkId, status);
+    } catch {
+      throw new CsmsError('El enlace de pago no existe', 404, 'NOT_FOUND');
+    }
+    const result = await options.billing.processWebhook(event);
+    const reference = gateway.linkInfo(linkId).reference;
+    const resultado = status === 'APPROVED' ? 'aprobado' : 'rechazado';
+    if (options.redirectUrl) {
+      const url = new URL(options.redirectUrl);
+      url.searchParams.set('resultado', resultado);
+      url.searchParams.set('referencia', reference);
+      url.searchParams.set('emulado', '1');
+      reply.redirect(url.toString(), 303);
+      return;
+    }
+    reply.type('text/html; charset=utf-8');
+    return renderFakeCheckoutDone(resultado, reference, result.outcome);
+  });
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+const FAKE_CHECKOUT_STYLE = `body{margin:0;font-family:Roboto,Arial,sans-serif;background:#f5f5f5;color:#0b0b0b}
+.card{max-width:420px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e5e5}
+.head{background:#dc2626;color:#fff;padding:20px 24px;font-weight:700;font-size:20px}.body{padding:24px}
+.amount{font-size:32px;font-weight:700;margin:8px 0 16px}.muted{color:#525252;font-size:14px;line-height:1.5}
+form{display:inline-block;margin:8px 8px 0 0}button{padding:14px 20px;border:0;border-radius:6px;font-weight:700;font-size:15px;cursor:pointer}
+.pay{background:#dc2626;color:#fff}.decline{background:#e5e5e5;color:#0b0b0b}`;
+
+/** Página del checkout emulado: importe, referencia y dos botones (pagar o rechazar). */
+export function renderFakeCheckout(
+  linkId: string,
+  info: { amountMinor: bigint; currency: string; reference: string; paid: boolean },
+): string {
+  const amount = `${formatScaled(info.amountMinor, currencyExponent(info.currency))} ${info.currency}`;
+  const action = (outcome: string) => `/v1/pay/emulado/${encodeURIComponent(linkId)}/${outcome}`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pago de prueba · VOLT</title><style>${FAKE_CHECKOUT_STYLE}</style></head>
+<body><div class="card"><div class="head">Pasarela emulada · VOLT</div><div class="body">
+<p class="muted">Ambiente de pruebas: este pago no mueve dinero. En staging y producción esta página es el checkout de Wompi.</p>
+<div class="amount">$ ${escapeHtml(amount)}</div>
+<p class="muted">Referencia ${escapeHtml(info.reference)}${info.paid ? ' · ya pagado' : ''}</p>
+<form method="post" action="${action('aprobar')}"><button class="pay" type="submit">Pagar</button></form>
+<form method="post" action="${action('rechazar')}"><button class="decline" type="submit">Rechazar</button></form>
+</div></div></body></html>`;
+}
+
+function renderFakeCheckoutDone(resultado: string, reference: string, outcome: string): string {
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Pago ${escapeHtml(resultado)} · VOLT</title><style>${FAKE_CHECKOUT_STYLE}</style></head>
+<body><div class="card"><div class="head">Pasarela emulada · VOLT</div><div class="body"><div class="amount">Pago ${escapeHtml(resultado)}</div>
+<p class="muted">Referencia ${escapeHtml(reference)} · webhook ${escapeHtml(outcome)}. Vuelva a la app para ver el resultado.</p></div></div></body></html>`;
 }

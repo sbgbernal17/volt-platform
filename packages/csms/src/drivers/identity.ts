@@ -15,7 +15,7 @@ import {
   ValidationError,
 } from '../errors.ts';
 import { resolveParam } from '../pricing/params.ts';
-import type { DriverRow } from '../sessions/drivers.ts';
+import { type DriverRow, joinDisplayName, splitDisplayName } from '../sessions/drivers.ts';
 import { appendEvent } from '../sessions/outbox.ts';
 import { toJson } from '../types.ts';
 import { type DriverDocumentType, normalizeDriverDocument } from './document.ts';
@@ -107,10 +107,11 @@ export async function resolveDriverIdentity(
   // El primer inicio de sesión suele llegar en varias peticiones a la vez (perfil, cobros, avisos):
   // solo una crea la cuenta; las demás la encuentran recién creada en lugar de chocar con la
   // restricción única de `idp_subject`.
+  const names = splitDisplayName(claims.displayName);
   const rows = await db<DriverRow[]>`
-    INSERT INTO auth.driver (id, tenant_id, idp_subject, idp_provider, email, email_verified, display_name, locale, last_login_at)
+    INSERT INTO auth.driver (id, tenant_id, idp_subject, idp_provider, email, email_verified, display_name, first_name, last_name, locale, last_login_at)
     VALUES (${randomUUID()}, ${tenantId}, ${claims.subject}, ${claims.provider ?? null}, ${email ?? null},
-            ${claims.emailVerified && Boolean(email)}, ${claims.displayName ?? null}, 'es', ${now})
+            ${claims.emailVerified && Boolean(email)}, ${claims.displayName?.trim() || null}, ${names.firstName}, ${names.lastName}, 'es', ${now})
     ON CONFLICT (idp_subject) DO NOTHING
     RETURNING *`;
   const inserted = rows[0];
@@ -159,6 +160,9 @@ async function touchLogin(
 
 export interface DriverProfilePatch {
   displayName?: string | null | undefined;
+  /** Nombre y apellidos separados (tarea 9h); al tocarlos, display_name se arma con los dos. */
+  firstName?: string | null | undefined;
+  lastName?: string | null | undefined;
   phone?: string | null | undefined;
   locale?: DriverLocale | undefined;
   /** Documento de identidad (ADR 0027): tipo y número van juntos; null en ambos lo borra. */
@@ -226,9 +230,20 @@ export async function updateDriverProfile(
         ? null
         : normalizePhone(patch.phone);
   const phoneChanged = phone !== undefined && phone !== current.phone;
+  const namesTouched = patch.firstName !== undefined || patch.lastName !== undefined;
+  const firstName =
+    patch.firstName === undefined ? current.first_name : patch.firstName?.trim() || null;
+  const lastName =
+    patch.lastName === undefined ? current.last_name : patch.lastName?.trim() || null;
+  const displayName =
+    patch.displayName !== undefined
+      ? patch.displayName?.trim() || null
+      : namesTouched
+        ? joinDisplayName(firstName, lastName)
+        : current.display_name;
   const rows = await db<DriverRow[]>`
     UPDATE auth.driver SET
-      display_name = CASE WHEN ${patch.displayName !== undefined} THEN ${patch.displayName ?? null} ELSE display_name END,
+      display_name = ${displayName}, first_name = ${firstName}, last_name = ${lastName},
       phone = CASE WHEN ${phone !== undefined} THEN ${phone ?? null} ELSE phone END,
       phone_verified_at = CASE WHEN ${phoneChanged} THEN NULL ELSE phone_verified_at END,
       locale = COALESCE(${patch.locale ?? null}, locale),
@@ -359,7 +374,7 @@ export async function anonymizeDriver(
       UPDATE auth.id_token SET status = 'INVALID' WHERE driver_id = ${driverId} AND status = 'ACTIVE'`;
     const updated = await tx<DriverRow[]>`
       UPDATE auth.driver SET
-        email = NULL, phone = NULL, phone_verified_at = NULL, display_name = NULL, idp_subject = NULL, idp_provider = NULL,
+        email = NULL, phone = NULL, phone_verified_at = NULL, display_name = NULL, first_name = NULL, last_name = NULL, idp_subject = NULL, idp_provider = NULL,
         email_verified = false, consents = '{}'::jsonb, default_payment_method_id = NULL,
         document_type = NULL, document_number = NULL, wants_invoice = false,
         status = 'DELETED', anonymized_at = ${now}, updated_at = now()

@@ -136,6 +136,30 @@ export async function listPaymentMethods(db: ISql, driverId: string): Promise<Pa
     ORDER BY created_at DESC`;
 }
 
+/**
+ * Regla del dueño (01-10-2026): mientras haya una carga en curso o pendiente de cobro, o un cobro
+ * pendiente (deuda abierta), el conductor no puede eliminar sus medios de pago.
+ */
+export async function assertPaymentMethodRemovable(db: ISql, driverId: string): Promise<void> {
+  const rows = await db<{ debts: number; sessions: number }[]>`
+    SELECT
+      (SELECT count(*)::int FROM billing.debt WHERE driver_id = ${driverId} AND status = 'OPEN') AS debts,
+      (SELECT count(*)::int FROM sessions.charging_session
+        WHERE driver_id = ${driverId} AND is_test = false
+          AND state::text NOT IN ('PAID','FAILED','CANCELLED','EXPIRED')
+          AND NOT (state::text = 'SETTLED' AND payment_status IN ('CAPTURED','WAIVED'))) AS sessions`;
+  const counts = rows[0] ?? { debts: 0, sessions: 0 };
+  if (counts.debts > 0 || counts.sessions > 0) {
+    throw new ConflictError(
+      counts.sessions > 0
+        ? 'No se puede eliminar el medio de pago mientras haya una carga en curso o pendiente de cobro'
+        : 'No se puede eliminar el medio de pago mientras haya un cobro pendiente',
+      'PAYMENT_METHOD_IN_USE',
+      { openDebts: counts.debts, activeSessions: counts.sessions },
+    );
+  }
+}
+
 export async function removePaymentMethod(
   db: ISql,
   id: string,
@@ -143,6 +167,7 @@ export async function removePaymentMethod(
 ): Promise<PaymentMethodRow> {
   const current = await getPaymentMethod(db, id);
   if (current.driver_id !== driverId) throw new NotFoundError('payment_method', id);
+  await assertPaymentMethodRemovable(db, driverId);
   const rows = await db<PaymentMethodRow[]>`
     UPDATE billing.payment_method SET status = 'REMOVED', removed_at = now(), updated_at = now() WHERE id = ${id} RETURNING *`;
   await db`

@@ -292,6 +292,8 @@ export const en: Record<MessageKey, string> = {
   'sessions.dimension.FLAT': 'Session fee',
   'sessions.dimension.ADJUSTMENT': 'Adjustment',
   'sessions.dimension.CAP': 'Cap',
+  'sessions.cap.minPrice': 'Minimum charge per connection',
+  'sessions.cap.maxPrice': 'Price cap',
 
   'tariffs.title': 'Tariffs',
   'tariffs.new': 'New tariff',
@@ -543,6 +545,8 @@ export const en: Record<MessageKey, string> = {
   'drivers.new': 'New driver',
   'drivers.email': 'Email',
   'drivers.phone': 'Phone',
+  'drivers.firstName': 'First name',
+  'drivers.lastName': 'Last name',
   'drivers.phoneVerified': 'Mobile verified',
   'drivers.phoneUnverified': 'Mobile not verified',
   'drivers.name': 'Name',

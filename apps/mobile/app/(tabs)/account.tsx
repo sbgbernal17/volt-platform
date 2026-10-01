@@ -256,7 +256,7 @@ export default function Account() {
             onPress={() => router.push('/payment-methods')}
           />
           <QuickAccess
-            icon="receipt-long"
+            icon="payments"
             tone="danger"
             label={t('account.debts')}
             badge={openDebts || undefined}

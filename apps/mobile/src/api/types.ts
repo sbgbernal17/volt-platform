@@ -41,6 +41,9 @@ export interface Profile {
   email: string | null;
   emailVerified: boolean;
   displayName: string | null;
+  /** Nombre y apellidos separados (adquiriente de la factura electrónica). */
+  firstName: string | null;
+  lastName: string | null;
   /** Celular en E.164 (+57…), verificado por SMS cuando `phoneVerified` (ADR 0031). */
   phone: string | null;
   phoneVerified: boolean;
@@ -240,6 +243,24 @@ export interface Debt {
   createdAt: string;
 }
 
+/** Movimiento de la pantalla Transacciones (GET /payments). */
+export interface PaymentItem {
+  id: string;
+  kind: 'CAPTURE' | 'DEBT' | 'VOID' | 'REFUND';
+  status: 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
+  pspStatus: string | null;
+  statusMessage: string | null;
+  amount: string;
+  currency: string;
+  sessionId: string | null;
+  sessionNo: string | null;
+  methodLabel: string | null;
+  reference: string | null;
+  pspReference: string | null;
+  createdAt: string;
+  finalizedAt: string | null;
+}
+
 export interface Billing {
   status: 'OK' | 'BLOCKED_DEBT' | 'BLOCKED_MANUAL';
   blockedReason: string | null;
@@ -253,6 +274,8 @@ export interface Billing {
 export interface ReceiptLine {
   seq: number;
   dimension: string;
+  /** `min_price` o `max_price` en las líneas CAP (ADR 0033). */
+  elementRef?: string | null;
   quantity: string;
   unit: string;
   unitPrice: string;

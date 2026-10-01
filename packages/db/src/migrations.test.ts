@@ -66,6 +66,11 @@ describe.skipIf(!baseUrl)('migración inicial del modelo de datos', () => {
         'document_type',
         'wants_invoice',
       ]);
+      // Migración 0014 (nombre y apellidos separados).
+      const nameColumns = await sql<{ column_name: string }[]>`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'auth' AND table_name = 'driver' AND column_name IN ('first_name', 'last_name')`;
+      expect(nameColumns.map((c) => c.column_name).sort()).toEqual(['first_name', 'last_name']);
       // Migración 0013 (celular verificado por SMS, ADR 0031).
       const phoneColumns = await sql<{ column_name: string }[]>`
         SELECT column_name FROM information_schema.columns
