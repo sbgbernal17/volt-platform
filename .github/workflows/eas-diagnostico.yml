@@ -90,13 +90,18 @@ jobs:
             echo "$tabla"
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::notice title=Envíos a las tiendas::$(jq -c '[.data.app.byId.submissions[] | {id: .id[0:8], platform, status, build: (.submittedBuild.id // "-")[0:8], error: .error.errorCode}]' submissions.json)"
-          # Para los envíos con error, el final de su registro (sin claves).
-          mask() { sed -E 's/AIza[0-9A-Za-z_-]{35}/[clave]/g' | cut -c1-400; }
-          jq -r '.data.app.byId.submissions[] | select(.status == "ERRORED") | "\(.id) \(.logFiles[0] // "")"' submissions.json | while read -r id url; do
+          echo "::notice title=Envíos a las tiendas::$(jq -c '[.data.app.byId.submissions[] | {id: .id[0:8], platform, status, build: (.submittedBuild.id // "-")[0:8], error: .error.errorCode, message: ((.error.message // "")[0:300])}]' submissions.json)"
+          # Para los envíos con error, el final de cada archivo de registro (líneas JSON a texto, sin claves).
+          mask() { sed -E 's/AIza[0-9A-Za-z_-]{35}/[clave]/g' | cut -c1-600; }
+          jq -r '.data.app.byId.submissions[] | select(.status == "ERRORED") | .id as $id | .logFiles[] | "\($id) \(.)"' submissions.json | while read -r id url; do
             [ -n "$url" ] || continue
-            echo "::group::Registro del envío $id (últimas 60 líneas)"
-            curl -sSfL --compressed --max-time 60 "$url" | tail -n 60 | mask || echo "No fue posible descargar el registro."
+            echo "::group::Registro del envío $id ($(basename "$url" | cut -c1-60); últimas 80 líneas)"
+            if curl -sSfL --compressed --max-time 60 "$url" -o sub.log; then
+              if gzip -t sub.log 2>/dev/null; then gzip -dc sub.log > sub.txt; else mv sub.log sub.txt; fi
+              jq -R -r 'fromjson? // {msg: .} | "[\(.phase // "-")] \(.msg // .message // "")"' sub.txt | tail -n 80 | mask
+            else
+              echo "No fue posible descargar el registro."
+            fi
             echo "::endgroup::"
           done
       - name: Consultar la compilación
