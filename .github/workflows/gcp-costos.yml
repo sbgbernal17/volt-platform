@@ -1,0 +1,235 @@
+# Inventario de lo que corre en cada ambiente y estimación mensual con precios de lista de us-central1
+# (sin descuentos, sin el crédito de GKE ni los niveles gratuitos salvo donde se indica). No cambia
+# nada. La cifra exacta sale de Facturación → Informes en la consola; este flujo sirve para ver qué
+# pesa, qué está encendido sin uso y qué se puede apagar o reducir desde Terraform.
+name: Costos de Google Cloud (inventario)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environments:
+        description: 'Ambientes separados por coma'
+        type: string
+        default: 'dev,staging'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: us-central1
+
+jobs:
+  preparar:
+    name: Ambientes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - id: matrix
+        env:
+          ENVIRONMENTS: ${{ inputs.environments || 'dev,staging' }}
+        run: |
+          items=""
+          for env in $(echo "$ENVIRONMENTS" | tr ',' ' '); do
+            case "$env" in
+              dev|staging|prod) ;;
+              *) echo "::error::Ambiente desconocido: $env"; exit 1 ;;
+            esac
+            suffix=$(echo "$env" | tr '[:lower:]' '[:upper:]')
+            items="$items{\"env\":\"$env\",\"suffix\":\"$suffix\"},"
+          done
+          echo "matrix=[${items%,}]" >> "$GITHUB_OUTPUT"
+
+  inventario:
+    name: Inventario (${{ matrix.env }})
+    needs: preparar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.preparar.outputs.matrix) }}
+    env:
+      PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', matrix.suffix)] }}
+      ENVIRONMENT: ${{ matrix.env }}
+    steps:
+      - id: auth
+        name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', matrix.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', matrix.suffix)] }}
+          token_format: access_token
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin,kubectl
+      - name: Facturación (solo si la cuenta de despliegue tiene permiso)
+        run: |
+          gcloud billing projects describe "$PROJECT_ID" --format 'value(billingAccountName,billingEnabled)' 2>&1 | head -3 || true
+      - name: Recursos
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          set +e
+          mkdir -p inv
+          gcloud sql instances list --project "$PROJECT_ID" --format json > inv/sql.json 2>/dev/null || echo '[]' > inv/sql.json
+          gcloud redis instances list --region "$REGION" --project "$PROJECT_ID" --format json > inv/redis.json 2>/dev/null || echo '[]' > inv/redis.json
+          gcloud container clusters list --project "$PROJECT_ID" --format json > inv/gke.json 2>/dev/null || echo '[]' > inv/gke.json
+          gcloud run services list --region "$REGION" --project "$PROJECT_ID" --format json > inv/run.json 2>/dev/null || echo '[]' > inv/run.json
+          gcloud run jobs list --region "$REGION" --project "$PROJECT_ID" --format json > inv/jobs.json 2>/dev/null || echo '[]' > inv/jobs.json
+          gcloud compute forwarding-rules list --project "$PROJECT_ID" --format json > inv/rules.json 2>/dev/null || echo '[]' > inv/rules.json
+          gcloud compute addresses list --project "$PROJECT_ID" --format json > inv/addresses.json 2>/dev/null || echo '[]' > inv/addresses.json
+          gcloud compute security-policies list --project "$PROJECT_ID" --format json > inv/armor.json 2>/dev/null || echo '[]' > inv/armor.json
+          gcloud compute routers list --project "$PROJECT_ID" --format json > inv/routers.json 2>/dev/null || echo '[]' > inv/routers.json
+          gcloud compute instances list --project "$PROJECT_ID" --format json > inv/vms.json 2>/dev/null || echo '[]' > inv/vms.json
+          gcloud compute disks list --project "$PROJECT_ID" --format json > inv/disks.json 2>/dev/null || echo '[]' > inv/disks.json
+          gcloud compute snapshots list --project "$PROJECT_ID" --format json > inv/snapshots.json 2>/dev/null || echo '[]' > inv/snapshots.json
+          gcloud compute networks vpc-access connectors list --region "$REGION" --project "$PROJECT_ID" --format json > inv/connectors.json 2>/dev/null || echo '[]' > inv/connectors.json
+          gcloud certificate-manager certificates list --location global --project "$PROJECT_ID" --format json > inv/certs.json 2>/dev/null || echo '[]' > inv/certs.json
+          gcloud artifacts repositories list --location "$REGION" --project "$PROJECT_ID" --format json > inv/registry.json 2>/dev/null || echo '[]' > inv/registry.json
+          gcloud secrets list --project "$PROJECT_ID" --format json > inv/secrets.json 2>/dev/null || echo '[]' > inv/secrets.json
+          gcloud pubsub topics list --project "$PROJECT_ID" --format json > inv/topics.json 2>/dev/null || echo '[]' > inv/topics.json
+          gcloud logging buckets list --project "$PROJECT_ID" --format json > inv/logbuckets.json 2>/dev/null || echo '[]' > inv/logbuckets.json
+          gcloud monitoring uptime list-configs --project "$PROJECT_ID" --format json > inv/uptime.json 2>/dev/null || echo '[]' > inv/uptime.json
+          # Versiones de secretos (solo nombres y estado: nunca valores).
+          for s in email-provider-api-key sms-provider-api-key api-admin-token; do
+            echo "secreto $s: $(gcloud secrets versions list "$s" --project "$PROJECT_ID" --format 'value(name,state,createTime)' 2>/dev/null | head -3 | tr '\n' ';')"
+          done
+          # Ingesta de logs y métricas de los últimos 30 días (API de Monitoring).
+          end=$(date -u +%Y-%m-%dT%H:%M:%SZ); start=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          series() { # métrica → suma de los últimos 30 días
+            curl -sS --max-time 60 -H "Authorization: Bearer $ACCESS_TOKEN" -G "https://monitoring.googleapis.com/v3/projects/$PROJECT_ID/timeSeries" \
+              --data-urlencode "filter=metric.type=\"$1\"" --data-urlencode "interval.startTime=$start" --data-urlencode "interval.endTime=$end" \
+              --data-urlencode "aggregation.alignmentPeriod=2592000s" --data-urlencode "aggregation.perSeriesAligner=ALIGN_SUM" \
+              --data-urlencode "aggregation.crossSeriesReducer=REDUCE_SUM"
+          }
+          series "logging.googleapis.com/billing/bytes_ingested" > inv/log_ingest.json
+          series "monitoring.googleapis.com/billing/bytes_ingested" > inv/mon_ingest.json
+          series "monitoring.googleapis.com/uptime_check/check_passed" > inv/uptime_exec.json
+          series "pubsub.googleapis.com/topic/byte_cost" > inv/pubsub_bytes.json
+          # Pods del clúster (Autopilot cobra por lo que piden los pods, no por nodos).
+          cluster=$(jq -r '.[0].name // empty' inv/gke.json); location=$(jq -r '.[0].location // empty' inv/gke.json)
+          if [ -n "$cluster" ]; then
+            gcloud container clusters get-credentials "$cluster" --location "$location" --project "$PROJECT_ID" >/dev/null 2>&1 \
+              && kubectl get pods -A -o json > inv/pods.json 2>/dev/null || echo '{"items":[]}' > inv/pods.json
+          else
+            echo '{"items":[]}' > inv/pods.json
+          fi
+          echo "archivos: $(ls inv | tr '\n' ' ')"
+      - name: Estimación mensual (precios de lista, USD)
+        run: |
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, os, re, glob
+          env = os.environ['ENVIRONMENT']
+          def load(name, default):
+              try:
+                  with open(f'inv/{name}') as f:
+                      return json.load(f)
+              except Exception:
+                  return default
+          H = 730  # horas al mes
+          rows = []  # (rubro, detalle, usd, palanca)
+          def add(rubro, detalle, usd, palanca=''):
+              rows.append((rubro, detalle, usd, palanca))
+          # Cloud SQL (edición Enterprise, us-central1)
+          for i in load('sql.json', []):
+              st = i.get('settings', {}); tier = st.get('tier', '?'); ha = st.get('availabilityType') == 'REGIONAL'
+              disk = float(st.get('dataDiskSizeGb', 0) or 0); pitr = (st.get('backupConfiguration') or {}).get('pointInTimeRecoveryEnabled')
+              m = re.match(r'db-custom-(\d+)-(\d+)', tier)
+              if tier == 'db-g1-small': hourly = 0.0350
+              elif tier == 'db-f1-micro': hourly = 0.0150
+              elif m: hourly = int(m.group(1)) * 0.0413 + int(m.group(2)) / 1024 * 0.0070
+              else: hourly = 0.10
+              if ha: hourly *= 2
+              compute = hourly * H; storage = disk * 0.17 * (2 if ha else 1); backups = disk * 0.08 * (1.5 if pitr else 1)
+              add('Cloud SQL', f"{i.get('name')} {tier}{' HA' if ha else ''}, {disk:.0f} GB SSD, copias{' + PITR' if pitr else ''}, estado {i.get('state')}", compute + storage + backups,
+                  'db_tier / db_disk_gb en tfvars; PITR solo donde haga falta')
+          # Memorystore
+          for r in load('redis.json', []):
+              gb = float(r.get('memorySizeGb', 1)); tier = r.get('tier', 'BASIC')
+              rate = 0.049 if tier == 'BASIC' else 0.093
+              add('Memorystore Redis', f"{r.get('name','').split('/')[-1]} {tier} {gb:.0f} GB", rate * gb * H, 'redis_tier / redis_memory_gb')
+          # GKE Autopilot: cuota del clúster + recursos pedidos por los pods propios
+          for c in load('gke.json', []):
+              add('GKE: clúster', f"{c.get('name')} ({c.get('location')}), Autopilot={bool((c.get('autopilot') or {}).get('enabled'))}", 0.10 * H,
+                  'un clúster zonal o Autopilot por cuenta de facturación recibe un crédito de 74,40 USD/mes: el segundo se paga completo')
+          def cpu(v):
+              v = str(v); return float(v[:-1]) / 1000 if v.endswith('m') else float(v)
+          def gib(v):
+              v = str(v); units = {'Ki': 1/1024/1024, 'Mi': 1/1024, 'Gi': 1, 'Ti': 1024, 'K': 1e3/2**30, 'M': 1e6/2**30, 'G': 1e9/2**30}
+              for u, f in units.items():
+                  if v.endswith(u): return float(v[:-len(u)]) * f
+              return float(v) / 2**30
+          pods = load('pods.json', {}).get('items', [])
+          tcpu = tmem = 0.0; detail = []
+          for p in pods:
+              ns = p['metadata']['namespace']
+              if ns.startswith('kube-') or ns.startswith('gke-') or ns == 'gmp-system': continue
+              c_cpu = sum(cpu((c.get('resources', {}).get('requests') or {}).get('cpu', '0')) for c in p['spec']['containers'])
+              c_mem = sum(gib((c.get('resources', {}).get('requests') or {}).get('memory', '0')) for c in p['spec']['containers'])
+              tcpu += c_cpu; tmem += c_mem; detail.append(f"{p['metadata']['name']} {c_cpu:g} vCPU/{c_mem:g} GiB")
+          if detail:
+              add('GKE: pods (Autopilot)', '; '.join(detail), (tcpu * 0.0445 + tmem * 0.0049225) * H, 'gateway_replicas / gateway_cpu / gateway_memory en tfvars')
+          # Cloud Run: instancias mínimas (siempre encendidas) y CPU siempre asignada
+          for s in load('run.json', []):
+              md = s.get('spec', {}).get('template', {}).get('metadata', {}); ann = md.get('annotations', {})
+              name = s['metadata']['name']; mn = int(ann.get('autoscaling.knative.dev/minScale', '0') or 0)
+              throttling = ann.get('run.googleapis.com/cpu-throttling', 'true') != 'false'
+              cont = s['spec']['template']['spec']['containers'][0]; lim = cont.get('resources', {}).get('limits', {})
+              vcpu = cpu(lim.get('cpu', '1')); mem = gib(lim.get('memory', '512Mi'))
+              if mn == 0:
+                  add('Cloud Run', f"{name}: escala a cero (solo pago por peticiones)", 0, '')
+              elif throttling:
+                  add('Cloud Run', f"{name}: {mn} instancia(s) mínima(s) en reposo ({vcpu:g} vCPU, {mem:g} GiB)", mn * (vcpu * 0.0000025 + mem * 0.0000025) * 2592000, 'api_min_instances = 0 en ambientes de prueba')
+              else:
+                  add('Cloud Run', f"{name}: {mn} instancia(s) siempre encendida(s), CPU siempre asignada ({vcpu:g} vCPU, {mem:g} GiB)", mn * (vcpu * 0.000018 + mem * 0.000002) * 2592000, 'worker_min_instances / synthetic_enabled; CPU y memoria del servicio')
+          # Balanceadores, IP, Cloud Armor, certificados
+          rules = load('rules.json', []); n = len(rules)
+          if n: add('Balanceadores', f"{n} regla(s) de reenvío: {', '.join(r.get('name','') for r in rules)}", 18.25 + max(0, n - 5) * 7.3, 'las primeras 5 reglas cuestan 18,25 USD/mes en total; más el tráfico procesado (0,008 USD/GB)')
+          addrs = load('addresses.json', [])
+          if addrs: add('Direcciones IP externas', ', '.join(f"{a.get('name')} ({a.get('status','?').lower()})" for a in addrs), 3.65 * len(addrs), 'las que no estén en uso se pagan igual')
+          pols = load('armor.json', [])
+          if pols:
+              nr = sum(len(p.get('rules', [])) for p in pols)
+              add('Cloud Armor', f"{len(pols)} política(s), {nr} regla(s)", 5 * len(pols) + 1 * nr, 'cloud_armor_enabled = false hasta producción')
+          certs = load('certs.json', [])
+          if certs: add('Certificate Manager', f"{len(certs)} certificado(s)", 0.2 * len(certs), '')
+          # Red: NAT, conectores, VMs, discos
+          nats = sum(len(r.get('nats', [])) for r in load('routers.json', []))
+          if nats: add('Cloud NAT', f"{nats} pasarela(s)", 32 * nats, '')
+          conns = load('connectors.json', [])
+          if conns: add('Conectores de acceso a VPC', ', '.join(c.get('name','').split('/')[-1] for c in conns), 12 * len(conns), 'Cloud Run ya usa salida directa a la VPC: los conectores sobran')
+          vms = load('vms.json', [])
+          if vms: add('Compute Engine', ', '.join(f"{v.get('name')} {v.get('machineType','').split('/')[-1]}" for v in vms), 25 * len(vms), 'no debería haber VMs')
+          disks = load('disks.json', []); snaps = load('snapshots.json', [])
+          dgb = sum(float(d.get('sizeGb', 0)) for d in disks); sgb = sum(float(s.get('storageBytes', 0)) for s in snaps) / 2**30
+          if disks or snaps: add('Discos e instantáneas', f"{len(disks)} disco(s) {dgb:.0f} GB, {len(snaps)} instantánea(s) {sgb:.1f} GB", dgb * 0.04 + sgb * 0.026, '')
+          # Observabilidad
+          def series_sum(name):
+              d = load(name, {}); total = 0.0
+              for ts in d.get('timeSeries', []):
+                  for pt in ts.get('points', []):
+                      v = pt.get('value', {}); total += float(v.get('doubleValue', v.get('int64Value', 0)) or 0)
+              return total
+          log_gib = series_sum('log_ingest.json') / 2**30
+          add('Cloud Logging', f"{log_gib:.1f} GiB ingeridos en 30 días (50 GiB gratis al mes)", max(0.0, log_gib - 50) * 0.5, 'bajar LOG_LEVEL o excluir registros de salud y de MeterValues')
+          mon_mib = series_sum('mon_ingest.json') / 2**20
+          add('Cloud Monitoring (métricas)', f"{mon_mib:.0f} MiB de métricas con costo en 30 días (150 MiB gratis)", max(0.0, mon_mib - 150) * 0.258, 'métricas basadas en registros con pocas etiquetas')
+          checks = series_sum('uptime_exec.json')
+          add('Comprobaciones de disponibilidad', f"{checks:.0f} ejecuciones en 30 días (1 millón gratis)", max(0.0, checks - 1e6) / 1000 * 0.3, '')
+          ps_gib = series_sum('pubsub_bytes.json') / 2**30
+          add('Pub/Sub → BigQuery', f"{ps_gib:.2f} GiB publicados en 30 días", ps_gib * (40 / 1024 + 50 / 1024), '')
+          regs = load('registry.json', [])
+          rgb = sum(float(r.get('sizeBytes', 0)) for r in regs) / 1e9
+          if regs: add('Artifact Registry', f"{rgb:.1f} GB de imágenes", rgb * 0.10, 'política de limpieza de imágenes antiguas')
+          secrets = load('secrets.json', [])
+          if secrets: add('Secret Manager', f"{len(secrets)} secretos", 0.06 * len(secrets), '')
+          rows.sort(key=lambda r: -r[2]); total = sum(r[2] for r in rows)
+          print(f"## {env}: estimación mensual con precios de lista ≈ {total:,.0f} USD\n")
+          print('| Rubro | Qué hay | USD/mes | Palanca |'); print('|---|---|---:|---|')
+          for r in rows: print(f"| {r[0]} | {r[1]} | {r[2]:,.0f} | {r[3]} |")
+          print('\nLa cifra real está en Facturación → Informes (agrupa por servicio y SKU). Las métricas de Logging y Monitoring son de los últimos 30 días; lo demás es el estado actual.')
+          PY

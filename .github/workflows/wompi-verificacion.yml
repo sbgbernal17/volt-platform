@@ -1,0 +1,131 @@
+# Verificación de Wompi de punta a punta sin entrar a la consola: (1) las llaves de prueba del
+# repositorio hablan con el sandbox (comercio y tokens de aceptación); (2) la plataforma del ambiente
+# está conectada (estado del proveedor, último cobro, último webhook, pendientes, alarmas) leyendo la
+# API de administración con el token guardado en Secret Manager (nunca se imprime); (3) el endpoint de
+# webhooks responde por el balanceador; (4) opcional: un cobro real en el sandbox con la tarjeta de
+# prueba (tokeniza, crea la fuente de pago, cobra 5.000 COP con firma de integridad y lo anula), igual
+# que la prueba automática de CI. Nunca corre contra producción: solo acepta llaves pub_test_/prv_test_.
+name: Verificación de Wompi
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente (dev usa el emulador; staging habla con el sandbox de Wompi)'
+        type: choice
+        default: staging
+        options: [staging, dev]
+      cobro_de_prueba:
+        description: 'Hacer un cobro de 5.000 COP en el sandbox con la tarjeta de prueba y anularlo (no usa la plataforma)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ENVIRONMENT: ${{ inputs.environment }}
+  API: https://api-${{ inputs.environment }}.supercargadores.co
+  SANDBOX: https://sandbox.wompi.co/v1
+
+jobs:
+  verificar:
+    name: Verificar Wompi (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - id: vars
+        run: echo "suffix=$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_OUTPUT"
+      - name: 1. Llaves de prueba y comercio en el sandbox
+        env:
+          PUB: ${{ secrets.WOMPI_PUBLIC_KEY_TEST }}
+          PRV: ${{ secrets.WOMPI_PRIVATE_KEY_TEST }}
+          INTEG: ${{ secrets.WOMPI_INTEGRITY_SECRET_TEST }}
+          EVENTS: ${{ secrets.WOMPI_EVENTS_SECRET_TEST }}
+        run: |
+          set +e
+          for name in PUB PRV INTEG EVENTS; do
+            if [ -z "${!name}" ]; then echo "::warning::Falta el secreto de GitHub para $name (WOMPI_*_TEST)"; fi
+          done
+          case "$PUB" in pub_test_*) ;; *) echo "::error::WOMPI_PUBLIC_KEY_TEST no es una llave del sandbox (pub_test_…)"; exit 1 ;; esac
+          case "$PRV" in prv_test_*) ;; *) echo "::error::WOMPI_PRIVATE_KEY_TEST no es una llave del sandbox (prv_test_…)"; exit 1 ;; esac
+          code=$(curl -sS -o merchant.json -w '%{http_code}' --max-time 20 "$SANDBOX/merchants/$PUB")
+          name=$(jq -r '.data.name // .data.legal_name // "?"' merchant.json)
+          acc=$(jq -r '.data.presigned_acceptance.acceptance_token // empty' merchant.json | cut -c1-12)
+          pda=$(jq -r '.data.presigned_personal_data_auth.acceptance_token // empty' merchant.json | cut -c1-12)
+          methods=$(jq -r '[.data.accepted_payment_methods[]?] | join(", ")' merchant.json)
+          echo "::notice title=1. Sandbox de Wompi::HTTP $code · comercio: $name · métodos: ${methods:-?} · tokens de aceptación: ${acc:+sí}${acc:-no}/${pda:+sí}${pda:-no}"
+          [ "$code" = "200" ] || { echo "::error::El sandbox no reconoce la llave pública ($code)"; exit 1; }
+      - name: Autenticación (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', steps.vars.outputs.suffix)] }}
+          service_account: ${{ vars[format('GCP_DEPLOYER_SA_{0}', steps.vars.outputs.suffix)] }}
+          project_id: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: 2. Estado del proveedor según la plataforma
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+        run: |
+          set +e
+          token=$(gcloud secrets versions access latest --secret api-admin-token --project "$PROJECT_ID" 2>/dev/null)
+          if [ -z "$token" ]; then echo "::error::No se pudo leer api-admin-token de Secret Manager"; exit 1; fi
+          echo "::add-mask::$token"
+          hdr=(-H "Authorization: Bearer $token" -H "x-actor: staff:actions")
+          code=$(curl -sS -o provider.json -w '%{http_code}' --max-time 30 "${hdr[@]}" "$API/admin/v1/billing/provider")
+          [ "$code" = "200" ] || { echo "::error::/admin/v1/billing/provider -> $code $(head -c 200 provider.json)"; exit 1; }
+          jq '.' provider.json
+          resumen=$(jq -r '"en línea: \(.online) · ambiente: \(.environment) · comercio: \(.merchant // "-") · último cobro aprobado: \(.lastCaptureAt // "ninguno") · último webhook: \(.lastWebhookAt // "NINGUNO") (\(.lastWebhookOutcome // "-")) · webhooks 24 h: \(.webhooks24h.applied) aplicados, \(.webhooks24h.invalidChecksum) con firma inválida · 24 h: \(.last24h.approved) aprobados, \(.last24h.declined) rechazados, \(.last24h.errors) errores · pendientes: \(.pending.count) · alarmas de conciliación: \(.openReconciliationAlarms) · medios de pago sin confirmar: \(.unconfirmedSources)"' provider.json)
+          echo "::notice title=2. Estado del proveedor (plataforma)::$resumen"
+          echo "## Estado del proveedor ($ENVIRONMENT)" >> "$GITHUB_STEP_SUMMARY"; echo "" >> "$GITHUB_STEP_SUMMARY"; echo "$resumen" >> "$GITHUB_STEP_SUMMARY"; echo "" >> "$GITHUB_STEP_SUMMARY"
+          curl -sS --max-time 30 "${hdr[@]}" "$API/admin/v1/billing/webhooks?limit=5" > webhooks.json
+          echo "::group::Últimos webhooks recibidos"; jq -r '.items[]? | "\(.receivedAt // .received_at) \(.outcome) \(.event // "-")"' webhooks.json; echo "::endgroup::"
+          curl -sS --max-time 30 "${hdr[@]}" "$API/admin/v1/payments?limit=5" > payments.json
+          echo "::group::Últimos cobros"; jq -r '.items[]? | "\(.createdAt // .created_at) \(.kind) \(.status) \(.amount // .amountMinor) \(.currency // "") ref=\(.reference // "-") wompi=\(.pspReference // .psp_reference // "-")"' payments.json; echo "::endgroup::"
+          if [ "$(jq -r '.lastWebhookAt // empty' provider.json)" = "" ]; then
+            echo "::warning title=Sin webhooks::La plataforma no ha recibido ningún evento de Wompi en este ambiente. En el panel de Wompi (Desarrolladores → URL de eventos del ambiente de pruebas) debe estar: $API/v1/webhooks/wompi. Sin webhook los cobros se confirman igual por consulta periódica, pero más lento."
+          fi
+          if [ "$(jq -r '.online' provider.json)" != "true" ]; then
+            echo "::error::La plataforma no logra hablar con Wompi (llaves o red)"; exit 1
+          fi
+      - name: 3. Endpoint de webhooks alcanzable por el balanceador
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$API/v1/webhooks/wompi")
+          echo "::notice title=3. Webhook::GET $API/v1/webhooks/wompi -> $code (404 o 405 es lo esperado: la ruta existe solo para POST de Wompi)"
+          case "$code" in 404|405|400) ;; *) echo "::error::Respuesta inesperada del endpoint de webhooks: $code"; exit 1 ;; esac
+      - name: 4. Cobro de prueba en el sandbox (tokeniza, cobra 5.000 COP y anula)
+        if: inputs.cobro_de_prueba
+        env:
+          PUB: ${{ secrets.WOMPI_PUBLIC_KEY_TEST }}
+          PRV: ${{ secrets.WOMPI_PRIVATE_KEY_TEST }}
+          INTEG: ${{ secrets.WOMPI_INTEGRITY_SECRET_TEST }}
+        run: |
+          set +e
+          email="pruebas+wompi@supercargadores.co"
+          tok=$(curl -sS --max-time 30 -H "Authorization: Bearer $PUB" -H 'content-type: application/json' "$SANDBOX/tokens/cards" \
+            -d '{"number":"4242424242424242","cvc":"123","exp_month":"12","exp_year":"29","card_holder":"Prueba VOLT"}' | jq -r '.data.id // empty')
+          [ -n "$tok" ] || { echo "::error::No se pudo tokenizar la tarjeta de prueba"; exit 1; }
+          acc=$(jq -r '.data.presigned_acceptance.acceptance_token' merchant.json); pda=$(jq -r '.data.presigned_personal_data_auth.acceptance_token' merchant.json)
+          src=$(curl -sS --max-time 30 -H "Authorization: Bearer $PRV" -H 'content-type: application/json' "$SANDBOX/payment_sources" \
+            -d "$(jq -cn --arg t "$tok" --arg e "$email" --arg a "$acc" --arg p "$pda" '{type:"CARD", token:$t, customer_email:$e, acceptance_token:$a, accept_personal_auth:$p}')" | jq -r '.data.id // empty')
+          [ -n "$src" ] || { echo "::error::No se pudo crear la fuente de pago"; exit 1; }
+          ref="VOLT-VERIF-$(date -u +%Y%m%d%H%M%S)"; amount=500000
+          sig=$(printf '%s%s%s%s' "$ref" "$amount" "COP" "$INTEG" | sha256sum | cut -d' ' -f1)
+          tx=$(curl -sS --max-time 30 -H "Authorization: Bearer $PRV" -H 'content-type: application/json' "$SANDBOX/transactions" \
+            -d "$(jq -cn --arg r "$ref" --arg e "$email" --arg s "$sig" --argjson src "$src" --argjson a "$amount" '{amount_in_cents:$a, currency:"COP", signature:$s, customer_email:$e, reference:$r, payment_method:{installments:1}, payment_source_id:$src}')")
+          id=$(echo "$tx" | jq -r '.data.id // empty')
+          [ -n "$id" ] || { echo "::error::Wompi no creó la transacción: $(echo "$tx" | jq -c '.error // .' | head -c 300)"; exit 1; }
+          status=PENDING
+          for i in $(seq 1 20); do
+            status=$(curl -sS --max-time 20 "$SANDBOX/transactions/$id" | jq -r '.data.status // "PENDING"')
+            [ "$status" != "PENDING" ] && break
+            sleep 3
+          done
+          echo "::notice title=4. Cobro de prueba::transacción $id · referencia $ref · 5.000 COP · estado $status"
+          if [ "$status" = "APPROVED" ]; then
+            void=$(curl -sS --max-time 30 -X POST -H "Authorization: Bearer $PRV" "$SANDBOX/transactions/$id/void" | jq -r '.data.status // .error.type // "?"')
+            echo "::notice title=4. Anulación::$void"
+          else
+            echo "::warning::El sandbox no aprobó el cobro de prueba ($status)"
+          fi
