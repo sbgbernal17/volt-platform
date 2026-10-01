@@ -234,6 +234,19 @@ jobs:
           PY
           )
             echo "::notice title=Config pública de la app (/v1/config)::${maps}"
+            # La app nativa no envía referer: la clave de Identity Platform de /v1/config debe aceptar una
+            # petición sin referer; si Google responde 403, la app de iOS y Android no puede entrar.
+            idkey=$(python3 -c "import json; d=json.load(open('/tmp/config.json')); print((d.get('auth') or {}).get('apiKey') or '')")
+            if [ -n "$idkey" ]; then
+              code=$(curl -sS -o /tmp/recaptcha.json -w '%{http_code}' --max-time 20 "https://identitytoolkit.googleapis.com/v1/recaptchaParams?key=$idkey")
+              if [ "$code" = "200" ]; then
+                echo "::notice title=Clave de Identity Platform de la app::acepta peticiones sin referer (apps nativas): sí"
+              else
+                echo "::error title=Clave de Identity Platform de la app::Google responde $code a una petición sin referer: la app nativa de iOS y Android no puede iniciar sesión ($(python3 -c "import json; print(json.load(open('/tmp/recaptcha.json')).get('error',{}).get('message',''))" 2>/dev/null | cut -c1-160)). Revisa las restricciones de la clave identity-platform-browser."
+              fi
+            else
+              echo "::warning title=Clave de Identity Platform de la app::/v1/config no trae auth.apiKey"
+            fi
             echo "::group::Cargador sintético y alarmas (últimos 30 min)"
             gcloud logging read 'jsonPayload.event="synthetic.cycle"' --project "$PROJECT_ID" --freshness=30m --limit 3 --format 'value(timestamp,jsonPayload.result,jsonPayload.message)' || true
             gcloud logging read 'jsonPayload.event="alarm.raised" OR jsonPayload.event="alarm.resolved"' --project "$PROJECT_ID" --freshness=6h --limit 6 --format 'value(timestamp,jsonPayload.event,jsonPayload.kind,jsonPayload.message)' || true
