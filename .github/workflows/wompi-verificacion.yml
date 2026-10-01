@@ -2,9 +2,11 @@
 # repositorio hablan con el sandbox (comercio y tokens de aceptación); (2) la plataforma del ambiente
 # está conectada (estado del proveedor, último cobro, último webhook, pendientes, alarmas) leyendo la
 # API de administración con el token guardado en Secret Manager (nunca se imprime); (3) el endpoint de
-# webhooks responde por el balanceador; (4) opcional: un cobro real en el sandbox con la tarjeta de
+# webhooks responde por el balanceador y (3b) los registros del balanceador y de la API muestran si Wompi
+# intenta enviar eventos y con qué resultado; (4) opcional: un cobro real en el sandbox con la tarjeta de
 # prueba (tokeniza, crea la fuente de pago, cobra 5.000 COP con firma de integridad y lo anula), igual
-# que la prueba automática de CI. Nunca corre contra producción: solo acepta llaves pub_test_/prv_test_.
+# que la prueba automática de CI, y (5) espera hasta 2 minutos a que su webhook llegue a la plataforma.
+# Nunca corre contra producción: solo acepta llaves pub_test_/prv_test_.
 name: Verificación de Wompi
 
 on:
@@ -94,7 +96,30 @@ jobs:
           code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$API/v1/webhooks/wompi")
           echo "::notice title=3. Webhook::GET $API/v1/webhooks/wompi -> $code (404 o 405 es lo esperado: la ruta existe solo para POST de Wompi)"
           case "$code" in 404|405|400) ;; *) echo "::error::Respuesta inesperada del endpoint de webhooks: $code"; exit 1 ;; esac
+      - name: 3b. Intentos de Wompi contra el endpoint (registros del balanceador y de la API, 24 h)
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+        run: |
+          set +e
+          # Si Wompi envía eventos, el balanceador los registra aunque Cloud Armor o la API los rechacen.
+          echo "::group::Balanceador: peticiones a /v1/webhooks/wompi (fecha, método, estado, IP origen, agente, detalle, Cloud Armor)"
+          gcloud logging read 'resource.type="http_load_balancer" AND httpRequest.requestUrl:"/v1/webhooks/wompi"' --project "$PROJECT_ID" --freshness=24h --limit 20 \
+            --format 'value(timestamp,httpRequest.requestMethod,httpRequest.status,httpRequest.remoteIp,httpRequest.userAgent,jsonPayload.statusDetails,jsonPayload.enforcedSecurityPolicy.outcome)' | tee lb.txt
+          echo "::endgroup::"
+          echo "::group::API: peticiones a /v1/webhooks/wompi (fecha, método, estado, agente)"
+          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="api" AND httpRequest.requestUrl:"/v1/webhooks/wompi"' --project "$PROJECT_ID" --freshness=24h --limit 20 \
+            --format 'value(timestamp,httpRequest.requestMethod,httpRequest.status,httpRequest.userAgent)' | tee api.txt
+          echo "::endgroup::"
+          posts=$(grep -c $'\tPOST\t' lb.txt); denied=$(grep -ci 'DENY' lb.txt)
+          if [ "$posts" = "0" ]; then
+            echo "::warning title=3b. Wompi no envía eventos::En 24 h no llegó ningún POST de Wompi al balanceador en /v1/webhooks/wompi. En el panel de Wompi, Desarrolladores → ambiente de PRUEBAS → URL de eventos debe ser $API/v1/webhooks/wompi (si quedó en el ambiente de producción, los eventos del sandbox no salen)."
+          elif [ "$denied" != "0" ]; then
+            echo "::error title=3b. Cloud Armor rechaza los eventos::$denied de $posts POST de Wompi fueron rechazados por la política de Cloud Armor (reglas OWASP en infra/terraform/armor.tf)."
+          else
+            echo "::notice title=3b. Intentos de Wompi::$posts POST de Wompi en 24 h al endpoint de webhooks (estados arriba)."
+          fi
       - name: 4. Cobro de prueba en el sandbox (tokeniza, cobra 5.000 COP y anula)
+        id: cobro
         if: inputs.cobro_de_prueba
         env:
           PUB: ${{ secrets.WOMPI_PUBLIC_KEY_TEST }}
@@ -111,6 +136,7 @@ jobs:
             -d "$(jq -cn --arg t "$tok" --arg e "$email" --arg a "$acc" --arg p "$pda" '{type:"CARD", token:$t, customer_email:$e, acceptance_token:$a, accept_personal_auth:$p}')" | jq -r '.data.id // empty')
           [ -n "$src" ] || { echo "::error::No se pudo crear la fuente de pago"; exit 1; }
           ref="VOLT-VERIF-$(date -u +%Y%m%d%H%M%S)"; amount=500000
+          echo "charged_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
           sig=$(printf '%s%s%s%s' "$ref" "$amount" "COP" "$INTEG" | sha256sum | cut -d' ' -f1)
           tx=$(curl -sS --max-time 30 -H "Authorization: Bearer $PRV" -H 'content-type: application/json' "$SANDBOX/transactions" \
             -d "$(jq -cn --arg r "$ref" --arg e "$email" --arg s "$sig" --argjson src "$src" --argjson a "$amount" '{amount_in_cents:$a, currency:"COP", signature:$s, customer_email:$e, reference:$r, payment_method:{installments:1}, payment_source_id:$src}')")
@@ -128,4 +154,37 @@ jobs:
             echo "::notice title=4. Anulación::$void"
           else
             echo "::warning::El sandbox no aprobó el cobro de prueba ($status)"
+          fi
+      - name: 5. Esperar el webhook del cobro de prueba en la plataforma (hasta 2 minutos)
+        if: inputs.cobro_de_prueba
+        env:
+          PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
+          CHARGED_AT: ${{ steps.cobro.outputs.charged_at }}
+        run: |
+          set +e
+          token=$(gcloud secrets versions access latest --secret api-admin-token --project "$PROJECT_ID" 2>/dev/null)
+          if [ -z "$token" ]; then echo "::error::No se pudo leer api-admin-token de Secret Manager"; exit 1; fi
+          echo "::add-mask::$token"
+          hdr=(-H "Authorization: Bearer $token" -H "x-actor: staff:actions")
+          last=""; outcome=""
+          for i in $(seq 1 12); do
+            curl -sS --max-time 20 "${hdr[@]}" "$API/admin/v1/billing/provider" > provider2.json
+            last=$(jq -r '.lastWebhookAt // empty' provider2.json); outcome=$(jq -r '.lastWebhookOutcome // empty' provider2.json)
+            if [ -n "$last" ] && [ "$last" \> "$CHARGED_AT" ]; then break; fi
+            last=""; sleep 10
+          done
+          echo "::group::Peticiones de Wompi al endpoint en los últimos 10 minutos (balanceador)"
+          gcloud logging read 'resource.type="http_load_balancer" AND httpRequest.requestUrl:"/v1/webhooks/wompi" AND httpRequest.requestMethod="POST"' --project "$PROJECT_ID" --freshness=10m --limit 10 \
+            --format 'value(timestamp,httpRequest.status,httpRequest.remoteIp,jsonPayload.statusDetails,jsonPayload.enforcedSecurityPolicy.outcome)' | tee lb2.txt
+          echo "::endgroup::"
+          if [ -n "$last" ]; then
+            echo "::notice title=5. Webhook recibido::La plataforma recibió el evento del cobro de prueba a las $last (resultado: $outcome; IGNORED es lo esperado: la referencia VOLT-VERIF no es de la plataforma, INVALID_CHECKSUM significa que el secreto de eventos de Secret Manager no coincide con el del panel de Wompi)."
+            echo "Webhook del cobro de prueba: recibido a las $last ($outcome)." >> "$GITHUB_STEP_SUMMARY"
+          elif [ -s lb2.txt ]; then
+            echo "::error title=5. Webhook rechazado::Wompi intentó enviar el evento pero la plataforma no lo registró (estados arriba: 403 es Cloud Armor; 5xx es la API)."
+            echo "Webhook del cobro de prueba: Wompi lo envió pero no se registró (ver estados)." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          else
+            echo "::warning title=5. Sin webhook::En 2 minutos no llegó ningún evento de Wompi por el cobro de prueba. Revisa en el panel de Wompi → Desarrolladores → ambiente de PRUEBAS → URL de eventos: $API/v1/webhooks/wompi (en producción va la de prod). Sin webhook los cobros se confirman igual por consulta periódica, pero más lento."
+            echo "Webhook del cobro de prueba: no llegó en 2 minutos (URL de eventos del sandbox sin configurar o en el ambiente equivocado)." >> "$GITHUB_STEP_SUMMARY"
           fi

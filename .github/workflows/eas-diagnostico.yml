@@ -1,5 +1,7 @@
 # Diagnóstico de una compilación de EAS: imprime estado, fase y mensaje de error de un build por su id
-# y el final de sus registros (con las claves enmascaradas). Se lanza a mano; no expone secretos.
+# y el final de sus registros (con las claves enmascaradas). Con `list` solo lista las últimas
+# compilaciones; con `submissions` lista los últimos envíos a las tiendas (TestFlight y Play) leyendo la
+# API de EAS con el token de Expo. Se lanza a mano; no expone secretos.
 name: Diagnóstico de compilación (EAS)
 
 on:
@@ -17,6 +19,11 @@ on:
         default: 'INSTALL_DEPENDENCIES,RUN_EXPO_DOCTOR,PREBUILD,EAGER_BUNDLE,CALCULATE_EXPO_UPDATES_RUNTIME_VERSION,CONFIGURE_EXPO_UPDATES'
       list:
         description: 'Solo listar las últimas compilaciones de Android e iOS (estado, perfil, versión), sin registros'
+        type: boolean
+        required: false
+        default: false
+      submissions:
+        description: 'Solo listar los últimos envíos a las tiendas (TestFlight y Pruebas internas de Play), sin registros'
         type: boolean
         required: false
         default: false
@@ -56,8 +63,41 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             echo "::notice title=Compilaciones de $platform::$(jq -c '[.[] | {id: .id[0:8], profile: .buildProfile, status, version: .appVersion, build: .appBuildVersion}]' "builds-$platform.json")"
           done
+      - name: Últimos envíos a las tiendas
+        if: inputs.submissions
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          # La CLI no lista envíos; se consulta la API GraphQL de EAS con el mismo token.
+          project=$(jq -r '.expo.extra.eas.projectId' app.json)
+          query='query($appId: String!) { app { byId(appId: $appId) { submissions(offset: 0, limit: 10) { id platform status createdAt completedAt error { errorCode message } submittedBuild { id appVersion appBuildVersion } logFiles } } } }'
+          jq -cn --arg q "$query" --arg id "$project" '{query: $q, variables: {appId: $id}}' > query.json
+          curl -sS --max-time 60 -H "Authorization: Bearer $EXPO_TOKEN" -H 'content-type: application/json' https://api.expo.dev/graphql -d @query.json > submissions.json
+          if jq -e '.errors' submissions.json >/dev/null 2>&1; then
+            echo "::error::EAS respondió con error: $(jq -c '.errors' submissions.json | head -c 600)"; exit 1
+          fi
+          tabla="$(jq -r '.data.app.byId.submissions[] | "| \(.id[0:8]) | \(.platform) | \(.status) | \((.submittedBuild.id // "-")[0:8]) (\(.submittedBuild.appVersion // "-") · \(.submittedBuild.appBuildVersion // "-")) | \(.createdAt[0:16]) | \((.completedAt // "")[0:16]) | \(.error.errorCode // "") \((.error.message // "")[0:200]) |"' submissions.json)"
+          {
+            echo "## Envíos a las tiendas (los 10 últimos)"
+            echo ""
+            echo "| Id | Plataforma | Estado | Compilación (versión · build) | Creado | Terminado | Error |"
+            echo "|---|---|---|---|---|---|---|"
+            echo "$tabla"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Envíos a las tiendas::$(jq -c '[.data.app.byId.submissions[] | {id: .id[0:8], platform, status, build: (.submittedBuild.id // "-")[0:8], error: .error.errorCode}]' submissions.json)"
+          # Para los envíos con error, el final de su registro (sin claves).
+          mask() { sed -E 's/AIza[0-9A-Za-z_-]{35}/[clave]/g' | cut -c1-400; }
+          jq -r '.data.app.byId.submissions[] | select(.status == "ERRORED") | "\(.id) \(.logFiles[0] // "")"' submissions.json | while read -r id url; do
+            [ -n "$url" ] || continue
+            echo "::group::Registro del envío $id (últimas 60 líneas)"
+            curl -sSfL --compressed --max-time 60 "$url" | tail -n 60 | mask || echo "No fue posible descargar el registro."
+            echo "::endgroup::"
+          done
       - name: Consultar la compilación
-        if: ${{ !inputs.list }}
+        if: ${{ !inputs.list && !inputs.submissions }}
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -82,7 +122,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "$resumen"
       - name: Final de los registros de la compilación
-        if: ${{ !inputs.list }}
+        if: ${{ !inputs.list && !inputs.submissions }}
         working-directory: apps/mobile
         shell: bash {0}
         env:
@@ -143,7 +183,7 @@ jobs:
           done
           exit 0
       - name: Estado final
-        if: ${{ !inputs.list }}
+        if: ${{ !inputs.list && !inputs.submissions }}
         working-directory: apps/mobile
         run: |
           echo "ESTADO: $(jq -r '"\(.status) | perfil \(.buildProfile) | versionCode \(.appBuildVersion) | error \(.error.errorCode // "ninguno") | creado \(.createdAt) | terminado \(.completedAt // "-")"' build.json)"

@@ -1,6 +1,8 @@
 # Envío a las tiendas de una compilación ya terminada en EAS (iteración 7, ADR 0022): Pruebas internas
 # de Google Play o TestFlight. Usa las credenciales guardadas en EAS (cuenta de servicio de Play y
-# clave de API de App Store Connect) y el perfil de envío de eas.json (con `ascAppId` para iOS).
+# clave de API de App Store Connect) y el perfil de envío de eas.json (con `ascAppId` para iOS). Crea el
+# envío sin esperar y luego consulta su estado en la API de EAS hasta 55 minutos (la subida a Apple
+# puede tardar más de 30), así el resumen del flujo dice si terminó, falló o sigue en curso.
 name: Envío a las tiendas (EAS Submit)
 
 on:
@@ -28,7 +30,7 @@ jobs:
   submit:
     name: EAS Submit (${{ inputs.platform }}, ${{ inputs.profile }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -60,5 +62,38 @@ jobs:
             exit 1
           fi
           if [ -n "$BUILD_ID" ]; then sel="--id $BUILD_ID"; else sel="--latest"; fi
-          npx eas-cli@latest submit --non-interactive --platform "$PLATFORM" --profile "$PROFILE" $sel
-          echo "Envío terminado: revisa Play Console (Pruebas internas) o App Store Connect (TestFlight)." >> "$GITHUB_STEP_SUMMARY"
+          npx eas-cli@latest submit --non-interactive --no-wait --platform "$PLATFORM" --profile "$PROFILE" $sel 2>&1 | tee submit.log
+          id=$(grep -oE 'submissions/[0-9a-f-]{36}' submit.log | head -n1 | cut -d/ -f2)
+          if [ -z "$id" ]; then echo "::error::EAS no devolvió el id del envío (ver el registro)."; exit 1; fi
+          link=$(grep -oE 'https://expo.dev/[^ ]*submissions/[0-9a-f-]{36}' submit.log | head -n1)
+          echo "Envío $id creado: $link" | tee -a "$GITHUB_STEP_SUMMARY"
+          status=""
+          for i in $(seq 1 110); do
+            jq -cn --arg id "$id" '{query: "query($id: ID!) { submission { byId(submissionId: $id) { id status error { errorCode message } completedAt logFiles } } }", variables: {id: $id}}' > query.json
+            curl -sS --max-time 30 -H "Authorization: Bearer $EXPO_TOKEN" -H 'content-type: application/json' https://api.expo.dev/graphql -d @query.json > sub.json || true
+            if [ "$i" = "1" ] && jq -e '.errors' sub.json >/dev/null 2>&1; then
+              echo "::warning::No se pudo consultar el estado del envío en EAS: $(jq -c '.errors' sub.json | head -c 400). Síguelo en $link"; exit 0
+            fi
+            status=$(jq -r '.data.submission.byId.status // empty' sub.json)
+            case "$status" in FINISHED|ERRORED|CANCELED) break ;; esac
+            [ $((i % 10)) = 0 ] && echo "$(date -u +%H:%M:%S) estado: ${status:-?}"
+            sleep 30
+          done
+          case "$status" in
+            FINISHED)
+              if [ "$PLATFORM" = "ios" ]; then
+                msg="Enviado a App Store Connect. Apple lo procesa (10 a 30 minutos) y después aparece en TestFlight → Compilaciones de iOS; añade probadores internos y les llega la invitación."
+              else
+                msg="Enviado a Google Play (pista Pruebas internas). En Play Console → Pruebas → Pruebas internas la versión debe quedar Disponible para probadores."
+              fi
+              echo "::notice title=Envío terminado::$msg"; echo "$msg" >> "$GITHUB_STEP_SUMMARY" ;;
+            ERRORED|CANCELED)
+              err="$(jq -r '"\(.data.submission.byId.error.errorCode // "-"): \(.data.submission.byId.error.message // "-")"' sub.json | head -c 600)"
+              echo "::error title=Envío fallido::$status · $err"; echo "Envío fallido ($status): $err" >> "$GITHUB_STEP_SUMMARY"
+              url=$(jq -r '.data.submission.byId.logFiles[0] // empty' sub.json)
+              if [ -n "$url" ]; then echo "::group::Registro del envío (últimas 80 líneas)"; curl -sSfL --compressed --max-time 60 "$url" | tail -n 80 | cut -c1-400 || true; echo "::endgroup::"; fi
+              exit 1 ;;
+            *)
+              echo "::warning title=Envío aún en curso::Tras 55 minutos el envío sigue en estado ${status:-desconocido}; síguelo en $link (el flujo Diagnóstico de compilación con la opción submissions muestra su estado)."
+              echo "Envío aún en curso (${status:-?}): $link" >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
