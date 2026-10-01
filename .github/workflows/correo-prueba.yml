@@ -86,6 +86,16 @@ jobs:
             "$API/v1/auth/password-reset" -d "$(jq -cn --arg e "$EMAIL" '{email: $e}')")
           echo "::notice title=password-reset::$code $(cat reset.json | head -c 300)"
           echo "Revisa el buzón $EMAIL: remitente, botón y destino del enlace (si pasa por el dominio de seguimiento del proveedor)."
+      - name: Diagnóstico de Google directo (misma vía pública que el respaldo de la API)
+        env:
+          TOKEN: ${{ steps.user.outputs.id_token }}
+          KEY: ${{ steps.cfg.outputs.api_key }}
+        run: |
+          set +e
+          code=$(curl -sS -o direct.json -w '%{http_code}' --max-time 30 -H 'content-type: application/json' -H "Referer: $APP_ORIGIN" \
+            "https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=$KEY" \
+            -d "$(jq -cn --arg t "$TOKEN" '{requestType: "VERIFY_EMAIL", idToken: $t}')")
+          echo "::notice title=Google directo (VERIFY_EMAIL)::$code $(jq -c '{email: .email, error: .error.message}' direct.json 2>/dev/null | head -c 200)"
       - name: Borrar la cuenta de prueba
         if: always() && inputs.keep == false
         env:
