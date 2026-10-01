@@ -16,6 +16,16 @@ export interface IdentityLinkGenerator {
     email: string,
     options?: { continueUrl?: string | undefined },
   ): Promise<string>;
+  /**
+   * Respaldo: pide a Identity Platform que envíe su propio correo (plantilla genérica de Google con el
+   * remitente y el asunto configurados en la consola) cuando el proveedor de envío propio rechaza el
+   * mensaje. `VERIFY_EMAIL` exige el ID token del usuario; `PASSWORD_RESET` solo el correo.
+   */
+  send(
+    kind: OobKind,
+    email: string,
+    options?: { continueUrl?: string | undefined; idToken?: string | undefined },
+  ): Promise<void>;
 }
 
 export class IdentityLinkError extends Error {
@@ -99,6 +109,39 @@ export class IdentityToolkitLinks implements IdentityLinkGenerator {
     email: string,
     options: { continueUrl?: string | undefined } = {},
   ): Promise<string> {
+    const { data, status } = await this.call(
+      {
+        requestType: kind,
+        email,
+        returnOobLink: true,
+        ...(options.continueUrl ? { continueUrl: options.continueUrl } : {}),
+      },
+      'el enlace',
+    );
+    if (!data.oobLink) throw new IdentityLinkError('Respuesta sin enlace', 'REJECTED', status);
+    return data.oobLink;
+  }
+
+  async send(
+    kind: OobKind,
+    email: string,
+    options: { continueUrl?: string | undefined; idToken?: string | undefined } = {},
+  ): Promise<void> {
+    // Sin `returnOobLink`, Identity Platform envía el correo por su cuenta.
+    await this.call(
+      {
+        requestType: kind,
+        ...(kind === 'VERIFY_EMAIL' && options.idToken ? { idToken: options.idToken } : { email }),
+        ...(options.continueUrl ? { continueUrl: options.continueUrl } : {}),
+      },
+      'el correo',
+    );
+  }
+
+  private async call(
+    body: Record<string, unknown>,
+    what: string,
+  ): Promise<{ data: { oobLink?: string }; status: number }> {
     const token = await this.options.tokens.token();
     let response: Response;
     try {
@@ -112,11 +155,8 @@ export class IdentityToolkitLinks implements IdentityLinkGenerator {
             accept: 'application/json',
           },
           body: JSON.stringify({
-            requestType: kind,
-            email,
-            returnOobLink: true,
+            ...body,
             ...(this.options.tenantId ? { tenantId: this.options.tenantId } : {}),
-            ...(options.continueUrl ? { continueUrl: options.continueUrl } : {}),
           }),
           signal: AbortSignal.timeout(10_000),
         },
@@ -130,8 +170,8 @@ export class IdentityToolkitLinks implements IdentityLinkGenerator {
     if (!response.ok) {
       let reason = `HTTP ${response.status}`;
       try {
-        const body = (await response.json()) as { error?: { message?: string } };
-        reason = body.error?.message ?? reason;
+        const payload = (await response.json()) as { error?: { message?: string } };
+        reason = payload.error?.message ?? reason;
       } catch {
         // sin cuerpo
       }
@@ -139,15 +179,12 @@ export class IdentityToolkitLinks implements IdentityLinkGenerator {
         throw new IdentityLinkError('La cuenta no existe', 'EMAIL_NOT_FOUND', response.status);
       }
       throw new IdentityLinkError(
-        `Identity Platform rechazó el enlace: ${reason}`,
+        `Identity Platform rechazó ${what}: ${reason}`,
         'REJECTED',
         response.status,
       );
     }
-    const data = (await response.json()) as { oobLink?: string };
-    if (!data.oobLink)
-      throw new IdentityLinkError('Respuesta sin enlace', 'REJECTED', response.status);
-    return data.oobLink;
+    return { data: (await response.json()) as { oobLink?: string }, status: response.status };
   }
 }
 
@@ -155,6 +192,8 @@ export class IdentityToolkitLinks implements IdentityLinkGenerator {
 export class FakeIdentityLinks implements IdentityLinkGenerator {
   readonly source = 'fake' as const;
   readonly generated: { kind: OobKind; email: string; link: string }[] = [];
+  /** Correos que habría enviado Identity Platform por su cuenta (respaldo). */
+  readonly sentByProvider: { kind: OobKind; email: string; withIdToken: boolean }[] = [];
 
   constructor(private readonly appWebUrl: string) {}
 
@@ -163,5 +202,13 @@ export class FakeIdentityLinks implements IdentityLinkGenerator {
     const link = `${this.appWebUrl.replace(/\/$/, '')}/auth/action?mode=${mode}&oobCode=fake-${randomBytes(8).toString('hex')}`;
     this.generated.push({ kind, email, link });
     return link;
+  }
+
+  async send(
+    kind: OobKind,
+    email: string,
+    options: { continueUrl?: string | undefined; idToken?: string | undefined } = {},
+  ): Promise<void> {
+    this.sentByProvider.push({ kind, email, withIdToken: Boolean(options.idToken) });
   }
 }

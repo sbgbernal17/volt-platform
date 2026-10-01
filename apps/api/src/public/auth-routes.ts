@@ -60,10 +60,16 @@ export function createAuthEmailRoutes(options: AuthEmailOptions) {
   const perIp = new RateLimiter([{ limit: 20, windowMs: 3_600_000 }], clock);
   const appHost = new URL(appWebUrl).host;
 
+  /**
+   * Genera el enlace y envía el correo con la marca; si el proveedor lo rechaza (clave, IP no
+   * autorizada, caída), Identity Platform envía su correo genérico como respaldo para que la
+   * verificación nunca dependa de un solo proveedor.
+   */
   const deliver = async (
     kind: 'VERIFY_EMAIL' | 'PASSWORD_RESET',
     to: string,
-  ): Promise<'sent' | 'no-account'> => {
+    context: { idToken?: string | undefined } = {},
+  ): Promise<'sent' | 'sent-fallback' | 'no-account'> => {
     let link: string;
     try {
       link = await links.generate(kind, to, { continueUrl: appWebUrl });
@@ -85,18 +91,30 @@ export function createAuthEmailRoutes(options: AuthEmailOptions) {
         { kind, provider: email.provider, id: receipt.id },
         'correo de identidad enviado',
       );
+      return 'sent';
     } catch (error) {
       logger.warn(
         { err: error, kind, provider: email.provider },
-        'el proveedor de correo rechazó el envío',
+        'el proveedor de correo rechazó el envío; se intenta el correo de Identity Platform',
       );
+    }
+    try {
+      await links.send(kind, to, { continueUrl: appWebUrl, idToken: context.idToken });
+      logger.warn(
+        { kind, links: links.source },
+        'correo de identidad enviado por Identity Platform (respaldo)',
+      );
+      return 'sent-fallback';
+    } catch (error) {
+      if (error instanceof IdentityLinkError && error.code === 'EMAIL_NOT_FOUND')
+        return 'no-account';
+      logger.warn({ err: error, kind }, 'tampoco se pudo enviar el correo de respaldo');
       throw new CsmsError(
         'No se pudo enviar el correo; intente más tarde',
         503,
         'EMAIL_UNAVAILABLE',
       );
     }
-    return 'sent';
   };
 
   return {
@@ -122,9 +140,17 @@ export function createAuthEmailRoutes(options: AuthEmailOptions) {
         if (row.email_verified) return { sent: false, alreadyVerified: true };
         const wait = perEmail.hit(`verify:${driver.driverId}`);
         if (wait > 0) throw tooMany(wait);
-        const outcome = await deliver('VERIFY_EMAIL', row.email);
+        // El respaldo de Identity Platform necesita el ID token del conductor (solo con Identity Platform).
+        const [scheme, bearer] = (request.headers.authorization ?? '').split(' ');
+        const idToken =
+          driver.source === 'identity-platform' && scheme?.toLowerCase() === 'bearer' && bearer
+            ? bearer
+            : undefined;
+        const outcome = await deliver('VERIFY_EMAIL', row.email, { idToken });
         reply.code(202);
-        return { sent: outcome === 'sent' };
+        return outcome === 'sent-fallback'
+          ? { sent: true, fallback: 'identity-platform' }
+          : { sent: outcome === 'sent' };
       });
     },
   };

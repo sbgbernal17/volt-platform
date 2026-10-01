@@ -8,7 +8,12 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { FakeEmailSender } from '@volt/csms';
+import {
+  type EmailMessage,
+  type EmailReceipt,
+  type EmailSender,
+  FakeEmailSender,
+} from '@volt/csms';
 import { createSql } from '@volt/db';
 import { createTemporaryDatabase, type TemporaryDatabase } from '@volt/db/testing';
 import type { FastifyInstance, InjectOptions } from 'fastify';
@@ -69,7 +74,19 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
   let sql: Sql;
   let jwks: Server;
   let app: FastifyInstance;
-  const emailSender = new FakeEmailSender();
+  /** Emulador de correo que se puede "caer" para probar el respaldo de Identity Platform. */
+  const emailSender = new (class implements EmailSender {
+    readonly provider = 'fake';
+    readonly inner = new FakeEmailSender();
+    failing = false;
+    get sent() {
+      return this.inner.sent;
+    }
+    async send(message: EmailMessage): Promise<EmailReceipt> {
+      if (this.failing) throw new Error('proveedor de correo caído (prueba)');
+      return this.inner.send(message);
+    }
+  })();
   const identityLinks = new FakeIdentityLinks('https://app-test.supercargadores.co');
 
   const call = (
@@ -388,6 +405,33 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
     expect(
       (await call('POST', '/v1/auth/password-reset', null, { email: 'no-es-correo' })).statusCode,
     ).toBe(400);
+  });
+
+  it('si el proveedor de correo falla, Identity Platform envía el correo de respaldo', async () => {
+    const token = tokenFor('respaldo@example.com', 'sub-respaldo', { verified: false });
+    expect((await call('GET', '/v1/me', token)).statusCode).toBe(200);
+    emailSender.failing = true;
+    try {
+      const sent = await call('POST', '/v1/auth/send-verification', token, {});
+      expect(sent.statusCode).toBe(202);
+      expect(json(sent)).toEqual({ sent: true, fallback: 'identity-platform' });
+      expect(identityLinks.sentByProvider.at(-1)).toEqual({
+        kind: 'VERIFY_EMAIL',
+        email: 'respaldo@example.com',
+        withIdToken: true,
+      });
+      const reset = await call('POST', '/v1/auth/password-reset', null, {
+        email: 'respaldo@example.com',
+      });
+      expect(reset.statusCode).toBe(202);
+      expect(identityLinks.sentByProvider.at(-1)).toEqual({
+        kind: 'PASSWORD_RESET',
+        email: 'respaldo@example.com',
+        withIdToken: false,
+      });
+    } finally {
+      emailSender.failing = false;
+    }
   });
 
   it('vincula una cuenta creada por el personal solo con el correo verificado', async () => {
