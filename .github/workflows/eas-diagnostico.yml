@@ -72,12 +72,15 @@ jobs:
           set -euo pipefail
           # La CLI no lista envíos; se consulta la API GraphQL de EAS con el mismo token.
           project=$(jq -r '.expo.extra.eas.projectId' app.json)
-          query='query($appId: String!) { app { byId(appId: $appId) { submissions(offset: 0, limit: 10) { id platform status createdAt completedAt error { errorCode message } submittedBuild { id appVersion appBuildVersion } logFiles } } } }'
-          jq -cn --arg q "$query" --arg id "$project" '{query: $q, variables: {appId: $id}}' > query.json
-          curl -sS --max-time 60 -H "Authorization: Bearer $EXPO_TOKEN" -H 'content-type: application/json' https://api.expo.dev/graphql -d @query.json > submissions.json
-          if jq -e '.errors' submissions.json >/dev/null 2>&1; then
-            echo "::error::EAS respondió con error: $(jq -c '.errors' submissions.json | head -c 600)"; exit 1
-          fi
+          query='query($appId: String!, $platform: AppPlatform!) { app { byId(appId: $appId) { submissions(offset: 0, limit: 5, filter: { platform: $platform }) { id platform status createdAt completedAt error { errorCode message } submittedBuild { id appVersion appBuildVersion } logFiles } } } }'
+          for platform in IOS ANDROID; do
+            jq -cn --arg q "$query" --arg id "$project" --arg p "$platform" '{query: $q, variables: {appId: $id, platform: $p}}' > query.json
+            curl -sS --max-time 60 -H "Authorization: Bearer $EXPO_TOKEN" -H 'content-type: application/json' https://api.expo.dev/graphql -d @query.json > "submissions-$platform.json"
+            if jq -e '.errors' "submissions-$platform.json" >/dev/null 2>&1; then
+              echo "::error::EAS respondió con error: $(jq -c '.errors' "submissions-$platform.json" | head -c 600)"; exit 1
+            fi
+          done
+          jq -s '{data: {app: {byId: {submissions: (map(.data.app.byId.submissions) | add)}}}}' submissions-IOS.json submissions-ANDROID.json > submissions.json
           tabla="$(jq -r '.data.app.byId.submissions[] | "| \(.id[0:8]) | \(.platform) | \(.status) | \((.submittedBuild.id // "-")[0:8]) (\(.submittedBuild.appVersion // "-") · \(.submittedBuild.appBuildVersion // "-")) | \(.createdAt[0:16]) | \((.completedAt // "")[0:16]) | \(.error.errorCode // "") \((.error.message // "")[0:200]) |"' submissions.json)"
           {
             echo "## Envíos a las tiendas (los 10 últimos)"
