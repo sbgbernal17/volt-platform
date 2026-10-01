@@ -38,6 +38,7 @@ Cada decisión relevante se registra en un archivo `NNNN-titulo.md` con la plant
 | [0032](0032-correos-de-identidad-con-envio-propio.md) | Correos de verificación y contraseña con envío propio: la API genera el enlace de Identity Platform con su cuenta de servicio y lo envía en la plantilla con la marca (botón) por Resend o Brevo; sin proveedor sigue el correo genérico de Google |
 | [0033](0033-cobro-minimo-por-conexion.md) | Cobro mínimo por conexión de 2.000 COP como `min_price` de la tarifa base: línea `CAP` "Cobro mínimo por conexión" en el costo en curso, el recibo, el PDF, la app y el back-office; la versión publicada se actualiza sola |
 | [0034](0034-nombre-y-apellidos-separados-y-datos-del-comprador.md) | Nombre y apellidos separados en el conductor (`first_name`, `last_name`; `display_name` derivado) y datos del comprador para la DIAN según el contador: nombre y apellidos o razón social, cédula o NIT con o sin dígito de verificación, y correo |
+| [0035](0035-ip-fija-de-salida-para-cloud-run.md) | IP fija de salida para Cloud Run con Cloud NAT y dirección reservada, opcional por ambiente (`static_egress_ip`): Wompi y Brevo bloquean o restringen las direcciones cambiantes de Google; activada en staging (`34.42.100.85`), prod la hereda, dev sigue sin ella |
 
 ```markdown
 # NNNN. Título de la decisión

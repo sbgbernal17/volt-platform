@@ -457,6 +457,10 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
         ?.status,
     ).toBe('OPEN');
     const event = psp.payLink(linkId);
+    // La URL de eventos responde a un GET de comprobación sin procesar nada.
+    const probe = await app.inject({ method: 'GET', url: '/v1/webhooks/wompi' });
+    expect(probe.statusCode).toBe(200);
+    expect(probe.json()).toEqual({ ok: true, accepts: 'POST' });
     const webhook = await app.inject({ method: 'POST', url: '/v1/webhooks/wompi', payload: event });
     expect(webhook.statusCode).toBe(200);
     expect(webhook.json()).toMatchObject({ received: true, outcome: 'APPLIED' });

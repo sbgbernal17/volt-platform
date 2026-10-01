@@ -88,7 +88,7 @@ Del dueño del proyecto (detalle en `docs/tareas-del-dueno.md`, "Para la iteraci
 
 11. [ ] Proveedor tecnológico de facturación electrónica con API y ambiente de habilitación, recomendado por el contador; credenciales de pruebas como secretos de GitHub Actions y las de producción en Secret Manager de prod.
 12. [ ] Datos fiscales de la empresa (RUT, resolución de numeración, correo emisor) en `docs/legal/`; nota del contador sobre IVA y retenciones (tarea 1); decisión sobre la razón social de los clientes empresa (ADR 0034).
-13. [ ] "Adelante con prod": llaves de producción de Wompi, clave de Brevo de prod y proveedor de SMS cargados en Secret Manager de `volt-prod-509415`; URL de eventos de Wompi de producción.
+13. [ ] "Adelante con prod": llaves de producción de Wompi, clave de Brevo de prod y proveedor de SMS cargados en Secret Manager de `volt-prod-509415`; URL de eventos de Wompi de producción; prod se crea con IP fija de salida (ADR 0035) y esa dirección se da a Wompi y a Brevo (lista de IP autorizadas) antes del primer cobro real.
 14. [ ] Tiendas: número de la app en App Store Connect (`ascAppId`) y probadores en Play (Pruebas internas) y TestFlight.
 15. [ ] Requisitos por escrito al proveedor de cargadores y el primer equipo físico para staging.
 

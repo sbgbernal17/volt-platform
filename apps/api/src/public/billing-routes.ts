@@ -342,6 +342,9 @@ export async function billingWebhookRoutes(
   app: FastifyInstance,
   options: { billing: BillingService | undefined; redirectUrl?: string | undefined },
 ): Promise<void> {
+  // Algunos paneles comprueban la URL de eventos con un GET antes de guardarla: responde 200 sin
+  // tocar nada (los eventos llegan solo por POST).
+  app.get('/webhooks/wompi', async () => ({ ok: true, accepts: 'POST' }));
   app.post('/webhooks/wompi', async (request, reply) => {
     if (!options.billing) {
       reply.code(503);

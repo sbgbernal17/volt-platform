@@ -94,8 +94,8 @@ jobs:
       - name: 3. Endpoint de webhooks alcanzable por el balanceador
         run: |
           code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$API/v1/webhooks/wompi")
-          echo "::notice title=3. Webhook::GET $API/v1/webhooks/wompi -> $code (404 o 405 es lo esperado: la ruta existe solo para POST de Wompi)"
-          case "$code" in 404|405|400) ;; *) echo "::error::Respuesta inesperada del endpoint de webhooks: $code"; exit 1 ;; esac
+          echo "::notice title=3. Webhook::GET $API/v1/webhooks/wompi -> $code (200 es lo esperado: la URL responde a la comprobación del panel; los eventos llegan por POST)"
+          case "$code" in 200|404|405) ;; *) echo "::error::Respuesta inesperada del endpoint de webhooks: $code"; exit 1 ;; esac
       - name: 3b. Intentos de Wompi contra el endpoint (registros del balanceador y de la API, 24 h)
         env:
           PROJECT_ID: ${{ vars[format('GCP_PROJECT_ID_{0}', steps.vars.outputs.suffix)] }}
