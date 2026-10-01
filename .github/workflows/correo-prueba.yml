@@ -32,6 +32,9 @@ jobs:
     timeout-minutes: 5
     env:
       API: https://api-${{ inputs.environment }}.supercargadores.co
+      # La clave pública de Identity Platform está restringida por dominio: las llamadas llevan el
+      # origen de la app web, como lo haría el navegador.
+      APP_ORIGIN: https://app-${{ inputs.environment }}.supercargadores.co/
       EMAIL: ${{ inputs.email }}
       KEEP: ${{ inputs.keep }}
     steps:
@@ -58,7 +61,7 @@ jobs:
           echo "::add-mask::$password"
           body=$(jq -cn --arg e "$EMAIL" --arg p "$password" --arg t "$TENANT" \
             '{email: $e, password: $p, returnSecureToken: true} + (if $t != "" then {tenantId: $t} else {} end)')
-          code=$(curl -sS -o signup.json -w '%{http_code}' --max-time 20 -H 'content-type: application/json' \
+          code=$(curl -sS -o signup.json -w '%{http_code}' --max-time 20 -H 'content-type: application/json' -H "Referer: $APP_ORIGIN" \
             "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$KEY" -d "$body")
           if [ "$code" != "200" ]; then echo "::error::signUp -> $code $(jq -c '.error.message' signup.json)"; exit 1; fi
           token=$(jq -r '.idToken' signup.json)
@@ -89,6 +92,6 @@ jobs:
             -H 'content-type: application/json' "$API/v1/me/delete" -d '{"confirm":true}')
           echo "::notice title=me/delete::$code $(cat delete.json | head -c 200)"
           # Por si la API no pudo borrarla en Identity Platform: la cuenta puede borrarse a sí misma.
-          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -H 'content-type: application/json' \
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -H 'content-type: application/json' -H "Referer: $APP_ORIGIN" \
             "https://identitytoolkit.googleapis.com/v1/accounts:delete?key=$KEY" -d "$(jq -cn --arg t "$TOKEN" '{idToken: $t}')")
           echo "accounts:delete -> $code (400 = ya no existía)"
