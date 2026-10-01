@@ -197,10 +197,7 @@ jobs:
               items = json.load(open('/tmp/locations.json')).get('items', [])
               text = '; '.join(
                   f"{l['name']} ({l.get('city') or '-'}): "
-                  + (', '.join(
-                      f"{e['evseId']} {e['status']} {e['maxPowerKw']} kW"
-                      + (f" mínimo {(e.get('tariff') or {}).get('minPrice')}" if (e.get('tariff') or {}).get('minPrice') else '')
-                      for e in l['evses']) or 'sin conectores')
+                  + (', '.join(f"{e['evseId']} {e['status']} {e['maxPowerKw']} kW" for e in l['evses']) or 'sin conectores')
                   for l in items
               )
               print(text or 'sin estaciones visibles')
@@ -209,6 +206,21 @@ jobs:
           PY
           )
             echo "::notice title=Estaciones visibles en la app (/v1/locations)::${loc}"
+            # Cotización pública del primer conector: tarifa vigente, precio ahora y cobro mínimo por conexión (ADR 0033).
+            evse=$(python3 -c "import json; d=json.load(open('/tmp/locations.json')); print(next((e['evseId'] for l in d.get('items', []) for e in l.get('evses', [])), ''))")
+            if [ -n "$evse" ]; then
+              curl -sS --max-time 20 "https://$host/v1/evses/$evse" > /tmp/evse.json || true
+              quote=$(python3 - <<'PY'
+          import json
+          try:
+              t = json.load(open('/tmp/evse.json')).get('tariff') or {}
+              print(f"{t.get('tariffCode')} v{t.get('tariffVersion')}: {(t.get('energy') or {}).get('pricePerKwhNow')} {t.get('currency')}/kWh ahora; mínimo por conexión {t.get('minPrice') or 'sin mínimo'}; tope {t.get('maxPrice') or 'sin tope'}")
+          except Exception as error:
+              print(f'error: {error}')
+          PY
+          )
+              echo "::notice title=Cotización pública de $evse (/v1/evses)::${quote}"
+            fi
             curl -sS --max-time 20 "https://$host/v1/config" > /tmp/config.json || true
             maps=$(python3 - <<'PY'
           import json
