@@ -76,7 +76,7 @@ jobs:
           code=$(curl -sS -o provider.json -w '%{http_code}' --max-time 30 "${hdr[@]}" "$API/admin/v1/billing/provider")
           [ "$code" = "200" ] || { echo "::error::/admin/v1/billing/provider -> $code $(head -c 200 provider.json)"; exit 1; }
           jq '.' provider.json
-          resumen=$(jq -r '"en línea: \(.online) · ambiente: \(.environment) · comercio: \(.merchant // "-") · último cobro aprobado: \(.lastCaptureAt // "ninguno") · último webhook: \(.lastWebhookAt // "NINGUNO") (\(.lastWebhookOutcome // "-")) · webhooks 24 h: \(.webhooks24h.applied) aplicados, \(.webhooks24h.invalidChecksum) con firma inválida · 24 h: \(.last24h.approved) aprobados, \(.last24h.declined) rechazados, \(.last24h.errors) errores · pendientes: \(.pending.count) · alarmas de conciliación: \(.openReconciliationAlarms) · medios de pago sin confirmar: \(.unconfirmedSources)"' provider.json)
+          resumen=$(jq -r '"en línea: \(.health.ok) (\(.health.latencyMs) ms) · ambiente: \(.environment) · comercio: \(.health.merchant // "-") · error: \(.health.error // "ninguno") · último cobro aprobado: \(.lastCaptureAt // "ninguno") · último webhook: \(.lastWebhookAt // "NINGUNO") (\(.lastWebhookOutcome // "-")) · webhooks 24 h: \(.webhooks24h.applied) aplicados, \(.webhooks24h.invalidChecksum) con firma inválida · 24 h: \(.last24h.approved) aprobados, \(.last24h.declined) rechazados, \(.last24h.errors) errores · pendientes: \(.pending.count) · alarmas de conciliación: \(.openReconciliationAlarms) · medios de pago sin confirmar: \(.unconfirmedSources)"' provider.json)
           echo "::notice title=2. Estado del proveedor (plataforma)::$resumen"
           echo "## Estado del proveedor ($ENVIRONMENT)" >> "$GITHUB_STEP_SUMMARY"; echo "" >> "$GITHUB_STEP_SUMMARY"; echo "$resumen" >> "$GITHUB_STEP_SUMMARY"; echo "" >> "$GITHUB_STEP_SUMMARY"
           curl -sS --max-time 30 "${hdr[@]}" "$API/admin/v1/billing/webhooks?limit=5" > webhooks.json
@@ -86,8 +86,8 @@ jobs:
           if [ "$(jq -r '.lastWebhookAt // empty' provider.json)" = "" ]; then
             echo "::warning title=Sin webhooks::La plataforma no ha recibido ningún evento de Wompi en este ambiente. En el panel de Wompi (Desarrolladores → URL de eventos del ambiente de pruebas) debe estar: $API/v1/webhooks/wompi. Sin webhook los cobros se confirman igual por consulta periódica, pero más lento."
           fi
-          if [ "$(jq -r '.online' provider.json)" != "true" ]; then
-            echo "::error::La plataforma no logra hablar con Wompi (llaves o red)"; exit 1
+          if [ "$(jq -r '.health.ok' provider.json)" != "true" ]; then
+            echo "::error::La plataforma no logra hablar con Wompi: $(jq -r '.health.error // "sin detalle"' provider.json)"; exit 1
           fi
       - name: 3. Endpoint de webhooks alcanzable por el balanceador
         run: |
