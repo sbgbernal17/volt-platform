@@ -74,9 +74,9 @@ Lo que haré yo sin esperarte: adaptador al proveedor DIAN detrás de un puerto 
 
 ## Estado de la app en las tiendas (01-10-2026)
 
-- **Android (Play Console)**: la app existe, está enrolada en *Firma de apps de Play* y la pista de **Pruebas internas** tiene el `.aab` del 25-09 (compilación `c6d57243`, versión 6), anterior al PDF y a las pantallas de esta semana. Hoy lancé una compilación nueva con el perfil `staging` (apunta a `api-staging.supercargadores.co`; el perfil `production` apunta a `api.supercargadores.co`, que no existe hasta que creemos prod) con envío automático a Pruebas internas; cuando termine, aparece en Play Console → *Pruebas internas* y solo falta tu lista de probadores (9m).
-- **iOS (App Store Connect / TestFlight)**: la cuenta y la clave de API quedaron el 30-09 y la primera compilación (`37a7b149`, perfil `production`) terminó bien, pero **no está en TestFlight**: el envío automático necesita el número de la app en App Store Connect (9l). Hoy lancé también la compilación `staging` de iOS; en cuanto me des el número, la envío y te llega la invitación de TestFlight.
-- Puedes seguir las compilaciones en <https://expo.dev> (proyecto `volt-app` → *Builds*) o pedirme el estado.
+- **Android (Play Console)**: la app existe, está enrolada en *Firma de apps de Play* y la pista de **Pruebas internas** tiene el `.aab` del 25-09 (compilación `c6d57243`, versión 6), anterior al PDF y a las pantallas de esta semana. Hoy lancé la compilación `a18af5ec` (perfil `staging`, versión 7) con envío automático a Pruebas internas ya programado en EAS: el perfil `staging` apunta a `api-staging.supercargadores.co` porque el perfil `production` apunta a `api.supercargadores.co`, que no existe hasta que creemos prod. Cuando termine (unos 15 minutos), aparece en Play Console → *Pruebas internas* y solo falta tu lista de probadores (9m).
+- **iOS (App Store Connect / TestFlight)**: la cuenta y la clave de API quedaron el 30-09 y la primera compilación (`37a7b149`, perfil `production`) terminó bien, pero **no está en TestFlight**: el envío automático necesita el número de la app en App Store Connect (9l). Hoy lancé también la compilación `8fa1413b` de iOS (perfil `staging`, compilación 3); en cuanto me des el número, la envío con `eas submit` y te llega la invitación de TestFlight.
+- Puedes seguir las compilaciones en <https://expo.dev> (proyecto `volt-app` → *Builds*) o pedirme el estado; el flujo *Diagnóstico de compilación (EAS)* con la opción *list* muestra las últimas de Android e iOS.
 
 ## Qué probar de lo entregado el 01-10-2026
 

@@ -143,6 +143,7 @@ jobs:
           done
           exit 0
       - name: Estado final
+        if: ${{ !inputs.list }}
         working-directory: apps/mobile
         run: |
           echo "ESTADO: $(jq -r '"\(.status) | perfil \(.buildProfile) | versionCode \(.appBuildVersion) | error \(.error.errorCode // "ninguno") | creado \(.createdAt) | terminado \(.completedAt // "-")"' build.json)"

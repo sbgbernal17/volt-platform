@@ -197,7 +197,10 @@ jobs:
               items = json.load(open('/tmp/locations.json')).get('items', [])
               text = '; '.join(
                   f"{l['name']} ({l.get('city') or '-'}): "
-                  + (', '.join(f"{e['evseId']} {e['status']} {e['maxPowerKw']} kW" for e in l['evses']) or 'sin conectores')
+                  + (', '.join(
+                      f"{e['evseId']} {e['status']} {e['maxPowerKw']} kW"
+                      + (f" mínimo {(e.get('tariff') or {}).get('minPrice')}" if (e.get('tariff') or {}).get('minPrice') else '')
+                      for e in l['evses']) or 'sin conectores')
                   for l in items
               )
               print(text or 'sin estaciones visibles')
@@ -212,7 +215,8 @@ jobs:
           try:
               d = json.load(open('/tmp/config.json'))
               key = (d.get('maps') or {}).get('browserKey')
-              print(f"clave de Google Maps presente ({key[:6]}…)" if key else 'sin clave de Google Maps')
+              maps = f"clave de Google Maps presente ({key[:6]}…)" if key else 'sin clave de Google Maps'
+              print(f"{maps}; correo: {d.get('email')}; celular: {d.get('phone')}; pagos: {(d.get('payments') or {}).get('provider')}/{(d.get('payments') or {}).get('environment')}")
           except Exception as error:
               print(f'error: {error}')
           PY
