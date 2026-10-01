@@ -148,7 +148,7 @@ jobs:
           gcloud run services describe api --region "$REGION" --project "$PROJECT_ID" --format yaml | grep -v -i 'token\|password' | head -150
           echo "::endgroup::"
           echo "::group::Registros del contenedor de la API (últimas 2 h, avisos y errores)"
-          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="api" AND severity>=WARNING' --project "$PROJECT_ID" --freshness=2h --limit 10 --format 'value(timestamp,severity,textPayload,jsonPayload.message)' || true
+          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="api" AND severity>=WARNING' --project "$PROJECT_ID" --freshness=2h --limit 10 --format 'value(timestamp,severity,textPayload,jsonPayload.message,jsonPayload.provider,jsonPayload.kind,jsonPayload.err.code,jsonPayload.err.status,jsonPayload.err.message)' || true
           echo "::endgroup::"
           echo "::group::Registros de peticiones de Cloud Run (última hora, cualquier URL)"
           gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="api" AND httpRequest.requestMethod:*' --project "$PROJECT_ID" --freshness=1h --limit 10 --format 'value(timestamp,httpRequest.status,httpRequest.requestUrl,textPayload)' || true
