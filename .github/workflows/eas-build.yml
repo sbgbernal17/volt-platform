@@ -49,10 +49,24 @@ jobs:
           CI: '1'
           EXPO_NO_TELEMETRY: '1'
         run: |
-          extra=""
-          if [ "${{ inputs.submit }}" = "true" ] && { [ "${{ inputs.profile }}" = "production" ] || [ "${{ inputs.profile }}" = "staging" ]; }; then
-            extra="--auto-submit"
+          profile="${{ inputs.profile }}"; platform="${{ inputs.platform }}"
+          submit=false
+          if [ "${{ inputs.submit }}" = "true" ] && { [ "$profile" = "production" ] || [ "$profile" = "staging" ]; }; then submit=true; fi
+          # El envío a TestFlight sin intervención necesita `ascAppId` en el perfil de envío (tarea 9l del
+          # dueño); sin él, iOS se compila igual y solo se omite su envío, sin fallar el flujo.
+          ios_submit=$submit
+          if [ "$submit" = "true" ] && [ "$platform" != "android" ] && [ "$(jq -r ".submit.\"$profile\".ios.ascAppId // empty" eas.json)" = "" ]; then
+            ios_submit=false
+            echo "::warning title=iOS sin envío::Falta ascAppId en el perfil de envío '$profile' de eas.json: iOS se compila pero no se envía a TestFlight."
           fi
-          npx eas-cli@latest build --non-interactive --no-wait \
-            --profile "${{ inputs.profile }}" --platform "${{ inputs.platform }}" $extra
+          launch() { # plataforma auto_submit
+            extra=""; [ "$2" = "true" ] && extra="--auto-submit"
+            npx eas-cli@latest build --non-interactive --no-wait --profile "$profile" --platform "$1" $extra
+          }
+          if [ "$platform" = "all" ] && [ "$submit" != "$ios_submit" ]; then
+            launch android "$submit"
+            launch ios "$ios_submit"
+          else
+            launch "$platform" "$submit"
+          fi
           echo "La compilación sigue en https://expo.dev (proyecto Volt → Builds)." >> "$GITHUB_STEP_SUMMARY"
