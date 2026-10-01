@@ -99,6 +99,13 @@ export class IdentityToolkitLinks implements IdentityLinkGenerator {
       tenantId?: string | undefined;
       fetchImpl?: typeof fetch | undefined;
       endpoint?: string | undefined;
+      /**
+       * Clave pública del proyecto y origen de la app web: la verificación de correo de respaldo va
+       * por la vía pública (la misma del SDK en la app: clave + ID token del usuario), porque la vía
+       * administrativa la rechaza. La clave está restringida por dominio, de ahí el `Referer`.
+       */
+      apiKey?: string | undefined;
+      referer?: string | undefined;
     },
   ) {
     this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
@@ -128,6 +135,7 @@ export class IdentityToolkitLinks implements IdentityLinkGenerator {
     options: { continueUrl?: string | undefined; idToken?: string | undefined } = {},
   ): Promise<void> {
     // Sin `returnOobLink`, Identity Platform envía el correo por su cuenta.
+    const publicRoute = kind === 'VERIFY_EMAIL' && Boolean(options.idToken && this.options.apiKey);
     await this.call(
       {
         requestType: kind,
@@ -135,32 +143,39 @@ export class IdentityToolkitLinks implements IdentityLinkGenerator {
         ...(options.continueUrl ? { continueUrl: options.continueUrl } : {}),
       },
       'el correo',
+      publicRoute,
     );
   }
 
   private async call(
     body: Record<string, unknown>,
     what: string,
+    publicRoute = false,
   ): Promise<{ data: { oobLink?: string }; status: number }> {
-    const token = await this.options.tokens.token();
+    const endpoint =
+      this.options.endpoint ?? 'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode';
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      accept: 'application/json',
+    };
+    let url = endpoint;
+    if (publicRoute) {
+      url = `${endpoint}?key=${encodeURIComponent(this.options.apiKey as string)}`;
+      if (this.options.referer) headers.referer = this.options.referer;
+    } else {
+      headers.authorization = `Bearer ${await this.options.tokens.token()}`;
+    }
     let response: Response;
     try {
-      response = await this.fetchImpl(
-        this.options.endpoint ?? 'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode',
-        {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${token}`,
-            'content-type': 'application/json',
-            accept: 'application/json',
-          },
-          body: JSON.stringify({
-            ...body,
-            ...(this.options.tenantId ? { tenantId: this.options.tenantId } : {}),
-          }),
-          signal: AbortSignal.timeout(10_000),
-        },
-      );
+      response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ...body,
+          ...(this.options.tenantId ? { tenantId: this.options.tenantId } : {}),
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
     } catch (error) {
       throw new IdentityLinkError(
         `Identity Platform no respondió: ${(error as Error).message}`,

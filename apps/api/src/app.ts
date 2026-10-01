@@ -267,6 +267,8 @@ export function buildApp({
           ? new IdentityToolkitLinks({
               tokens: new MetadataTokenSource(),
               tenantId: config.IDENTITY_PLATFORM_DRIVER_TENANT_ID,
+              apiKey: config.IDENTITY_PLATFORM_API_KEY,
+              referer: appWebUrl,
             })
           : new FakeIdentityLinks(appWebUrl)
         : undefined);
