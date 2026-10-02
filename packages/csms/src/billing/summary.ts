@@ -203,6 +203,13 @@ export interface ProviderStatus {
   checkedAt: Date;
 }
 
+/** Nombres con los que el proveedor etiqueta sus eventos para cada ambiente del adaptador. */
+const WEBHOOK_ENVIRONMENT_ALIASES: Record<string, string[]> = {
+  sandbox: ['test'],
+  production: ['prod'],
+  fake: ['test'],
+};
+
 /** Señales de que el proveedor funciona: respuesta del comercio, webhooks recientes y cobros. */
 export async function providerStatus(
   db: ISql,
@@ -213,10 +220,15 @@ export async function providerStatus(
   const gateway = input.gateway;
   const environment = gateway?.environment ?? 'none';
   const health = gateway?.health ? await gateway.health() : null;
+  // Los eventos de Wompi traen "test"/"prod" donde el adaptador habla de "sandbox"/"production"; el
+  // adaptador ya los normaliza al guardar, y aquí se aceptan también los valores antiguos.
+  const inboxEnvironments = gateway
+    ? [environment, ...(WEBHOOK_ENVIRONMENT_ALIASES[environment] ?? [])]
+    : null;
   const lastWebhook = (
     await db<{ received_at: Date; outcome: string | null }[]>`
     SELECT received_at, outcome FROM billing.webhook_inbox
-    WHERE (${gateway ? environment : null}::text IS NULL OR psp_environment = ${environment})
+    WHERE (${inboxEnvironments}::text[] IS NULL OR psp_environment = ANY(${inboxEnvironments}::text[]))
     ORDER BY received_at DESC LIMIT 1`
   )[0];
   const webhooks = (
@@ -225,7 +237,7 @@ export async function providerStatus(
            COUNT(*) FILTER (WHERE checksum_valid = false)::int AS invalid,
            COUNT(*) FILTER (WHERE checksum_valid = true AND COALESCE(outcome, '') <> 'APPLIED')::int AS other
     FROM billing.webhook_inbox WHERE received_at >= ${since}
-      AND (${gateway ? environment : null}::text IS NULL OR psp_environment = ${environment})`
+      AND (${inboxEnvironments}::text[] IS NULL OR psp_environment = ANY(${inboxEnvironments}::text[]))`
   )[0];
   const lastCapture = (
     await db<{ finalized_at: Date | null }[]>`

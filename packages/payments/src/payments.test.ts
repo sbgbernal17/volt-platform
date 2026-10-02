@@ -446,6 +446,8 @@ describe('adaptador de Wompi contra un servidor simulado', () => {
     });
     const parsed = gateway().parseWebhook(fake.buildWebhookEvent(tx.id));
     expect(parsed.checksumValid).toBe(true);
+    // Wompi etiqueta el evento como "test"; el adaptador lo guarda como "sandbox".
+    expect(parsed.environment).toBe('sandbox');
     expect(parsed.transaction).toMatchObject({
       id: tx.id,
       amountMinor: 2_000n,

@@ -343,6 +343,7 @@ export class WompiGateway implements PaymentGateway {
   }
 
   parseWebhook(body: unknown): WebhookEvent {
+    // Wompi etiqueta sus eventos como "test" o "prod"; el adaptador habla de "sandbox" y "production".
     const event = (body ?? {}) as Json & {
       signature?: { properties?: unknown; checksum?: unknown };
       timestamp?: unknown;
@@ -354,7 +355,7 @@ export class WompiGateway implements PaymentGateway {
     const timestamp = typeof event.timestamp === 'number' ? event.timestamp : null;
     return {
       event: str(event.event) || 'unknown',
-      environment: str(event.environment) || null,
+      environment: normalizeEventEnvironment(str(event.environment)),
       timestamp,
       sentAt: str(event.sent_at) || null,
       checksumValid,
@@ -529,4 +530,12 @@ export function mapSource(data: Json): PaymentSource {
         : null,
     raw: data,
   };
+}
+
+/** "test" → "sandbox" y "prod" → "production"; otros valores se conservan. */
+function normalizeEventEnvironment(value: string): string | null {
+  if (!value) return null;
+  if (value === 'test') return 'sandbox';
+  if (value === 'prod') return 'production';
+  return value;
 }

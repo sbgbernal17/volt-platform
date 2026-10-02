@@ -178,7 +178,7 @@ jobs:
             --format 'value(timestamp,httpRequest.status,httpRequest.remoteIp,jsonPayload.statusDetails,jsonPayload.enforcedSecurityPolicy.outcome)' | tee lb2.txt
           echo "::endgroup::"
           if [ -n "$last" ]; then
-            echo "::notice title=5. Webhook recibido::La plataforma recibió el evento del cobro de prueba a las $last (resultado: $outcome; IGNORED es lo esperado: la referencia VOLT-VERIF no es de la plataforma, INVALID_CHECKSUM significa que el secreto de eventos de Secret Manager no coincide con el del panel de Wompi)."
+            echo "::notice title=5. Webhook recibido::La plataforma recibió el evento del cobro de prueba a las $last (resultado: $outcome; UNKNOWN_TRANSACTION es lo esperado: la referencia VOLT-VERIF no es de la plataforma; INVALID_CHECKSUM significa que el secreto de eventos de Secret Manager no coincide con el del panel de Wompi)."
             echo "Webhook del cobro de prueba: recibido a las $last ($outcome)." >> "$GITHUB_STEP_SUMMARY"
           elif [ -s lb2.txt ]; then
             echo "::error title=5. Webhook rechazado::Wompi intentó enviar el evento pero la plataforma no lo registró (estados arriba: 403 es Cloud Armor; 5xx es la API)."

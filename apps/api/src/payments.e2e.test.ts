@@ -489,6 +489,16 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
     };
     // Tres eventos aplicados o rechazados: el rechazo desde el checkout emulado, el pago aprobado y el manipulado.
     expect(inbox.items.map((i) => i.outcome)).toEqual(['INVALID_CHECKSUM', 'APPLIED', 'APPLIED']);
+    // El estado del proveedor ve esos webhooks aunque el evento venga etiquetado como "test".
+    const status = (await admin('GET', '/admin/v1/billing/provider')).json() as {
+      lastWebhookAt: string | null;
+      lastWebhookOutcome: string | null;
+      webhooks24h: { applied: number; invalidChecksum: number };
+    };
+    expect(status.lastWebhookAt).not.toBeNull();
+    expect(status.lastWebhookOutcome).toBe('INVALID_CHECKSUM'); // el último enviado fue el manipulado
+    expect(status.webhooks24h.applied).toBeGreaterThanOrEqual(2);
+    expect(status.webhooks24h.invalidChecksum).toBeGreaterThanOrEqual(1);
     const debts = (await admin('GET', '/admin/v1/debts?status=PAID')).json() as {
       items: unknown[];
     };
