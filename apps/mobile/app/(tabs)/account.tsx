@@ -16,6 +16,8 @@ import { useQuery } from '../../src/api/hooks.ts';
 import type { Billing } from '../../src/api/types.ts';
 import { useAuth } from '../../src/auth/auth.tsx';
 import { useI18n } from '../../src/i18n/index.tsx';
+import { formatAppBuild } from '../../src/lib/app-build.ts';
+import { appBuildInfo, checkAndApplyUpdate } from '../../src/lib/app-updates.ts';
 import { pushSupported, registerForPush, unregisterPush } from '../../src/lib/notifications.ts';
 import { Icon, type IconName } from '../../src/theme/icon.tsx';
 import {
@@ -201,9 +203,7 @@ export default function Account() {
               />
             ) : null}
           </View>
-          <Note>
-            {t('app.version')} {auth.config?.version ?? ''}
-          </Note>
+          <AppVersion apiVersion={auth.config?.version ?? null} />
         </View>
       </Screen>
     );
@@ -325,11 +325,52 @@ export default function Account() {
         </View>
         <Muted>{t('account.deleteHelp')}</Muted>
         <Button title={t('account.delete')} variant="ghost" onPress={() => void remove()} />
-        <Note>
-          {t('app.version')} {auth.config?.version ?? ''}
-        </Note>
+        <AppVersion apiVersion={auth.config?.version ?? null} />
       </View>
     </Screen>
+  );
+}
+
+/**
+ * Pie de Cuenta: versión de la app y de qué actualización viene el código, versión de la API y un botón
+ * para buscar actualizaciones OTA sin reinstalar (ADR 0022). En la web no hay nada que buscar.
+ */
+function AppVersion({ apiVersion }: { apiVersion: string | null }) {
+  const { t, locale } = useI18n();
+  const [state, setState] = useState<'idle' | 'checking' | 'current' | 'updated' | 'error'>('idle');
+  const info = appBuildInfo();
+  const check = async () => {
+    setState('checking');
+    const result = await checkAndApplyUpdate();
+    setState(result === 'unavailable' ? 'idle' : result);
+  };
+  const message =
+    state === 'checking'
+      ? t('app.checkingUpdate')
+      : state === 'current'
+        ? t('app.upToDate')
+        : state === 'updated'
+          ? t('app.updateFound')
+          : state === 'error'
+            ? t('app.updateError')
+            : null;
+  return (
+    <View style={{ gap: spacing.xs, alignItems: 'center' }}>
+      <Note style={{ textAlign: 'center' }}>{formatAppBuild(info, locale)}</Note>
+      {apiVersion ? (
+        <Note style={{ textAlign: 'center' }}>{t('app.apiVersion', { version: apiVersion })}</Note>
+      ) : null}
+      {info.updatesEnabled ? (
+        <Button
+          title={t('app.checkUpdate')}
+          variant="ghost"
+          icon="system-update"
+          disabled={state === 'checking'}
+          onPress={() => void check()}
+        />
+      ) : null}
+      {message ? <Note style={{ textAlign: 'center' }}>{message}</Note> : null}
+    </View>
   );
 }
 
