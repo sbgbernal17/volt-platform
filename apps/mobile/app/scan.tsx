@@ -4,6 +4,11 @@
  * inválido. En el navegador también usa la cámara (expo-camera lee el QR con el BarcodeDetector
  * nativo de Chrome o con su decodificador WebAssembly en Safari): hace falta HTTPS y el permiso del
  * sitio; si el navegador no puede, queda la entrada manual con la explicación.
+ *
+ * La máscara oscura forma parte de la misma columna que el visor (franja superior, fila con el
+ * visor transparente en medio y franja inferior), así el hueco coincide siempre con las esquinas y
+ * no depende de posiciones en porcentaje, que en iOS y Android dejaban la cámara visible solo en
+ * una "T" (franja superior y columna central) con el resto negro.
  */
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
@@ -158,70 +163,77 @@ export default function ScanScreen() {
           setWebIssue(/NotAllowed|Permission|denied/i.test(event.message) ? 'blocked' : 'error');
         }}
       />
-      {/* Máscara al 72 % alrededor del visor */}
-      <View style={[styles.mask, { top: 0, height: '30%' }]} />
-      <View style={[styles.mask, { bottom: 0, top: '30%', height: undefined }]}>
-        <View style={{ flexDirection: 'row', height: WINDOW }}>
-          <View style={[styles.maskFill, { flex: 1 }]} />
-          <View style={{ width: WINDOW }} />
-          <View style={[styles.maskFill, { flex: 1 }]} />
+      {/* Máscara al 72 % y controles en la misma columna: el hueco transparente es el visor. */}
+      <View style={styles.overlay}>
+        <View style={[styles.dark, { paddingTop: insets.top + spacing.ms, gap: spacing.md }]}>
+          <View style={styles.topRow}>
+            <IconButton icon="close" label={t('app.close')} onPress={close} onMap />
+            <IconButton
+              icon={torch ? 'flashlight-off' : 'flashlight-on'}
+              label={t('scan.torch')}
+              onPress={() => setTorch((value) => !value)}
+              onMap
+            />
+          </View>
+          <View style={{ alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl }}>
+            <Subtitle style={{ textAlign: 'center' }}>{t('scan.title')}</Subtitle>
+            <Text style={[styles.body, { textAlign: 'center' }]}>{t('scan.help')}</Text>
+          </View>
+          <View style={{ height: spacing.md }} />
         </View>
-        <View style={[styles.maskFill, { flex: 1 }]} />
-      </View>
-      <View
-        style={[
-          styles.overlay,
-          { paddingTop: insets.top + spacing.ms, paddingBottom: insets.bottom + spacing.lg },
-        ]}
-      >
-        <View style={styles.topRow}>
-          <IconButton icon="close" label={t('app.close')} onPress={close} onMap />
-          <IconButton
-            icon={torch ? 'flashlight-off' : 'flashlight-on'}
-            label={t('scan.torch')}
-            onPress={() => setTorch((value) => !value)}
-            onMap
-          />
+        <View style={styles.windowRow}>
+          <View style={[styles.dark, { flex: 1 }]} />
+          <View style={styles.viewfinder}>
+            <View style={[styles.corner, styles.tl, { borderColor: cornerColor }]} />
+            <View style={[styles.corner, styles.tr, { borderColor: cornerColor }]} />
+            <View style={[styles.corner, styles.bl, { borderColor: cornerColor }]} />
+            <View style={[styles.corner, styles.br, { borderColor: cornerColor }]} />
+            {invalid ? <View style={[StyleSheet.absoluteFill, styles.invalidFrame]} /> : null}
+          </View>
+          <View style={[styles.dark, { flex: 1 }]} />
         </View>
-        <View style={{ alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl }}>
-          <Subtitle style={{ textAlign: 'center' }}>{t('scan.title')}</Subtitle>
-          <Text style={[styles.body, { textAlign: 'center' }]}>{t('scan.help')}</Text>
-        </View>
-        <View style={styles.viewfinder}>
-          <View style={[styles.corner, styles.tl, { borderColor: cornerColor }]} />
-          <View style={[styles.corner, styles.tr, { borderColor: cornerColor }]} />
-          <View style={[styles.corner, styles.bl, { borderColor: cornerColor }]} />
-          <View style={[styles.corner, styles.br, { borderColor: cornerColor }]} />
-          {invalid ? <View style={[StyleSheet.absoluteFill, styles.invalidFrame]} /> : null}
-        </View>
-        <Text style={styles.status}>{invalid ? t('scan.invalidTitle') : t('scan.searching')}</Text>
-        <View style={{ flex: 1 }} />
-        {invalid ? (
-          <View style={styles.sheet}>
-            <View style={styles.errorCircle}>
-              <Icon name="error" size={28} color={colors.danger} />
+        <View
+          style={[
+            styles.dark,
+            {
+              flex: 1,
+              paddingTop: spacing.md,
+              paddingBottom: insets.bottom + spacing.lg,
+              gap: spacing.md,
+            },
+          ]}
+        >
+          <Text style={styles.status}>
+            {invalid ? t('scan.invalidTitle') : t('scan.searching')}
+          </Text>
+          <View style={{ flex: 1 }} />
+          {invalid ? (
+            <View style={styles.sheet}>
+              <View style={styles.errorCircle}>
+                <Icon name="error" size={28} color={colors.danger} />
+              </View>
+              <Subtitle>{t('scan.invalidTitle')}</Subtitle>
+              <Text style={styles.body}>{t('scan.invalid')}</Text>
+              <Button title={t('scan.again')} onPress={() => setInvalid(false)} />
+              <Button
+                title={t('scan.enterCode')}
+                variant="secondary"
+                icon="keyboard"
+                onPress={() => setManual(true)}
+              />
             </View>
-            <Subtitle>{t('scan.invalidTitle')}</Subtitle>
-            <Text style={styles.body}>{t('scan.invalid')}</Text>
-            <Button title={t('scan.again')} onPress={() => setInvalid(false)} />
-            <Button
-              title={t('scan.enterCode')}
-              variant="secondary"
-              icon="keyboard"
-              onPress={() => setManual(true)}
-            />
-          </View>
-        ) : (
-          <View style={{ paddingHorizontal: spacing.xl, gap: spacing.sm }}>
-            <Button
-              title={t('scan.enterCode')}
-              variant="secondary"
-              icon="keyboard"
-              onPress={() => setManual(true)}
-            />
-            <Note style={{ textAlign: 'center' }}>{t('scan.enterHelp')}</Note>
-          </View>
-        )}
+          ) : (
+            <View style={{ paddingHorizontal: spacing.xl, gap: spacing.sm }}>
+              <Button
+                title={t('scan.enterCode')}
+                variant="secondary"
+                icon="keyboard"
+                onPress={() => setManual(true)}
+              />
+              <Note style={{ textAlign: 'center' }}>{t('scan.enterHelp')}</Note>
+            </View>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -229,15 +241,15 @@ export default function ScanScreen() {
 
 const styles = StyleSheet.create({
   full: { flex: 1, backgroundColor: colors.bg },
-  mask: { position: 'absolute', left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.72)' },
-  maskFill: { backgroundColor: 'rgba(0,0,0,0.72)' },
-  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, gap: spacing.md },
+  dark: { backgroundColor: 'rgba(0,0,0,0.72)' },
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  windowRow: { flexDirection: 'row', height: WINDOW },
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.float,
   },
-  viewfinder: { width: WINDOW, height: WINDOW, alignSelf: 'center', borderRadius: 16 },
+  viewfinder: { width: WINDOW, height: WINDOW, borderRadius: 16 },
   corner: { position: 'absolute', width: 44, height: 44, borderColor: colors.brand },
   tl: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 16 },
   tr: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 16 },

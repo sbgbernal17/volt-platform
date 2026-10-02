@@ -1,0 +1,59 @@
+# Actualización OTA de la app Volt con EAS Update (iteración 7, ADR 0022): publica el JavaScript
+# actual del repositorio en el canal elegido y las apps ya instaladas (TestFlight, Pruebas internas,
+# tiendas) lo descargan al abrirse, sin nueva compilación ni revisión. Solo sirve para cambios de
+# JavaScript y recursos; un módulo nativo nuevo exige compilar de nuevo. La URL de la API se toma del
+# perfil de compilación homónimo de eas.json (EXPO_PUBLIC_API_URL) para no apuntar al ambiente equivocado.
+name: Actualización OTA de la app (EAS Update)
+
+on:
+  workflow_dispatch:
+    inputs:
+      canal:
+        description: 'Canal (perfil de eas.json): las apps compiladas con ese perfil reciben la actualización'
+        type: choice
+        default: staging
+        options: [staging, preview, development, production]
+      mensaje:
+        description: 'Mensaje de la actualización (qué cambia)'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: EAS Update (${{ inputs.canal }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Comprobar el token de Expo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Falta el secreto EXPO_TOKEN (expo.dev → Access tokens)."
+            exit 1
+          fi
+      - run: pnpm install --frozen-lockfile --filter "@volt/mobile..."
+      - name: Publicar la actualización
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          CI: '1'
+          EXPO_NO_TELEMETRY: '1'
+          CANAL: ${{ inputs.canal }}
+          MENSAJE: ${{ inputs.mensaje }}
+        run: |
+          api_url=$(jq -r ".build.\"$CANAL\".env.EXPO_PUBLIC_API_URL // empty" eas.json)
+          if [ -z "$api_url" ]; then echo "::error::El perfil '$CANAL' de eas.json no define EXPO_PUBLIC_API_URL."; exit 1; fi
+          echo "API de la actualización: $api_url"
+          EXPO_PUBLIC_API_URL="$api_url" npx eas-cli@latest update --channel "$CANAL" --message "$MENSAJE" --platform all --non-interactive --json > update.json
+          jq -r '.[] | "\(.platform): grupo \(.group[0:8]) · runtime \(.runtimeVersion) · \(.createdAt)"' update.json | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Actualización publicada en $CANAL::$(jq -c '[.[] | {platform, runtimeVersion, group: .group[0:8]}]' update.json). Las apps instaladas la descargan en el siguiente arranque (ciérrala y ábrela dos veces)."
