@@ -449,10 +449,14 @@ resource "google_apikeys_key" "maps_browser" {
   }
 }
 
-# Clave de navegador de Identity Platform restringida a nuestros orígenes (back-office y app web).
+# Clave de Identity Platform que reciben el back-office, la app web y la app nativa (GET /v1/config).
+# Restringida solo por API (ADR 0036, aprobado por el dueño el 02-10-2026): una restricción por referer
+# HTTP bloquea a la app de iOS y Android, que no envía referer ("Requests from referer <empty> are
+# blocked"); la clave es pública por diseño y la protección real está en Identity Platform (y App Check
+# cuando se active). El nombre del recurso se conserva para no regenerar la clave.
 resource "google_apikeys_key" "identity_platform" {
   name         = "identity-platform-browser"
-  display_name = "Identity Platform (navegador, ${var.env})"
+  display_name = "Identity Platform (app y navegador, ${var.env})"
   depends_on   = [google_project_service.apis]
 
   restrictions {
@@ -461,14 +465,6 @@ resource "google_apikeys_key" "identity_platform" {
     }
     api_targets {
       service = "securetoken.googleapis.com"
-    }
-    browser_key_restrictions {
-      allowed_referrers = [
-        "https://${local.hosts.admin}/*",
-        "https://${local.hosts.app}/*",
-        "http://localhost:*/*",
-        "http://localhost/*",
-      ]
     }
   }
 }

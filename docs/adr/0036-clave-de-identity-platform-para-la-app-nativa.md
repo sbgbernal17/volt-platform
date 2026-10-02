@@ -1,6 +1,6 @@
 # 0036. Clave de Identity Platform para la app nativa: restringida por API, no por referer
 
-Fecha: 2026-10-01. Estado: propuesta, pendiente del visto bueno del dueño (el cambio de Terraform se aplica cuando lo apruebe).
+Fecha: 2026-10-01. Estado: aceptada (aprobada por el dueño el 02-10-2026 y aplicada en dev y staging ese día).
 
 ## Contexto
 
@@ -8,7 +8,7 @@ La app Volt (web, iOS y Android) y el back-office inician sesión contra Identit
 
 ## Decisión
 
-1. **La clave de Identity Platform pasa a restringirse solo por API** (`identitytoolkit.googleapis.com` y `securetoken.googleapis.com`), sin restricción de referer. Se cambia la restricción del recurso existente (`identity-platform-browser`) en lugar de crear otra clave, para no regenerar el valor ni redesplegar la API: el cambio surte efecto al aplicar Terraform y la app en TestFlight funciona sin nueva compilación.
+1. **La clave de Identity Platform se restringe solo por API** (`identitytoolkit.googleapis.com` y `securetoken.googleapis.com`), sin restricción de referer. Se cambia la restricción del recurso existente (`identity-platform-browser`) en lugar de crear otra clave, para no regenerar el valor ni redesplegar la API: el cambio surte efecto al aplicar Terraform y la app en TestFlight funciona sin nueva compilación.
 2. **Por qué es aceptable**: la clave viaja en la app y en el navegador, es un identificador público por diseño (Google y Firebase lo documentan así) y la restricción de referer no protege contra clientes que no son navegadores. Las defensas reales están en Identity Platform: contraseñas con política, límites de intentos, protección contra enumeración de correos, correo verificado y celular verificado (ADR 0031), y en que la API valida el ID token con las claves públicas del proyecto.
 3. **Endurecimiento previsto para producción**: Firebase App Check (DeviceCheck/App Attest en iOS, Play Integrity en Android, reCAPTCHA Enterprise en la web) para que solo nuestras apps usen la clave. Queda en la deuda de ADR 0023.
 4. La clave de **Google Maps para el navegador** sigue restringida por referer: solo la usan el back-office y la app web; la app nativa usa su propia clave de Android (variable de entorno sensible en EAS).
@@ -22,6 +22,6 @@ La app Volt (web, iOS y Android) y el back-office inician sesión contra Identit
 
 ## Consecuencias
 
-- Al aprobarse, Terraform quita `browser_key_restrictions` del recurso `google_apikeys_key.identity_platform` en dev y staging (prod la hereda); la salida `identity_platform_api_key` no cambia. Alternativa manual equivalente: Consola → APIs y servicios → Credenciales → clave "Identity Platform (navegador)" → Restricciones de aplicaciones → Ninguna.
+- Terraform quita `browser_key_restrictions` del recurso `google_apikeys_key.identity_platform` en dev y staging (prod la hereda); la salida `identity_platform_api_key` no cambia. Alternativa manual equivalente: Consola → APIs y servicios → Credenciales → clave "Identity Platform (navegador)" → Restricciones de aplicaciones → Ninguna.
 - `docs/tareas-del-dueno.md` registra la prueba: entrar en la app de TestFlight y de Pruebas internas sin nueva compilación.
 - App Check se añade a la lista de endurecimiento antes de producción (SEG §6).
