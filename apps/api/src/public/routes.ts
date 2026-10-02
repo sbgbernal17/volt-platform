@@ -155,6 +155,38 @@ export async function publicRoutes(
     version: options.version,
   });
 
+  // Errores no capturados de la app (iOS, Android y web): la app los informa antes de cerrarse y
+  // quedan en Cloud Logging como evento `client.error` (sin datos personales: mensaje y pila).
+  // Pública y sin identidad porque el error puede ocurrir antes de iniciar sesión.
+  const clientErrorBody = z.object({
+    message: z.string().min(1).max(500),
+    stack: z.string().max(4000).nullable().optional(),
+    route: z.string().max(200).nullable().optional(),
+    platform: z.enum(['ios', 'android', 'web', 'windows', 'macos']),
+    appVersion: z.string().max(40),
+    updateId: z.string().max(64).nullable().optional(),
+    fatal: z.boolean(),
+  });
+  app.post('/diagnostics/client-errors', async (request, reply) => {
+    const body = clientErrorBody.parse(request.body);
+    app.log.error(
+      {
+        event: 'client.error',
+        platform: body.platform,
+        appVersion: body.appVersion,
+        updateId: body.updateId ?? null,
+        route: body.route ?? null,
+        fatal: body.fatal,
+        message: body.message,
+        stack: body.stack ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+      'error en la app',
+    );
+    reply.code(204);
+    return null;
+  });
+
   await app.register(async (privateApp) => {
     privateApp.addHook('preHandler', driverAuthHook(options.verifier));
     await meRoutes(privateApp, { sql, tenantId, phoneVerification: options.phoneVerification });

@@ -16,17 +16,91 @@ import * as Notifications from 'expo-notifications';
 import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Platform, ScrollView, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { defaultApiBaseUrl } from '../src/api/client.ts';
 import { AuthProvider, useAuth } from '../src/auth/auth.tsx';
-import { I18nProvider, useI18n } from '../src/i18n/index.tsx';
+import { deviceLocale, I18nProvider, translate, useI18n } from '../src/i18n/index.tsx';
+import { appBuildInfo } from '../src/lib/app-updates.ts';
+import {
+  describeError,
+  installGlobalErrorHandler,
+  reportClientError,
+} from '../src/lib/client-errors.ts';
 import { configureNotificationHandler, registerForPush } from '../src/lib/notifications.ts';
 import { ActiveSessionProvider } from '../src/session/active-session.tsx';
-import { colors, fonts } from '../src/theme/tokens.ts';
-import { Loading } from '../src/theme/ui.tsx';
+import { colors, fonts, spacing, text } from '../src/theme/tokens.ts';
+import { Button, Loading } from '../src/theme/ui.tsx';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
+/** Informa un error a la API (mejor esfuerzo) con plataforma, versión y actualización en uso. */
+function reportError(
+  error: unknown,
+  fatal: boolean,
+  route: string | null = null,
+): Promise<boolean> {
+  const build = appBuildInfo();
+  return reportClientError(
+    defaultApiBaseUrl(),
+    describeError(error, {
+      route,
+      platform: Platform.OS,
+      appVersion: build.version,
+      updateId: build.updateId,
+      fatal,
+    }),
+  );
+}
+
+// Errores fatales fuera del árbol de React (promesas, temporizadores): se informan antes del cierre.
+installGlobalErrorHandler((error, fatal) => reportError(error, fatal));
+
+/**
+ * Pantalla de error de expo-router para toda la app: en una app de tienda una excepción al dibujar
+ * cerraría la app sin explicación; aquí se informa a la API y se ofrece reintentar. No depende de los
+ * proveedores (idioma, identidad) porque puede dibujarse cuando ellos fallaron.
+ */
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Promise<void> }) {
+  const locale = deviceLocale();
+  const [detail, setDetail] = useState(false);
+  useEffect(() => {
+    void reportError(error, true);
+  }, [error]);
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: colors.bg,
+        justifyContent: 'center',
+        padding: spacing.xl,
+        gap: spacing.md,
+      }}
+    >
+      <Text style={{ ...text.titulo2, color: colors.text, textAlign: 'center' }}>
+        {translate(locale, 'crash.title')}
+      </Text>
+      <Text style={{ ...text.cuerpo, color: colors.textSecondary, textAlign: 'center' }}>
+        {translate(locale, 'crash.body')}
+      </Text>
+      <Button title={translate(locale, 'crash.retry')} onPress={() => void retry()} />
+      <Button
+        title={translate(locale, 'crash.detail')}
+        variant="ghost"
+        onPress={() => setDetail((value) => !value)}
+      />
+      {detail ? (
+        <ScrollView style={{ maxHeight: 220 }}>
+          <Text style={{ ...text.cuerpoS, color: colors.textMuted }} selectable>
+            {error.message}
+            {error.stack ? `\n\n${error.stack.slice(0, 1500)}` : ''}
+          </Text>
+        </ScrollView>
+      ) : null}
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontsError] = useFonts({

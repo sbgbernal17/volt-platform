@@ -25,6 +25,11 @@ export const es = {
   'app.upToDate': 'Ya tiene la última versión.',
   'app.updateFound': 'Actualización encontrada: la app se reinicia.',
   'app.updateError': 'No se pudo comprobar. Revise su red e intente de nuevo.',
+  'crash.title': 'Algo falló en la app',
+  'crash.body':
+    'Ocurrió un error inesperado. Ya lo registramos para corregirlo; puede volver a intentarlo.',
+  'crash.retry': 'Volver a intentar',
+  'crash.detail': 'Detalle técnico',
   'app.support': 'Soporte',
   'app.open': 'Abrir',
   'app.refresh': 'Actualizar',

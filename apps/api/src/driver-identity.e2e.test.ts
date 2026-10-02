@@ -586,4 +586,24 @@ describe.skipIf(!baseUrl)('identidad del conductor por la API', () => {
       pendingConsents: ['terms', 'data_processing'],
     });
   });
+
+  it('registra los errores que informa la app sin identidad y rechaza los malformados', async () => {
+    const accepted = await call('POST', '/v1/diagnostics/client-errors', null, {
+      message: "Property 'crypto' doesn't exist",
+      stack: 'ReferenceError: ...',
+      route: '/evse/VOLT-1',
+      platform: 'ios',
+      appVersion: '0.1.0',
+      updateId: 'c5d10fe4',
+      fatal: true,
+    });
+    expect(accepted.statusCode).toBe(204);
+    const rejected = await call('POST', '/v1/diagnostics/client-errors', null, {
+      message: '',
+      platform: 'toaster',
+      appVersion: '0.1.0',
+      fatal: 'sí',
+    });
+    expect(rejected.statusCode).toBe(400);
+  });
 });

@@ -29,6 +29,7 @@ import {
   formatPowerType,
   formatStandard,
 } from '../../src/lib/format.ts';
+import { randomKey } from '../../src/lib/random.ts';
 import { chargerNumber } from '../../src/lib/stations.ts';
 import { useActiveSession } from '../../src/session/active-session.tsx';
 import { colors, fonts, spacing, text } from '../../src/theme/tokens.ts';
@@ -49,12 +50,6 @@ import {
   TopBar,
 } from '../../src/theme/ui.tsx';
 import { methodLabel } from '../payment-methods/index.tsx';
-
-function randomKey(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 function bandLabel(start: string | null, end: string | null): string {
   if (!start && !end) return '';
