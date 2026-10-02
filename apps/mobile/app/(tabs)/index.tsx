@@ -44,7 +44,7 @@ import {
   sortByDistance,
 } from '../../src/lib/stations.ts';
 import { Icon } from '../../src/theme/icon.tsx';
-import { colors, fonts, radius, size, spacing, text } from '../../src/theme/tokens.ts';
+import { colors, fonts, radius, size, spacing, text, toneColors } from '../../src/theme/tokens.ts';
 import {
   Badge,
   Button,
@@ -322,6 +322,7 @@ export default function MapScreen() {
             locationDenied={location.status === 'denied' || location.status === 'unavailable'}
             onEnableLocation={() => void location.request()}
             onPick={(station) => select(station)}
+            onToggle={() => setExpanded((value) => !value)}
           />
         )}
       </BottomSheet>
@@ -393,6 +394,10 @@ function LocationNotice({ onEnable }: { onEnable: () => void }) {
   );
 }
 
+/**
+ * Cabecera de la hoja plegada (02-10-2026): ícono de estado, título y estación más cercana alineados
+ * en una sola fila; toda la fila y la flecha despliegan o pliegan la lista.
+ */
 function NearbySheet({
   stations,
   freeCount,
@@ -401,6 +406,7 @@ function NearbySheet({
   locationDenied,
   onEnableLocation,
   onPick,
+  onToggle,
 }: {
   stations: StationWithDistance[];
   freeCount: number;
@@ -409,6 +415,7 @@ function NearbySheet({
   locationDenied: boolean;
   onEnableLocation: () => void;
   onPick: (station: StationWithDistance) => void;
+  onToggle: () => void;
 }) {
   const { t } = useI18n();
   const title =
@@ -419,9 +426,22 @@ function NearbySheet({
         : freeCount === 1
           ? t('map.nearbyOne')
           : t('map.nearbyMany', { n: freeCount });
+  const tone = stations.length === 0 ? 'neutral' : freeCount === 0 ? 'warning' : 'success';
   return (
     <View style={{ flex: 1, gap: spacing.ms }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? t('map.collapse') : t('map.expand')}
+        style={({ pressed }) => [styles.sheetHeader, pressed && { opacity: 0.7 }]}
+      >
+        <View style={[styles.sheetIcon, { backgroundColor: toneColors[tone].bg }]}>
+          <Icon
+            name={stations.length === 0 ? 'search-off' : freeCount === 0 ? 'schedule' : 'bolt'}
+            size={22}
+            color={toneColors[tone].fg}
+          />
+        </View>
         <View style={{ flex: 1, gap: 2 }}>
           <Subtitle numberOfLines={1}>{title}</Subtitle>
           {nearest ? (
@@ -440,7 +460,7 @@ function NearbySheet({
           size={28}
           color={colors.textSecondary}
         />
-      </View>
+      </Pressable>
       {expanded ? (
         <ScrollView contentContainerStyle={{ gap: spacing.xs, paddingBottom: spacing.lg }}>
           {locationDenied ? <LocationNotice onEnable={onEnableLocation} /> : null}
@@ -686,6 +706,19 @@ function FiltersSheet({
 }
 
 const styles = StyleSheet.create({
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.ms,
+    minHeight: 48,
+  },
+  sheetIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   full: { flex: 1, backgroundColor: colors.map.bg },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, gap: spacing.ms },
   searchRow: {

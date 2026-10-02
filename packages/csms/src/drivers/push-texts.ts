@@ -7,6 +7,7 @@ import type { DriverLocale } from './identity.ts';
 
 export const PUSH_KINDS = [
   'SESSION_STARTED',
+  'CHARGING_PROGRESS',
   'IDLE_STARTED',
   'EXPOSURE_WARNING',
   'EXPOSURE_EXHAUSTED',
@@ -23,6 +24,16 @@ export function isPushKind(value: unknown): value is PushKind {
 
 export interface PushVars {
   SESSION_STARTED: { chargeBoxId: string; connectorId: number | null };
+  /** Progreso de la carga (cada tantos kWh, parámetro `notifications.progress_step_kwh`). */
+  CHARGING_PROGRESS: {
+    energyWh: number;
+    powerW: number | null;
+    /** Costo acumulado si la tarifa ya lo calculó. */
+    totalMinor: bigint | null;
+    currency: string;
+    /** Minutos desde el inicio de la carga. */
+    minutes: number;
+  };
   IDLE_STARTED: {
     energyWh: number;
     gracePeriodMin: number | null;
@@ -81,6 +92,14 @@ export function formatKwh(wh: number): string {
   return decimal === 0 ? `${grouped} kWh` : `${grouped},${decimal} kWh`;
 }
 
+/** Potencia en kW con una decimal y coma: `45 kW`, `7,4 kW`. */
+export function formatKw(watts: number): string {
+  const tenths = Math.round(watts / 100);
+  const integer = Math.floor(tenths / 10);
+  const decimal = tenths % 10;
+  return decimal === 0 ? `${integer} kW` : `${integer},${decimal} kW`;
+}
+
 function minutes(locale: DriverLocale, value: number): string {
   if (locale === 'en') return value === 1 ? '1 minute' : `${value} minutes`;
   return value === 1 ? '1 minuto' : `${value} minutos`;
@@ -111,6 +130,26 @@ export function buildPushText<K extends PushKind>(
         : {
             title: 'Carga iniciada',
             body: `Su vehículo empezó a cargar en ${where}. Siga el progreso en la app.`,
+          };
+    }
+    case 'CHARGING_PROGRESS': {
+      const v = vars as PushVars['CHARGING_PROGRESS'];
+      const energy = formatKwh(v.energyWh);
+      const power = v.powerW !== null && v.powerW > 0 ? ` · ${formatKw(v.powerW)}` : '';
+      const cost =
+        v.totalMinor !== null
+          ? en
+            ? ` · ${formatMoney(v.totalMinor, v.currency)} so far`
+            : ` · ${formatMoney(v.totalMinor, v.currency)} hasta ahora`
+          : '';
+      return en
+        ? {
+            title: 'Charging in progress',
+            body: `${energy} delivered in ${minutes('en', v.minutes)}${power}${cost}.`,
+          }
+        : {
+            title: 'Carga en curso',
+            body: `${energy} entregados en ${minutes('es', v.minutes)}${power}${cost}.`,
           };
     }
     case 'IDLE_STARTED': {

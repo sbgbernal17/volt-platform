@@ -342,7 +342,8 @@ describe.skipIf(!baseUrl)('cobros con Wompi (emulador)', () => {
       channel: 'APP',
       requestedBy: 'driver:luis',
     });
-    expect(denied).toMatchObject({ state: 'FAILED', failure_code: 'DRIVER_BLOCKED' });
+    // Bloqueo por cobro pendiente: el motivo invita a pagar desde la app, no a llamar a soporte.
+    expect(denied).toMatchObject({ state: 'FAILED', failure_code: 'DEBT_PENDING' });
     // El barrido respeta el calendario: nada antes de las 2 horas, reintento después (otra vez rechazado → 24 h).
     expect((await billing.chargePending()).charged).toBe(0); // las sesiones con deuda se reintentan por calendario
     clock = new Date(chargedAt.getTime() + 3_600_000);

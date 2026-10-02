@@ -280,6 +280,55 @@ describe.skipIf(!baseUrl)('notificaciones push desde el outbox', () => {
     ]);
   });
 
+  it('avisa el progreso de la carga al cruzar cada escalón de kWh, una vez por escalón y no antes de 5 minutos', async () => {
+    const [row] = await sql<{ id: string; ocpp_transaction_id: string }[]>`
+      SELECT s.id, t.ocpp_transaction_id FROM sessions.charging_session s
+      JOIN sessions.ocpp_transaction t ON t.id = s.ocpp_transaction_id ORDER BY s.requested_at LIMIT 1`;
+    const sample = (wh: number, w: number) =>
+      transactions.recordMeterValues(ctx(tick(2)), {
+        connectorId: 1,
+        transactionId: Number(row?.ocpp_transaction_id),
+        meterValue: [
+          {
+            timestamp: clock.toISOString(),
+            sampledValue: [
+              { value: String(wh), measurand: 'Energy.Active.Import.Register', unit: 'Wh' },
+              { value: String(w), measurand: 'Power.Active.Import', unit: 'W' },
+            ],
+          },
+        ],
+      });
+    await transactions.onConnectorStatus(ctx(tick(1)), 1, 'Charging', 'SuspendedEV');
+    await sample(2_000, 45_000); // por debajo del escalón de 5 kWh: nada
+    await sample(6_200, 45_000); // cruza el primer escalón
+    await deliverPushNotifications(sql, sender);
+    expect(sent().map((m) => [m[1], m[2]])).toEqual([
+      [
+        'Charging in progress',
+        expect.stringMatching(/^6,2 kWh delivered in \d+ minutes · 45 kW · \$ [\d.]+ so far\.$/),
+      ],
+      [
+        'Carga en curso',
+        expect.stringMatching(
+          /^6,2 kWh entregados en \d+ minutos · 45 kW · \$ [\d.]+ hasta ahora\.$/,
+        ),
+      ],
+    ]);
+    expect(sender.sent[0]?.data).toMatchObject({ kind: 'CHARGING_PROGRESS', step: 1 });
+    sender.sent.length = 0;
+    await sample(7_000, 45_000); // mismo escalón: nada
+    await sample(11_000, 45_000); // segundo escalón, pero el anterior se envió hace menos de 5 minutos
+    await deliverPushNotifications(sql, sender);
+    expect(sender.sent).toHaveLength(0);
+    expect((await inbox()).slice(-4).map((r) => r.outcome)).toEqual([
+      'SKIPPED:BELOW_STEP',
+      'QUEUED',
+      'SKIPPED:STEP_SENT',
+      'SKIPPED:TOO_SOON',
+    ]);
+    expect((await notifications()).filter((n) => n.kind === 'CHARGING_PROGRESS')).toHaveLength(1);
+  });
+
   it('al liquidar y cobrar avisa el total y el recibo; un token rechazado por Expo queda inválido', async () => {
     const [row] = await sql<{ id: string; ocpp_transaction_id: string }[]>`
       SELECT s.id, t.ocpp_transaction_id FROM sessions.charging_session s

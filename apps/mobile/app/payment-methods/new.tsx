@@ -4,13 +4,14 @@
  * de aceptación de Wompi se obtienen de la API y se muestran sus enlaces.
  */
 
-import { useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { ApiError, errorMessage } from '../../src/api/client.ts';
 import { useQuery } from '../../src/api/hooks.ts';
 import type { Acceptance, PaymentMethod } from '../../src/api/types.ts';
 import { useAuth } from '../../src/auth/auth.tsx';
+import { WompiMark } from '../../src/components/wompi-mark.tsx';
 import { useI18n } from '../../src/i18n/index.tsx';
 import { cardBrand, luhnValid, WompiClient, WompiError } from '../../src/lib/wompi.ts';
 import {
@@ -48,6 +49,8 @@ export default function NewPaymentMethod() {
   const { t } = useI18n();
   const auth = useAuth();
   const router = useRouter();
+  // Pantalla a la que se vuelve al terminar (el cargador o Transacciones); si no, la lista.
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const [kind, setKind] = useState<'CARD' | 'NEQUI'>('CARD');
   const [number, setNumber] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -79,7 +82,12 @@ export default function NewPaymentMethod() {
       acceptanceToken: tokens.acceptanceToken,
       personalDataAuthToken: tokens.personalDataAuthToken,
     });
-    if (method.sourceStatus === 'PENDING') router.replace(`/payment-methods/${method.id}`);
+    if (method.sourceStatus === 'PENDING') {
+      router.replace({
+        pathname: '/payment-methods/[id]',
+        params: { id: method.id, ...(returnTo ? { returnTo } : {}) },
+      });
+    } else if (returnTo) router.dismissTo(returnTo as Href);
     else router.replace('/payment-methods');
   };
 
@@ -166,6 +174,7 @@ export default function NewPaymentMethod() {
   const brand = cardBrand(number);
   return (
     <Screen>
+      <WompiMark />
       <Row>
         <Button
           title={t('payment.card')}

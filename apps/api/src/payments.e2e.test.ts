@@ -80,7 +80,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
     const started = await as(driverId)('POST', '/v1/sessions', {
       evseId: `VOLT-BOG05-CP01-${connector}`,
     });
-    expect(started.statusCode).toBe(202);
+    expect(started.statusCode, started.body).toBe(202);
     const id = (started.json() as { id: string }).id;
     await until(async () => (await session(driverId, id)).state === 'ACTIVE');
     await until(async () => Number((await session(driverId, id)).energyKwh ?? 0) > 0);
@@ -410,7 +410,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
     expect(billing).toMatchObject({
       status: 'BLOCKED_DEBT',
       canCharge: false,
-      reason: { code: 'DRIVER_BLOCKED' },
+      reason: { code: 'DEBT_PENDING' },
     });
     expect(billing.debts).toHaveLength(1);
     expect(billing.debts[0]).toMatchObject({
@@ -421,7 +421,7 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
     });
     const denied = await luis('POST', '/v1/sessions', { evseId: 'VOLT-BOG05-CP01-3' });
     expect(denied.statusCode).toBe(409);
-    expect((denied.json() as { error: { code: string } }).error.code).toBe('DRIVER_BLOCKED');
+    expect((denied.json() as { error: { code: string } }).error.code).toBe('DEBT_PENDING');
 
     // Con un cobro pendiente la tarjeta no se puede eliminar (regla del dueño, 01-10-2026).
     const methods = (await luis('GET', '/v1/payment-methods')).json() as {
@@ -516,6 +516,78 @@ describe.skipIf(!baseUrl)('aceptación iteración 5: pagos con Wompi (emulador)'
     expect((await luis('DELETE', `/v1/payment-methods/${methods.items[0]?.id}`)).statusCode).toBe(
       200,
     );
+  });
+
+  it('cobro pendiente pagado desde la app con la tarjeta guardada (POST /v1/debts/:id/retry)', async () => {
+    const luis = as(luisId);
+    const acceptance = (await luis('GET', '/v1/payment-methods/acceptance')).json() as {
+      acceptanceToken: string;
+      personalDataAuthToken: string;
+    };
+    const register = async (number: string, holder: string) => {
+      const response = await luis('POST', '/v1/payment-methods', {
+        token: psp.tokenizeCard({
+          number,
+          expMonth: '12',
+          expYear: '30',
+          cvc: '123',
+          cardHolder: holder,
+        }),
+        acceptanceToken: acceptance.acceptanceToken,
+        personalDataAuthToken: acceptance.personalDataAuthToken,
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      return response.json() as { id: string; sourceStatus: string; isDefault: boolean };
+    };
+    // El emulador acepta cada token una sola vez: el nombre distinto produce tokens nuevos.
+    const declinedCard = await register(FAKE_CARDS.declined, 'LUIS RECHAZADA');
+    expect(declinedCard).toMatchObject({ sourceStatus: 'AVAILABLE', isDefault: true });
+    const sessionId = await chargeAndSettle(luisId, 2);
+    expect(
+      (
+        (await admin('POST', '/admin/v1/billing/jobs/run', { job: 'charge' })).json() as {
+          charge: { charged: number };
+        }
+      ).charge.charged,
+    ).toBe(1);
+    const blocked = (await luis('GET', '/v1/billing')).json() as {
+      status: string;
+      debts: { id: string; status: string }[];
+    };
+    expect(blocked.status).toBe('BLOCKED_DEBT');
+    const debtId = blocked.debts[0]?.id as string;
+    // Con la misma tarjeta rechazada el reintento falla y la deuda sigue abierta.
+    const again = await luis('POST', `/v1/debts/${debtId}/retry`);
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toMatchObject({
+      status: 'failed',
+      reason: 'DECLINED',
+      message: 'Transacción rechazada por el emisor',
+    });
+    // Con una tarjeta válida como principal el cobro se aprueba, la deuda queda pagada y la cuenta habilitada.
+    const approvedCard = await register(FAKE_CARDS.approved, 'LUIS APROBADA');
+    expect((await luis('POST', `/v1/payment-methods/${approvedCard.id}/default`)).statusCode).toBe(
+      200,
+    );
+    const paid = await luis('POST', `/v1/debts/${debtId}/retry`);
+    expect(paid.statusCode).toBe(200);
+    expect(paid.json()).toMatchObject({ status: 'charged' });
+    const after = (await luis('GET', '/v1/billing')).json() as {
+      status: string;
+      canCharge: boolean;
+      debts: { id: string; status: string }[];
+    };
+    expect(after).toMatchObject({ status: 'OK', canCharge: true });
+    expect(after.debts.find((d) => d.id === debtId)?.status).toBe('PAID');
+    expect(await session(luisId, sessionId)).toMatchObject({
+      detailedState: 'PAID',
+      paymentStatus: 'CAPTURED',
+    });
+    // Una deuda ya pagada no se reintenta.
+    expect((await luis('POST', `/v1/debts/${debtId}/retry`)).statusCode).toBe(409);
+    // Ana no puede reintentar la deuda de Luis.
+    expect((await as(anaId)('POST', `/v1/debts/${debtId}/retry`)).statusCode).toBe(404);
+    expect((await luis('DELETE', `/v1/payment-methods/${declinedCard.id}`)).statusCode).toBe(200);
   });
 
   it('el back-office devuelve un cobro y concilia el día', async () => {

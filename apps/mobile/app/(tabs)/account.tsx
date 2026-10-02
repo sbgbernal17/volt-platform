@@ -1,14 +1,15 @@
 /**
  * Cuenta (handoff, pantalla 18): encabezado con el único degradado de la marca, avatar con
- * iniciales, accesos rápidos (actividad, medios de pago, cobros pendientes, avisos), filas de perfil, idioma,
- * legal, soporte y cierre de sesión; borrado de cuenta al final. El invitado ve la invitación a
- * crear cuenta.
+ * iniciales, accesos rápidos (actividad, medios de pago, transacciones, avisos) y menús por grupos
+ * (02-10-2026): Mi cuenta (perfil, contraseña, configuración con idioma, tema y avisos), Ayuda y
+ * legal, cierre de sesión; borrado de cuenta al final. El invitado ve la invitación a crear cuenta.
+ * El permiso de avisos push se pide al entrar (raíz de la app), no desde aquí.
  */
 
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ApiError } from '../../src/api/client.ts';
@@ -18,7 +19,7 @@ import { useAuth } from '../../src/auth/auth.tsx';
 import { useI18n } from '../../src/i18n/index.tsx';
 import { formatAppBuild } from '../../src/lib/app-build.ts';
 import { appBuildInfo, checkAndApplyUpdate } from '../../src/lib/app-updates.ts';
-import { pushSupported, registerForPush, unregisterPush } from '../../src/lib/notifications.ts';
+import { unregisterPush } from '../../src/lib/notifications.ts';
 import { Icon, type IconName } from '../../src/theme/icon.tsx';
 import {
   colors,
@@ -85,6 +86,16 @@ function QuickAccess({
   );
 }
 
+/** Grupo de filas con su título (menús de Cuenta organizados por tema). */
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <Text style={styles.section}>{title}</Text>
+      <View>{children}</View>
+    </View>
+  );
+}
+
 export default function Account() {
   const { t, locale, setLocale } = useI18n();
   const auth = useAuth();
@@ -109,13 +120,6 @@ export default function Account() {
   const legal = auth.config?.legal;
   const support = legal?.supportEmail ?? null;
 
-  const enablePush = async () => {
-    const result = await registerForPush(auth.api, locale);
-    if (result.ok) setMessage({ tone: 'success', text: t('notifications.enabled') });
-    else if (result.reason === 'unsupported' || result.reason === 'no-project')
-      setMessage({ tone: 'warning', text: t('notifications.notSupported') });
-    else setMessage({ tone: 'warning', text: t('notifications.permission') });
-  };
   const signOut = async () => {
     await unregisterPush(auth.api);
     await auth.signOut();
@@ -270,10 +274,11 @@ export default function Account() {
             onPress={() => router.push('/notifications')}
           />
         </View>
-        <View>
+        <Section title={t('account.sectionAccount')}>
           <ListRow
             icon="person"
             title={t('account.profile')}
+            subtitle={profile?.displayName ?? undefined}
             onPress={() => router.push('/profile')}
           />
           <ListRow
@@ -282,40 +287,39 @@ export default function Account() {
             onPress={() => router.push('/change-password')}
           />
           <ListRow
-            icon="language"
-            title={t('app.language')}
-            subtitle={locale === 'es' ? t('app.spanish') : t('app.english')}
-            onPress={() => setLocale(locale === 'es' ? 'en' : 'es')}
+            icon="tune"
+            title={t('settings.title')}
+            subtitle={`${t('settings.subtitle')} · ${locale === 'es' ? t('app.spanish') : t('app.english')}`}
+            onPress={() => router.push('/settings')}
           />
-          {pushSupported() ? (
-            <ListRow
-              icon="notifications-active"
-              title={t('notifications.enable')}
-              onPress={() => void enablePush()}
-            />
-          ) : null}
-          {support ? (
-            <ListRow
-              icon="support-agent"
-              title={t('account.help')}
-              subtitle={support}
-              onPress={() => void Linking.openURL(`mailto:${support}`).catch(() => undefined)}
-            />
-          ) : null}
-          {legal ? (
-            <ListRow
-              icon="description"
-              title={t('account.terms')}
-              onPress={() => void WebBrowser.openBrowserAsync(legal.termsUrl)}
-            />
-          ) : null}
-          {legal ? (
-            <ListRow
-              icon="gavel"
-              title={t('account.privacy')}
-              onPress={() => void WebBrowser.openBrowserAsync(legal.privacyUrl)}
-            />
-          ) : null}
+        </Section>
+        {support || legal ? (
+          <Section title={t('account.sectionHelp')}>
+            {support ? (
+              <ListRow
+                icon="support-agent"
+                title={t('account.help')}
+                subtitle={support}
+                onPress={() => void Linking.openURL(`mailto:${support}`).catch(() => undefined)}
+              />
+            ) : null}
+            {legal ? (
+              <ListRow
+                icon="description"
+                title={t('account.terms')}
+                onPress={() => void WebBrowser.openBrowserAsync(legal.termsUrl)}
+              />
+            ) : null}
+            {legal ? (
+              <ListRow
+                icon="gavel"
+                title={t('account.privacy')}
+                onPress={() => void WebBrowser.openBrowserAsync(legal.privacyUrl)}
+              />
+            ) : null}
+          </Section>
+        ) : null}
+        <View>
           <ListRow
             icon="logout"
             title={t('auth.signOut')}
@@ -426,4 +430,11 @@ const styles = StyleSheet.create({
   },
   quickBadgeText: { fontFamily: fonts.bodyBold, fontSize: 11, color: colors.onPrimary },
   quickLabel: { ...text.cuerpoS, color: colors.text },
+  section: {
+    ...text.nota,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    paddingTop: spacing.xs,
+  },
 });

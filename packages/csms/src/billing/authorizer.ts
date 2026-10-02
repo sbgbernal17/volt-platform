@@ -46,6 +46,9 @@ export class BillingAuthorizer implements PaymentAuthorizer {
     const driver = await getDriver(this.db, driverId);
     const billingStatus: DriverBillingStatus = driver.billing_status ?? 'OK';
     if (driver.status !== 'ACTIVE') return deny('DRIVER_INACTIVE');
+    // Bloqueo por cobro pendiente: el conductor lo resuelve pagando desde la app (no es un bloqueo
+    // manual que exija hablar con soporte).
+    if (billingStatus === 'BLOCKED_DEBT') return deny('DEBT_PENDING');
     if (billingStatus !== 'OK') return deny('DRIVER_BLOCKED');
     const blockOnDebt = await resolveParam<boolean>(this.db, 'billing.block_on_debt', { tenantId });
     if (blockOnDebt) {

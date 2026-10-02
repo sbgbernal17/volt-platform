@@ -4,8 +4,8 @@
  * el botón que inicia la carga con la cotización vista (`quoteId`) y una clave de idempotencia.
  * El invitado ve todo y el botón lo lleva a crear la cuenta; al terminar vuelve aquí.
  */
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ApiError, errorMessage } from '../../src/api/client.ts';
 import { useQuery } from '../../src/api/hooks.ts';
@@ -100,6 +100,24 @@ export default function EvseScreen() {
   const index = station ? station.evses.findIndex((e) => e.evseId === evseId) : -1;
   const defaultMethod =
     methods.data?.items.find((m) => m.isDefault && m.sourceStatus === 'AVAILABLE') ?? null;
+  // Ruta propia para volver aquí desde Medios de pago (elegir o agregar tarjeta, puntos 1 y 3 del 02-10-2026).
+  const here = `/evse/${encodeURIComponent(evseId ?? '')}`;
+  // Al volver de Medios de pago o Transacciones se recargan la tarjeta principal y el estado de cobro.
+  const firstFocus = useRef(true);
+  const reloadMethods = methods.reload;
+  const reloadBilling = billing.reload;
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
+      if (!signedIn) return;
+      void reloadBilling();
+      if (paymentsConfigured) void reloadMethods();
+    }, [signedIn, paymentsConfigured, reloadBilling, reloadMethods]),
+  );
+  const openDebts = billing.data?.debts.filter((d) => d.status === 'OPEN').length ?? 0;
   const canStart = Boolean(
     data && tariff && (data.status === 'Available' || data.status === 'Preparing'),
   );
@@ -183,9 +201,15 @@ export default function EvseScreen() {
   }
   if (!data) return null;
 
-  const paymentFailed = startError?.code && PAYMENT_CODES.has(startError.code);
+  const debtBlocked = startError?.code === 'DEBT_PENDING';
+  const paymentFailed = !debtBlocked && startError?.code && PAYMENT_CODES.has(startError.code);
+  // Cobro pendiente: en lugar de "contacte a soporte", se ofrece pagarlo desde Transacciones.
+  const debtPending =
+    billing.data && !billing.data.canCharge
+      ? billing.data.reason?.code === 'DEBT_PENDING' || openDebts > 0
+      : false;
   const blockedReason =
-    billing.data && !billing.data.canCharge && billing.data.reason
+    billing.data && !billing.data.canCharge && billing.data.reason && !debtPending
       ? td(`session.failedCode.${billing.data.reason.code}`) ===
         `session.failedCode.${billing.data.reason.code}`
         ? billing.data.reason.message
@@ -201,12 +225,19 @@ export default function EvseScreen() {
       dense
       padded={false}
       bottom={
-        paymentFailed ? (
+        debtBlocked ? (
+          <View style={{ gap: spacing.sm }}>
+            <Button title={t('debt.pay')} icon="payments" onPress={() => router.push('/debts')} />
+            <Button title={t('app.cancel')} variant="secondary" onPress={back} />
+          </View>
+        ) : paymentFailed ? (
           <View style={{ gap: spacing.sm }}>
             <Button
               title={t('evse.useOtherCard')}
               icon="credit-card"
-              onPress={() => router.push('/payment-methods/new')}
+              onPress={() =>
+                router.push({ pathname: '/payment-methods/new', params: { returnTo: here } })
+              }
             />
             <Button title={t('app.cancel')} variant="secondary" onPress={back} />
           </View>
@@ -346,7 +377,24 @@ export default function EvseScreen() {
           )}
         </Card>
 
-        {blockedReason ? <Notice tone="warning">{blockedReason}</Notice> : null}
+        {debtPending || debtBlocked ? (
+          <Notice
+            tone="warning"
+            icon="payments"
+            action={
+              <Button
+                title={t('debt.pay')}
+                variant="secondary"
+                compact
+                onPress={() => router.push('/debts')}
+              />
+            }
+          >
+            {t('evse.blocked')}
+          </Notice>
+        ) : blockedReason ? (
+          <Notice tone="warning">{blockedReason}</Notice>
+        ) : null}
         {data.status !== 'Available' && data.status !== 'Preparing' ? (
           <Notice tone="info">
             {data.status === 'Unavailable' || data.status === 'Faulted'
@@ -369,7 +417,12 @@ export default function EvseScreen() {
               iconTone="info"
               title={methodLabel(defaultMethod)}
               subtitle={t('evse.paymentRow')}
-              onPress={() => router.push('/payment-methods')}
+              onPress={() =>
+                router.push({
+                  pathname: '/payment-methods',
+                  params: { select: '1', returnTo: here },
+                })
+              }
             />
           ) : needsPayment ? (
             <ListRow
@@ -377,7 +430,9 @@ export default function EvseScreen() {
               iconTone="warning"
               title={t('evse.noPaymentRow')}
               subtitle={t('evse.paymentRow')}
-              onPress={() => router.push('/payment-methods/new')}
+              onPress={() =>
+                router.push({ pathname: '/payment-methods/new', params: { returnTo: here } })
+              }
             />
           ) : null}
         </View>

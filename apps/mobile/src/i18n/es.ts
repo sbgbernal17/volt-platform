@@ -605,6 +605,41 @@ export const es = {
   'auth.firstName': 'Nombres',
   'auth.lastName': 'Apellidos',
   'evse.minPrice': 'Cobro mínimo por carga',
+  // Correcciones del dueño del 02-10-2026: configuración, selección de tarjeta y pago de deudas
+  'settings.title': 'Configuración',
+  'settings.subtitle': 'Idioma, tema y avisos',
+  'settings.theme': 'Tema',
+  'settings.themeDark': 'Oscuro',
+  'settings.themeLight': 'Claro',
+  'settings.themeSoon':
+    'El tema claro llega en una próxima versión; por ahora la app usa el oscuro.',
+  'settings.notifications': 'Avisos push',
+  'settings.pushGranted': 'Activados en este dispositivo',
+  'settings.pushDenied': 'Desactivados en los ajustes del sistema',
+  'settings.pushUndetermined': 'Aún no se han activado',
+  'settings.pushUnsupported': 'No disponibles en este dispositivo',
+  'settings.openSettings': 'Abrir ajustes del sistema',
+  'settings.pushHelp':
+    'Le avisamos cuando la carga inicia, avanza, se detiene y termina, y cuando un cobro se aprueba o se rechaza.',
+  'account.sectionAccount': 'Mi cuenta',
+  'account.sectionHelp': 'Ayuda y legal',
+  'profile.sectionAccount': 'Datos de la cuenta',
+  'profile.sectionPersonal': 'Datos personales',
+  'profile.verifyEmail': 'Verificar correo',
+  'payment.selectHelp':
+    'Toque una tarjeta para usarla en esta carga: queda como principal y vuelve al cargador.',
+  'payment.tapToSelect': 'Tocar para usar como principal',
+  'payment.processedBy': 'Pagos procesados por',
+  'debt.payWithCard': 'Cobrar a {label}',
+  'debt.payOther': 'Pagar con otro medio',
+  'debt.payOtherHelp': 'Abre la página segura de Wompi para pagar con PSE, Nequi u otra tarjeta.',
+  'debt.addCard': 'Agregar una tarjeta para pagar',
+  'debt.retryPaid': 'Pago aprobado. Su cuenta queda habilitada para cargar.',
+  'debt.retryPending': 'El banco está confirmando el pago. Revise en un momento.',
+  'debt.retryFailed':
+    'La tarjeta fue rechazada{reason}. Pruebe con otra tarjeta o pague con otro medio.',
+  'map.expand': 'Ver las estaciones cercanas',
+  'map.collapse': 'Ocultar la lista',
 } as const;
 
 export type MessageKey = keyof typeof es;

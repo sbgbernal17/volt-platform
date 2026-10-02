@@ -1,5 +1,5 @@
 /** Medio de pago en verificación (3DS): reto del banco en un WebView y sondeo hasta el resultado. */
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Platform, View } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -32,7 +32,7 @@ export function unescapeHtml(value: string): string {
 }
 
 export default function PaymentMethodScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, returnTo } = useLocalSearchParams<{ id: string; returnTo?: string }>();
   const { t, td } = useI18n();
   const auth = useAuth();
   const router = useRouter();
@@ -96,7 +96,9 @@ export default function PaymentMethodScreen() {
       <Button
         title={t('app.back')}
         variant="secondary"
-        onPress={() => router.replace('/payment-methods')}
+        onPress={() =>
+          returnTo ? router.dismissTo(returnTo as Href) : router.replace('/payment-methods')
+        }
       />
     </Screen>
   );

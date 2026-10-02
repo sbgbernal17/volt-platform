@@ -4,9 +4,12 @@
  * de 52 px con borde blanco, insignias con palabra e ícono. Sin bibliotecas de UI de terceros.
  */
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  Animated,
+  Easing,
   Pressable,
   type PressableProps,
   Text as RNText,
@@ -374,6 +377,8 @@ export function Field({
   style,
   secureTextEntry,
   prefix,
+  suffix,
+  containerStyle,
   ...props
 }: TextInputProps & {
   label: string;
@@ -381,12 +386,16 @@ export function Field({
   help?: string | undefined;
   /** Prefijo fijo a la izquierda (p. ej. +57). */
   prefix?: string | undefined;
+  /** Elemento a la derecha dentro del campo (p. ej. el chulo de verificado). */
+  suffix?: ReactNode;
+  /** Estilo del contenedor (p. ej. `flex: 1` para dos campos en una fila). */
+  containerStyle?: StyleProp<ViewStyle>;
 }) {
   const [focused, setFocused] = useState(false);
   const [hidden, setHidden] = useState(Boolean(secureTextEntry));
   const border = error ? colors.danger : colors.control;
   return (
-    <View style={{ gap: spacing.sm }}>
+    <View style={[{ gap: spacing.sm }, containerStyle]}>
       <RNText style={styles.fieldLabel}>{label}</RNText>
       <View style={[styles.inputWrap, { borderColor: border }, focused && styles.inputFocused]}>
         {prefix ? (
@@ -419,6 +428,7 @@ export function Field({
             />
           </Pressable>
         ) : null}
+        {suffix ? <View style={{ paddingRight: spacing.ms }}>{suffix}</View> : null}
       </View>
       {error ? (
         <RNText style={styles.error}>{error}</RNText>
@@ -672,10 +682,51 @@ export function ListRow({
   );
 }
 
+/**
+ * Pantalla de carga: el rayo de la marca en un anillo que late (escala y opacidad) y el texto
+ * debajo; con "Reducir movimiento" el anillo queda fijo. Ocupa el espacio disponible y centra.
+ */
 export function Loading({ text: label }: { text?: string | undefined }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    let loop: Animated.CompositeAnimation | null = null;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .catch(() => false)
+      .then((reduce) => {
+        if (reduce) return;
+        loop = Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulse, {
+              toValue: 1,
+              duration: 700,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulse, {
+              toValue: 0,
+              duration: 700,
+              easing: Easing.inOut(Easing.quad),
+              useNativeDriver: true,
+            }),
+          ]),
+        );
+        loop.start();
+      });
+    return () => loop?.stop();
+  }, [pulse]);
+  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
+  const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.45] });
+  const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] });
   return (
-    <View style={styles.center}>
-      <ActivityIndicator color={colors.brand} size="large" />
+    <View style={[styles.center, styles.loading]} accessibilityRole="progressbar">
+      <View style={styles.loadingMark}>
+        <Animated.View
+          style={[styles.loadingHalo, { opacity: haloOpacity, transform: [{ scale: haloScale }] }]}
+        />
+        <Animated.View style={[styles.loadingRing, { transform: [{ scale }] }]}>
+          <Icon name="bolt" size={36} color={colors.brand} />
+        </Animated.View>
+      </View>
       {label ? <Muted>{label}</Muted> : null}
     </View>
   );
@@ -914,6 +965,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   center: { alignItems: 'center', justifyContent: 'center', padding: spacing.lg, gap: spacing.ms },
+  loading: { flex: 1, minHeight: 200, backgroundColor: colors.bg, gap: spacing.ml },
+  loadingMark: { width: 96, height: 96, alignItems: 'center', justifyContent: 'center' },
+  loadingHalo: {
+    position: 'absolute',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.brand,
+  },
+  loadingRing: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 3,
+    borderColor: colors.brand,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   emptyCircle: {
     width: 72,
     height: 72,

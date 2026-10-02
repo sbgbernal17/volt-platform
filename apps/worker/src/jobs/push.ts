@@ -165,6 +165,7 @@ const CONSUMER = 'push';
 /** Evento de dominio → clase de notificación (con la condición adicional que aplique). */
 const EVENT_KINDS: Record<string, PushKind> = {
   'session.started': 'SESSION_STARTED',
+  'session.metered': 'CHARGING_PROGRESS',
   'session.suspended': 'IDLE_STARTED',
   'session.exposure_warning': 'EXPOSURE_WARNING',
   'session.exposure_exhausted': 'EXPOSURE_EXHAUSTED',
@@ -176,6 +177,10 @@ const EVENT_KINDS: Record<string, PushKind> = {
 const EVENT_TYPES = Object.keys(EVENT_KINDS);
 /** Clases que solo se avisan una vez por sesión aunque el evento se repita. */
 const ONCE_PER_SESSION: readonly PushKind[] = ['IDLE_STARTED', 'EXPOSURE_WARNING'];
+/** Entre dos avisos de progreso de la misma carga pasan al menos estos minutos (ADR 0037). */
+const PROGRESS_MIN_INTERVAL_MIN = 5;
+/** Estados en los que la carga sigue en el cargador (la app los muestra como "en curso"). */
+const LIVE_STATES: readonly string[] = ['CHARGING', 'SUSPENDED_EV', 'SUSPENDED_EVSE'];
 
 interface Outgoing {
   notificationId: string;
@@ -266,6 +271,13 @@ async function prepareEvent(sql: Sql, event: OutboxRow, outgoing: Outgoing[]): P
   if (session && ONCE_PER_SESSION.includes(kind)) {
     if (await hasSessionNotification(sql, driverId, session.id, kind)) return 'SKIPPED:DUPLICATE';
   }
+  let progressStep: number | null = null;
+  if (kind === 'CHARGING_PROGRESS') {
+    if (!session) return 'SKIPPED:NO_SESSION';
+    const progress = await progressStepToNotify(sql, event, payload, session, driverId);
+    if (typeof progress === 'string') return progress;
+    progressStep = progress;
+  }
   const vars = await buildVars(sql, kind, payload, session);
   const devices = await listDriverDevices(sql, driverId);
   const driverLocale: DriverLocale = driver.locale === 'en' ? 'en' : 'es';
@@ -275,6 +287,7 @@ async function prepareEvent(sql: Sql, event: OutboxRow, outgoing: Outgoing[]): P
     sessionId: session?.id ?? null,
     sessionNo: session?.session_no ?? null,
     eventId: event.event_id,
+    ...(progressStep !== null ? { step: progressStep } : {}),
   };
   const row = await insertDriverNotification(sql, {
     tenantId: event.tenant_id,
@@ -306,6 +319,56 @@ async function prepareEvent(sql: Sql, event: OutboxRow, outgoing: Outgoing[]): P
   return 'QUEUED';
 }
 
+/** Lectura del evento `session.metered` (energía y potencia de la última muestra). */
+function meteredSample(payload: Record<string, unknown>): {
+  energyWh: number | null;
+  powerW: number | null;
+  at: Date | null;
+} {
+  const sample = (payload.sample ?? {}) as { energyWh?: unknown; powerW?: unknown; at?: unknown };
+  const at = typeof sample.at === 'string' ? new Date(sample.at) : null;
+  return {
+    energyWh: typeof sample.energyWh === 'number' ? sample.energyWh : null,
+    powerW: typeof sample.powerW === 'number' ? sample.powerW : null,
+    at: at && !Number.isNaN(at.getTime()) ? at : null,
+  };
+}
+
+/**
+ * Progreso de la carga (ADR 0037): se avisa al cruzar cada múltiplo de `notifications.progress_step_kwh`
+ * (una vez por escalón y como mucho cada 5 minutos), solo mientras la sesión sigue activa. Devuelve el
+ * escalón a avisar o el motivo para omitir el evento.
+ */
+async function progressStepToNotify(
+  sql: Sql,
+  event: OutboxRow,
+  payload: Record<string, unknown>,
+  session: SessionView,
+  driverId: string,
+): Promise<number | string> {
+  if (!LIVE_STATES.includes(session.state)) return 'SKIPPED:NOT_ACTIVE';
+  const { energyWh } = meteredSample(payload);
+  if (energyWh === null || energyWh <= 0) return 'SKIPPED:NO_ENERGY';
+  const stepKwh = await resolveParam<number>(sql, 'notifications.progress_step_kwh', {
+    tenantId: event.tenant_id,
+  });
+  const stepWh = Math.max(500, Math.round(Number(stepKwh) * 1000));
+  const step = Math.floor(energyWh / stepWh);
+  if (step < 1) return 'SKIPPED:BELOW_STEP';
+  const last = (
+    await sql<{ step: string | null; created_at: Date }[]>`
+      SELECT data->>'step' AS step, created_at FROM auth.driver_notification
+      WHERE driver_id = ${driverId} AND session_id = ${session.id} AND kind = 'CHARGING_PROGRESS'
+      ORDER BY created_at DESC LIMIT 1`
+  )[0];
+  if (last) {
+    if (Number(last.step ?? 0) >= step) return 'SKIPPED:STEP_SENT';
+    if (Date.now() - last.created_at.getTime() < PROGRESS_MIN_INTERVAL_MIN * 60_000)
+      return 'SKIPPED:TOO_SOON';
+  }
+  return step;
+}
+
 async function buildVars(
   sql: Sql,
   kind: PushKind,
@@ -326,6 +389,24 @@ async function buildVars(
         chargeBoxId: session?.charge_box_id ?? String(payload.chargeBoxId ?? ''),
         connectorId: session?.ocpp_connector_id ?? null,
       } satisfies PushVars['SESSION_STARTED'];
+    case 'CHARGING_PROGRESS': {
+      const { energyWh, powerW, at } = meteredSample(payload);
+      const cost = (payload.cost ?? session?.running_cost ?? null) as {
+        total_minor?: unknown;
+        currency?: unknown;
+      } | null;
+      const startedAt = session?.started_at ?? null;
+      const sampledAt = at ?? new Date();
+      return {
+        energyWh: energyWh ?? Number(session?.energy_wh ?? 0),
+        powerW,
+        totalMinor: cost && cost.total_minor !== undefined ? money(cost.total_minor) : null,
+        currency: typeof cost?.currency === 'string' ? cost.currency : currency,
+        minutes: startedAt
+          ? Math.max(0, Math.round((sampledAt.getTime() - new Date(startedAt).getTime()) / 60_000))
+          : 0,
+      } satisfies PushVars['CHARGING_PROGRESS'];
+    }
     case 'IDLE_STARTED': {
       let gracePeriodMin: number | null = null;
       let idlePricePerMinuteMinor: bigint | null = null;

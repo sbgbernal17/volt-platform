@@ -261,6 +261,7 @@ function Root({ fontsReady }: { fontsReady: boolean }) {
             <Stack.Screen name="notifications" options={{ title: t('notifications.title') }} />
             <Stack.Screen name="profile" options={{ title: t('account.profile') }} />
             <Stack.Screen name="change-password" options={{ title: t('password.title') }} />
+            <Stack.Screen name="settings" options={{ title: t('settings.title') }} />
           </Stack.Protected>
         </Stack.Protected>
       </Stack>

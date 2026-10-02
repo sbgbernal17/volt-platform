@@ -98,6 +98,20 @@ function describeDetails(error: PaymentGatewayError): string {
   return parts.length ? ` (${parts.join('; ')})` : '';
 }
 
+/** Wompi limita `sku` a 36 caracteres (`INPUT_VALIDATION_ERROR` si se excede). */
+export const WOMPI_SKU_MAX_LENGTH = 36;
+
+/**
+ * `sku` del enlace de pago: la referencia completa si cabe; si no, sus últimos 36 caracteres, que
+ * llevan el identificador (`DEBT-<uuid>` → el uuid). El pago se reconoce por `payment_link_id`, no
+ * por el `sku`, así que recortarlo no afecta la conciliación.
+ */
+export function paymentLinkSku(reference: string): string {
+  return reference.length <= WOMPI_SKU_MAX_LENGTH
+    ? reference
+    : reference.slice(-WOMPI_SKU_MAX_LENGTH);
+}
+
 export class WompiGateway implements PaymentGateway {
   readonly provider = 'WOMPI';
   readonly environment: 'sandbox' | 'production';
@@ -325,7 +339,7 @@ export class WompiGateway implements PaymentGateway {
         collect_shipping: false,
         currency: input.currency,
         amount_in_cents: Number(toCents(input.amountMinor, input.currencyExponent)),
-        sku: input.reference,
+        sku: paymentLinkSku(input.reference),
         ...(input.redirectUrl ? { redirect_url: input.redirectUrl } : {}),
         ...(input.expiresAt ? { expires_at: input.expiresAt } : {}),
       },

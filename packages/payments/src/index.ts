@@ -19,8 +19,10 @@ export {
 export * from './types.ts';
 export {
   mapSource,
+  paymentLinkSku,
   WOMPI_BASE_URLS,
   WOMPI_KEY_PREFIXES,
+  WOMPI_SKU_MAX_LENGTH,
   WompiGateway,
   type WompiGatewayOptions,
 } from './wompi.ts';

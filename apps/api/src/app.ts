@@ -17,7 +17,13 @@ import {
   StaticConnectionDirectory,
 } from '@volt/gateway-client';
 import { pinoOptions } from '@volt/logging';
-import { FakeGateway, type PaymentGateway, WOMPI_BASE_URLS, WompiGateway } from '@volt/payments';
+import {
+  FakeGateway,
+  type PaymentGateway,
+  PaymentGatewayError,
+  WOMPI_BASE_URLS,
+  WompiGateway,
+} from '@volt/payments';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Redis } from 'ioredis';
 import { ZodError } from 'zod';
@@ -118,6 +124,18 @@ export function buildApp({
       reply
         .code(400)
         .send({ error: { code: 'VALIDATION', message: 'Datos inválidos', details: error.issues } });
+      return;
+    }
+    // La pasarela de pagos rechazó la operación (enlace de pago, cobro, devolución): no es un error
+    // interno de la API; la app y el back-office muestran el motivo con un código propio.
+    if (error instanceof PaymentGatewayError) {
+      app.log.warn(
+        { err: error, pspCode: error.code, pspStatus: error.status ?? null },
+        'la pasarela de pagos rechazó la operación',
+      );
+      reply.code(error.retryable ? 503 : 502).send({
+        error: { code: `PSP_${error.code}`, message: error.message, details: null },
+      });
       return;
     }
     const status = typeof error.statusCode === 'number' ? error.statusCode : 500;

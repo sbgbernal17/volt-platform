@@ -281,6 +281,46 @@ export async function billingPrivateRoutes(
     };
   });
 
+  /**
+   * Reintento del cobro pendiente con el medio de pago guardado (petición del dueño del 02-10-2026):
+   * el conductor registra una tarjeta válida y paga desde la app sin pasar por el checkout ni por
+   * soporte. Un cobro en curso en la pasarela responde `pending` y no se duplica.
+   */
+  app.post('/debts/:id/retry', async (request) => {
+    const driver = driverOf(request);
+    const { id } = params.parse(request.params);
+    const debt = await requireBilling().getDebt(id);
+    if (debt.driver_id !== driver.driverId)
+      throw new CsmsError(`debt ${id} no existe`, 404, 'NOT_FOUND');
+    if (debt.status !== 'OPEN')
+      throw new CsmsError(`La deuda está ${debt.status}`, 409, 'DEBT_NOT_OPEN');
+    if (!debt.session_id)
+      throw new CsmsError('La deuda no tiene sesión asociada', 409, 'DEBT_WITHOUT_SESSION');
+    const outcome = await requireBilling().chargeSession(debt.session_id, {
+      requestedBy: `driver:${driver.driverId}`,
+      force: true,
+    });
+    // `charged` significa que la pasarela procesó un intento; el resultado va en `pspStatus`.
+    switch (outcome.status) {
+      case 'charged':
+        if (outcome.pspStatus === 'APPROVED')
+          return { status: 'charged', reason: null, message: null };
+        if (outcome.pspStatus === 'PENDING')
+          return { status: 'pending', reason: 'PENDING_PSP', message: null };
+        return {
+          status: 'failed',
+          reason: outcome.pspStatus,
+          message: outcome.payment.status_message ?? null,
+        };
+      case 'waiting':
+        return { status: 'pending', reason: outcome.reason, message: null };
+      case 'failed':
+        return { status: 'failed', reason: outcome.reason, message: null };
+      default:
+        return { status: 'skipped', reason: outcome.reason, message: null };
+    }
+  });
+
   app.get('/sessions/:id/receipt', async (request, reply) => {
     const driver = driverOf(request);
     const { id } = params.parse(request.params);

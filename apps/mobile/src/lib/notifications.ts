@@ -43,6 +43,21 @@ export function configureNotificationHandler(): void {
   }
 }
 
+export type PushPermission = 'granted' | 'denied' | 'undetermined' | 'unsupported';
+
+/** Estado del permiso de notificaciones (pantalla Configuración), sin pedirlo. */
+export async function pushPermissionStatus(): Promise<PushPermission> {
+  if (!pushSupported()) return 'unsupported';
+  try {
+    const current = await Notifications.getPermissionsAsync();
+    if (current.granted || current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL)
+      return 'granted';
+    return current.canAskAgain ? 'undetermined' : 'denied';
+  } catch {
+    return 'unsupported';
+  }
+}
+
 export async function registerForPush(
   api: ApiClient,
   locale: 'es' | 'en',

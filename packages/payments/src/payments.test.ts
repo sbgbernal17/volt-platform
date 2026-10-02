@@ -10,8 +10,10 @@ import {
   fromCents,
   integritySignature,
   PaymentGatewayError,
+  paymentLinkSku,
   toCents,
   verifyWebhookChecksum,
+  WOMPI_SKU_MAX_LENGTH,
   WompiGateway,
 } from './index.ts';
 
@@ -276,6 +278,29 @@ describe('adaptador de Wompi contra un servidor simulado', () => {
           eventsSecret: 'e',
         }),
     ).toThrow(/ambiente/);
+  });
+
+  it('el sku del enlace de pago respeta el máximo de 36 caracteres de Wompi', async () => {
+    const debtId = '3f1c2a9e-5b7d-4c1e-9a2b-8d7e6f5a4b3c';
+    expect(paymentLinkSku('DEBT-1')).toBe('DEBT-1');
+    expect(paymentLinkSku(`DEBT-${debtId}`)).toBe(debtId);
+    nextResponse = { status: 200, body: { data: { id: 'link_abc' } } };
+    const link = await gateway().createPaymentLink({
+      name: 'Volt VO-1',
+      description: 'Pago pendiente de la carga VO-1',
+      amountMinor: 6_755n,
+      currency: 'COP',
+      currencyExponent: 0,
+      reference: `DEBT-${debtId}`,
+      singleUse: true,
+      expiresAt: '2026-10-03T00:00:00.000Z',
+    });
+    expect(link.id).toBe('link_abc');
+    expect(received.at(-1)).toMatchObject({ method: 'POST', url: '/payment_links' });
+    const body = received.at(-1)?.body as { sku: string; amount_in_cents: number };
+    expect(body.sku).toBe(debtId);
+    expect(body.sku.length).toBeLessThanOrEqual(WOMPI_SKU_MAX_LENGTH);
+    expect(body.amount_in_cents).toBe(675_500); // COP: Wompi recibe centavos
   });
 
   it('obtiene los tokens de aceptación sin autenticación y crea la fuente de pago con la llave privada', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPushText, formatKwh, formatMoney } from './push-texts.ts';
+import { buildPushText, formatKw, formatKwh, formatMoney } from './push-texts.ts';
 
 describe('textos de las notificaciones push', () => {
   it('formatea importes y energía al estilo colombiano del manual de marca', () => {
@@ -13,6 +13,32 @@ describe('textos de las notificaciones push', () => {
     expect(formatKwh(22_000)).toBe('22 kWh');
     expect(formatKwh(48_640)).toBe('48,6 kWh');
     expect(formatKwh(1_234_500)).toBe('1.234,5 kWh');
+    expect(formatKw(45_000)).toBe('45 kW');
+    expect(formatKw(7_400)).toBe('7,4 kW');
+  });
+
+  it('describe el progreso de la carga con energía, tiempo, potencia y costo acumulado (ADR 0037)', () => {
+    expect(
+      buildPushText('CHARGING_PROGRESS', 'es', {
+        energyWh: 12_500,
+        powerW: 45_000,
+        totalMinor: 16_875n,
+        currency: 'COP',
+        minutes: 25,
+      }),
+    ).toEqual({
+      title: 'Carga en curso',
+      body: '12,5 kWh entregados en 25 minutos · 45 kW · $ 16.875 hasta ahora.',
+    });
+    expect(
+      buildPushText('CHARGING_PROGRESS', 'en', {
+        energyWh: 5_000,
+        powerW: null,
+        totalMinor: null,
+        currency: 'COP',
+        minutes: 1,
+      }),
+    ).toEqual({ title: 'Charging in progress', body: '5 kWh delivered in 1 minute.' });
   });
 
   it('escribe los textos en español e inglés según docs/textos-app-conductor.md', () => {
